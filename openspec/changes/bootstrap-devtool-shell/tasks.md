@@ -1,6 +1,6 @@
 ## 1. 專案骨架與建置
 
-- [ ] 1.1 建立 `PPS2_0DevTool.pro`（Qt5 + qmake，widgets），驗證：Windows 上 Qt Creator + MinGW 編譯通過並產出執行檔
+- [x] 1.1 建立 `PPS2_0DevTool.pro`（Qt5 + qmake，widgets），驗證：Windows 上 Qt Creator + MinGW 編譯通過並產出執行檔
 - [x] 1.2 建立 `version.h`（工具名稱、版本 `v2.0.0`、設定檔名常數、建置日期），驗證：編譯通過且版本常數為 `v2.0.0`
 - [x] 1.3 建立 `result_code.h`，定義框架層級三類錯誤碼（設定類、行程類、回應類），驗證：編譯通過；功能自訂錯誤碼不在此檔
 - [x] 1.4 建立 `common.{h,cpp}` 的 `formatElapsedTime()`，驗證：輸入 5025000 毫秒輸出 `01h 23m 45s`
@@ -11,8 +11,11 @@
 
 - [x] 2.1 實作 `debug.{h,cpp}`：`QTDebug` / `QTWarn` / `QTError` 三個等級，格式為含毫秒的時間戳記加固定寬度等級名稱，驗證：輸出形如 `[2026-09-06 14:30:12.345] [ QT DEBUG ] 訊息`
 - [x] 2.2 加入 300 行環形緩衝，所有等級的輸出都寫入，驗證：輸出 350 則訊息後緩衝內僅保留最後 300 則
-- [ ] 2.3 `Debug_Mode` 為 true 時開啟 console（`AllocConsole()` + `SetConsoleOutputCP(CP_UTF8)` + 重導向標準輸出與錯誤輸出），驗證：console 出現且中文訊息不亂碼
+- [x] 2.3 `Debug_Mode` 為 true 時開啟 console（`AllocConsole()` + `SetConsoleOutputCP(CP_UTF8)` + 重導向標準輸出與錯誤輸出），驗證：console 出現且中文訊息不亂碼
 - [ ] 2.4 註冊 console 控制處理常式：收到關閉事件時先終止腳本子行程再結束程式，驗證：執行腳本期間關閉 console，程式結束且工作管理員中無殘留 Python 行程
+  > **延後驗證**：程式碼已實作（`debug.cpp` 的 `consoleCtrlHandler`），但這次交付的是空外殼，
+  > UI 上沒有任何地方可以觸發 `runFunctionScript()`，因此無法製造「執行腳本期間」這個前提。
+  > 待第一個功能 tab 完成後補驗。
 
 ## 3. 設定讀取
 
@@ -65,6 +68,9 @@
 - [x] 7.4 實作功能掛勾訊號 `sourcePathChanged` 與 `workingDataCleared`，驗證：變更來源路徑時訊號發出並附帶新路徑；未連接訊號的功能不受影響
 - [x] 7.5 實作共用 UI 服務：資訊／警告／錯誤訊息框、結果視窗（標題、內容、耗時）、取得目前來源路徑、依標題移除 tab，驗證：各服務皆可從功能端呼叫並顯示統一樣式
 - [ ] 7.6 實作視窗行為：關閉主視窗隱藏至系統匣、雙擊還原、系統匣右鍵選單只有結束、About 顯示工具名稱／版本／Qt 版本／建置日期／使用手冊連結，驗證：四項行為逐一操作皆正確，About 顯示 `v2.0.0`
+  > **待重測**：隱藏至系統匣、右鍵 Quit、About 已在 Windows 上確認。
+  > 雙擊還原原本失效（`connect` 用舊式 SIGNAL/SLOT，`ActivationReason` 與 `int` 字串比對不符，
+  > 執行期靜默失敗），已改為新式 connect 修正，待在 Windows 上重測。
 - [x] 7.7 實作啟動檢查：Python 3 可用性、單一實例鎖（`QSharedMemory`）、SIGSEGV 時輸出 crash log，驗證：重複啟動時第二個實例不會出現；移除 Python 後啟動顯示對應錯誤
 
 ## 8. 端到端驗收
@@ -76,4 +82,7 @@
 - [x] 8.5 執行中對話框跑馬燈會動、階段文字會更新、取消鈕可按；按下取消後畫面完全無變化，驗證：以一支分階段回報並可被取消的腳本逐項確認
 - [x] 8.6 執行中無法啟動第二支腳本，驗證：程式化連續呼叫時第二次回 false
 - [ ] 8.7 `Debug_Mode` 開啟時 Qt 與 Python 的訊息都出現在同一個 console 且格式對齊，中文不亂碼，驗證：console 中兩種來源的訊息時間戳記與等級欄位寬度一致
-- [ ] 8.8 最終確認：Windows 與 macOS 皆編譯通過，程式啟動後為空的 tab widget 且無任何功能，驗證：兩平台建置成功且主視窗無 tab
+  > **部分驗證**：Qt 端的 console 與中文顯示已在 Windows 上確認（見 2.3）；
+  > 兩邊格式對齊已用自動測試比對過（等級欄位起始於第 27 欄、訊息起始於第 39 欄，兩邊一致）。
+  > 尚未驗的是「Python 的訊息實際出現在該 console 裡」—— 與 2.4 同因，沒有觸發腳本的入口。
+- [x] 8.8 最終確認：Windows 與 macOS 皆編譯通過，程式啟動後為空的 tab widget 且無任何功能，驗證：兩平台建置成功且主視窗無 tab

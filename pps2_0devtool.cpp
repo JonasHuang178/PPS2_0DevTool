@@ -102,8 +102,12 @@ void PPS2_0DevTool::setupTrayIcon()
     connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
     m_trayIcon->setContextMenu(menu);
 
-    connect(m_trayIcon, SIGNAL(activated(QSystemTrayIcon::ActivationReason)),
-            this, SLOT(onTrayActivated(int)));
+    // 用新式 connect（指標式）而不是 SIGNAL/SLOT 字串：
+    // 字串式是執行期用簽章比對，型別對不上只會印一行警告然後靜默失效
+    // —— 這裡原本把 ActivationReason 寫成 int，雙擊就一直沒有反應。
+    // 指標式由編譯器檢查，同一類錯誤會直接變成編譯錯誤。
+    connect(m_trayIcon, &QSystemTrayIcon::activated,
+            this, &PPS2_0DevTool::onTrayActivated);
 
     m_trayIcon->show();
 }
@@ -312,9 +316,12 @@ void PPS2_0DevTool::onAbout()
     QMessageBox::about(this, QString("About"), text);
 }
 
-void PPS2_0DevTool::onTrayActivated(int reason)
+void PPS2_0DevTool::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
 {
-    if (reason == QSystemTrayIcon::DoubleClick) {
+    // DoubleClick 是 Windows 的還原手勢；Trigger（單擊）在部分平台上
+    // 是唯一會送出的事件，一併接受比較不會有「點了沒反應」的情況。
+    if (reason == QSystemTrayIcon::DoubleClick
+            || reason == QSystemTrayIcon::Trigger) {
         showNormal();
         raise();
         activateWindow();

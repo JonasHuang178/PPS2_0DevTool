@@ -9,13 +9,13 @@
 #include <QMainWindow>
 #include <QMap>
 #include <QString>
+#include <QSystemTrayIcon>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class PPS2_0DevTool; }
 QT_END_NAMESPACE
 
 class ProcessingDialog;
-class QSystemTrayIcon;
 
 // 應用程式外殼。
 //
@@ -82,7 +82,7 @@ private slots:
     void onClearSourcePath();
     void onSourcePathEdited();
     void onAbout();
-    void onTrayActivated(int reason);
+    void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void onScriptProgress(const QString &stage);
     void onScriptRunFinished();
     void onCancelRequested();
