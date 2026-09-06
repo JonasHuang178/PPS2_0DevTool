@@ -1,0 +1,40 @@
+# --- Qt / qmake 建置產物 ---
+Makefile
+Makefile.*
+*.o
+*.obj
+moc_*.cpp
+moc_*.h
+moc_predefs.h
+qrc_*.cpp
+ui_*.h
+object_script.*
+.qmake.stash
+*.pro.user
+*.pro.user.*
+
+# Qt Creator 的 shadow build 目錄
+build/
+build-*/
+debug/
+release/
+
+# --- 執行檔 ---
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.app/
+# 非 bundle 建置時 qmake 產出的執行檔（錨定在 repo 根目錄）
+/PPS2_0DevTool
+
+# --- 執行期產物 ---
+crash.log
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+
+# --- 編輯器 / 作業系統 ---
+.DS_Store
+Thumbs.db
