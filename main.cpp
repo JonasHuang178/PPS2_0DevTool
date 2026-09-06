@@ -8,6 +8,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QIcon>
+#include <QList>
 #include <QMessageBox>
 #include <QProcess>
 #include <QSharedMemory>
@@ -82,6 +84,24 @@ bool detectPython3(QString *foundCommand)
     return false;
 }
 
+// --- 應用程式圖示 ----------------------------------------------------------
+
+// 七個尺寸各自加入，讓 Qt 依顯示情境挑最接近的一張，而不是拿 256x256 即時
+// 縮到 16x16 —— 貓臉的條紋與墨鏡在那樣縮圖後會糊成一團。
+//
+// 圖示內嵌在執行檔裡（見 resources.qrc），不讀外部檔案：執行檔旁已經必須放
+// 設定檔與 scripts/，圖示不該再多一個掉了就出問題的部署項目。
+QIcon buildAppIcon()
+{
+    QList<int> sizes;
+    sizes << 16 << 24 << 32 << 48 << 64 << 128 << 256;
+
+    QIcon icon;
+    for (int i = 0; i < sizes.size(); ++i)
+        icon.addFile(QString(":/icons/app_icon_%1.png").arg(sizes.at(i)));
+    return icon;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -89,6 +109,11 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setApplicationName(TOOL_NAME);
     app.setApplicationVersion(TOOL_VERSION);
+
+    // 必須早於底下任何一個 QMessageBox —— 重複啟動、設定檔錯誤與缺少
+    // Python 3 這三個訊息框都在主視窗建立之前顯示，而那正是使用者最可能
+    // 第一次看到本程式的時機。
+    app.setWindowIcon(buildAppIcon());
 
     // 關閉主視窗時隱藏到系統匣，所以不能讓最後一個視窗關閉就結束程式。
     app.setQuitOnLastWindowClosed(false);
