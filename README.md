@@ -3,6 +3,10 @@
 PPS 2.0 開發輔助工具。目前是 **v2.0.0 的外殼**：框架與腳本執行管線已完成，
 **尚未包含任何功能 tab**，功能之後會逐一加上。
 
+框架已在 Windows（Qt Creator + MinGW）與 macOS 上建置並驗證。有兩項驗收因為
+「空外殼沒有觸發腳本的入口」而延後 —— 關閉 console 時清理子行程、以及 Qt 與
+Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待第一個功能 tab 做出來後補驗。
+
 ---
 
 ## 最高原則
@@ -55,11 +59,12 @@ PPS2_0DevTool/
 │       └── logger.py         log（唯一設定 logging 的地方）
 │
 └── openspec/                 規格與設計決策
-    └── changes/bootstrap-devtool-shell/
-        ├── proposal.md       為什麼要做、範圍
-        ├── specs/            行為契約（三個 capability）
-        ├── design.md         33 條決策與取捨理由
-        └── tasks.md          實作清單與驗證狀態
+    ├── specs/                現行行為契約（三個 capability）
+    │   ├── app-shell/
+    │   ├── script-execution/
+    │   └── script-envelope/
+    └── changes/              進行中與已歸檔的變更
+        └── archive/          已完成的變更（含當時的 proposal / design / tasks）
 ```
 
 ---
@@ -485,13 +490,41 @@ python get_gitlab_mr.py ... -v      # 打開 DEBUG 等級的診斷輸出
 
 ## 設計文件
 
-完整的規格與決策理由在 `openspec/changes/bootstrap-devtool-shell/`：
+規格與決策記錄在 `openspec/` 底下。
 
-- **`proposal.md`** —— 為什麼要重做、範圍與非目標
-- **`specs/`** —— 三個 capability 的行為契約（`app-shell` / `script-execution` / `script-envelope`）
-- **`design.md`** —— 33 條決策，每條附理由與被否決的替代方案
-- **`tasks.md`** —— 實作清單與驗證狀態
+**`openspec/specs/`** —— 現行的行為契約，這是**權威來源**。三個 capability：
 
-要改框架行為之前先看 `design.md`。很多看起來可以「順手簡化」的地方
-（例如 stdout 的退回掃描、對話框的延遲顯示、取消時呼叫 callback）
-都是刻意不那樣做的，理由都寫在裡面。
+| capability | 涵蓋範圍 |
+|---|---|
+| `app-shell` | 設定檔讀取與查詢、功能掛勾訊號、Debug console、共用 UI 服務、視窗與啟動行為 |
+| `script-execution` | `runFunctionScript` 契約、通道分離、成敗判定、取消狀態機、處理中對話框、行程環境 |
+| `script-envelope` | Request/Response 信封、`script_io` API、參數與設定宣告、logger、exit code、跨平台 |
+
+**`openspec/changes/archive/`** —— 已完成的變更，保留當時的 `proposal.md`（為什麼要做）、
+`design.md`（決策與取捨理由）與 `tasks.md`（實作與驗證記錄）。
+
+建立這個外殼的變更是 `bootstrap-devtool-shell`，它的 `design.md` 記了 33 條決策，
+每條都附上理由與被否決的替代方案。
+
+---
+
+**要改框架行為之前先看 `design.md`。** 很多看起來可以「順手簡化」的地方都是刻意的：
+
+| 看起來像可以改進的 | 為什麼刻意這樣 |
+|---|---|
+| stdout 解析失敗時不試著撈一下 JSON | 靜默救回違規腳本，那支腳本就永遠不會被修好 |
+| 處理中對話框立刻彈出、短腳本會閃一下 | `QProgressDialog` 預設延遲 4 秒，那 4 秒內主視窗沒被鎖住 |
+| 取消時不呼叫 callback | 這是「取消後畫面不動」的物理保證，不必依賴每個功能作者都寫對取消分支 |
+| `Debug_Mode` 關閉時不收集腳本的 stderr | 明確接受的取捨；代價寫在 `design.md` 的 Risks 段落 |
+| 信封不帶工具身分欄位 | 同一份資料兩條通道，遲早會不一致而沒人發現 |
+
+### 開發流程
+
+這個專案用 [OpenSpec](https://github.com/Fission-AI/OpenSpec) 管理變更：先寫提案與規格，
+再實作。常用指令：
+
+```bash
+openspec list                    # 進行中的變更
+openspec show <change-name>      # 看某個變更的內容
+openspec validate --changes <change-name> --strict
+```

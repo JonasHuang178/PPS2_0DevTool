@@ -67,10 +67,11 @@
 - [x] 7.3 `Debug_Mode` 為 true 時在執行命令加上 `-v`，驗證：`Debug_Mode` 開啟後 console 中同時出現 Qt 與 Python 的 DEBUG 訊息且格式對齊
 - [x] 7.4 實作功能掛勾訊號 `sourcePathChanged` 與 `workingDataCleared`，驗證：變更來源路徑時訊號發出並附帶新路徑；未連接訊號的功能不受影響
 - [x] 7.5 實作共用 UI 服務：資訊／警告／錯誤訊息框、結果視窗（標題、內容、耗時）、取得目前來源路徑、依標題移除 tab，驗證：各服務皆可從功能端呼叫並顯示統一樣式
-- [ ] 7.6 實作視窗行為：關閉主視窗隱藏至系統匣、雙擊還原、系統匣右鍵選單只有結束、About 顯示工具名稱／版本／Qt 版本／建置日期／使用手冊連結，驗證：四項行為逐一操作皆正確，About 顯示 `v2.0.0`
-  > **待重測**：隱藏至系統匣、右鍵 Quit、About 已在 Windows 上確認。
-  > 雙擊還原原本失效（`connect` 用舊式 SIGNAL/SLOT，`ActivationReason` 與 `int` 字串比對不符，
-  > 執行期靜默失敗），已改為新式 connect 修正，待在 Windows 上重測。
+- [x] 7.6 實作視窗行為：關閉主視窗隱藏至系統匣、雙擊還原、系統匣右鍵選單只有結束、About 顯示工具名稱／版本／Qt 版本／建置日期／使用手冊連結，驗證：四項行為逐一操作皆正確，About 顯示 `v2.0.0`
+  > **已在 Windows 上驗證**。雙擊還原原本失效（`connect` 用舊式 SIGNAL/SLOT，
+  > `ActivationReason` 與 `int` 字串比對不符，執行期靜默失敗），改為新式 connect 後修正。
+  > 自動測試沒抓到這個 bug —— offscreen 平台的 `isSystemTrayAvailable()` 回 false，
+  > `setupTrayIcon()` 提早 return，那行 connect 從未被執行到。
 - [x] 7.7 實作啟動檢查：Python 3 可用性、單一實例鎖（`QSharedMemory`）、SIGSEGV 時輸出 crash log，驗證：重複啟動時第二個實例不會出現；移除 Python 後啟動顯示對應錯誤
 
 ## 8. 端到端驗收
