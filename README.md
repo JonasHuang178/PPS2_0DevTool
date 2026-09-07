@@ -7,6 +7,8 @@ PPS 2.0 開發輔助工具。目前是 **v2.0.0 的外殼**：框架與腳本執
 「空外殼沒有觸發腳本的入口」而延後 —— 關閉 console 時清理子行程、以及 Qt 與
 Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待第一個功能 tab 做出來後補驗。
 
+應用程式圖示已內嵌進執行檔，並在 Windows 上實機驗收通過（見 `openspec/changes/archive/2026-09-07-add-app-icon/tasks.md` 第 4 節）。
+
 ---
 
 ## 最高原則
@@ -50,6 +52,15 @@ PPS2_0DevTool/
 │
 ├── PPS2_0DevTool.json        設定檔（Function 目前是空的）
 ├── PPS2_0DevTool.pro         qmake 專案檔
+│
+├── resources.qrc             Qt 資源清單（應用程式圖示）
+├── resources/icons/
+│   ├── src/app_icon_original.png       來源圖（含白底，供重新產生用）
+│   ├── app_icon_{16..256}.png          去背後的多尺寸圖（內嵌進執行檔）
+│   └── PPS2_0DevTool.ico               多尺寸 ICO（給 RC_ICONS 用）
+│
+├── tools/
+│   └── make_app_icon.py      圖示資產產生腳本（**不是**建置步驟）
 │
 ├── scripts/
 │   ├── _function_template.py 功能腳本範本 ← 複製這個開始寫新腳本
@@ -100,6 +111,52 @@ qmake PPS2_0DevTool.pro && make
 執行 Python 的指令，帶著空設定啟動只會讓使用者在每個 tab 都撞牆。
 
 執行環境還需要系統上有可用的 **Python 3**（啟動時會檢查）。
+
+圖示不在這個清單裡 —— 它內嵌在執行檔內，不需要也不會去讀外部圖檔。
+
+---
+
+## 應用程式圖示
+
+圖示內嵌於執行檔，套用在四個地方：
+
+| 顯示位置 | 來源 |
+|---|---|
+| 主視窗標題列、Alt-Tab、工作列按鈕 | `main.cpp` 的 `setWindowIcon()`，讀 `:/icons/app_icon_*.png` |
+| 系統匣 | 同上（`QWidget::windowIcon()` 未自訂時回傳應用程式圖示） |
+| 對話框（含啟動失敗的錯誤訊息框） | 同上 |
+| `PPS2_0DevTool.exe` 本身（檔案總管、捷徑、開始功能表） | `.pro` 的 `RC_ICONS`，連結期由 windres 寫進 PE 資源區段 |
+
+七個尺寸（16 / 24 / 32 / 48 / 64 / 128 / 256）各自以獨立檔案加入 `QIcon`，
+讓 Qt 依情境挑最接近的一張 —— 拿 256x256 即時縮到 16x16，貓臉的條紋與墨鏡
+會糊成一團。
+
+### 換圖
+
+圖示是編進執行檔的，**換圖一律要重新建置**（exe 本身的檔案圖示尤其如此：
+執行中的程式無法改變自己在磁碟上的圖示資源）。步驟：
+
+```bash
+# 1. 換掉來源圖（256x256 PNG）
+cp 新圖.png resources/icons/src/app_icon_original.png
+
+# 2. 重新產生七個尺寸與 .ico
+pip install pillow
+python3 tools/make_app_icon.py
+
+# 3. 重新建置
+```
+
+`tools/make_app_icon.py` **不是建置步驟** —— 產物已提交進 repo，Windows 端
+拿到專案直接用 Qt Creator 開啟即可建置，不需要安裝 Python 影像套件。
+
+腳本會把接近純白的方形背景去掉。它用的是「從影像四邊做連通區域填充」，
+不是「夠亮就設為透明」的全域門檻 —— 後者會把圖案內部的白色高光打成透明
+破洞，在深色工作列上直接漏底。換圖後值得把產出的 16x16 疊在黑底與白底上
+各看一次：白邊與破洞在這兩個背景上一眼可見。
+
+Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統的圖示快取，
+不是建置失敗 —— 把執行檔複製到新路徑再看即可確認。
 
 ---
 
