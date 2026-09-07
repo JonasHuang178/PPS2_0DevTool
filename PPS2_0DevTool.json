@@ -3,6 +3,10 @@
     "Debug_Mode": "false",
     "User_Guide_Link": "",
     "Function": {
+      "Single Building": {
+        "Visible": "true",
+        "Program": "python"
+      }
     }
   }
 }

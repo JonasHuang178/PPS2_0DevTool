@@ -19,6 +19,7 @@ namespace Ui { class PPS2_0DevTool; }
 QT_END_NAMESPACE
 
 class ProcessingDialog;
+class SingleBuilding;
 
 // 應用程式外殼。
 //
@@ -158,7 +159,13 @@ public:
 
 signals:
     // 功能唯一的掛勾。不需要來源路徑的功能不連接即可。
-    void sourcePathChanged(const QString &sourceFilePath);
+    //
+    // 來源路徑是每個功能各自保有的（見 m_functionSourcePaths）。Qt 的訊號會
+    // 送達所有已連接的 slot，「只有該功能反應」無法靠「不廣播」達成 —— 因此
+    // 訊號附帶路徑所屬的功能名稱，功能端比對自己的名稱後才決定要不要處理。
+    // 少了這個比對，使用者為了別的 tab 調整路徑就會清掉這個功能的狀態。
+    void sourcePathChanged(const QString &sourceFilePath,
+                           const QString &functionName);
     void workingDataCleared();
 
 protected:
@@ -168,6 +175,8 @@ private slots:
     void onBrowseSourcePath();
     void onClearSourcePath();
     void onSourcePathEdited();
+    void onFunctionTabChanged(int index);
+    void onInitialFunctionEntry();
     void onAbout();
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void onScriptProgress(const QString &stage);
@@ -176,6 +185,7 @@ private slots:
 
 private:
     void setupToolService();
+    void notifyFunctionEntered(const QString &functionName);
     void UI_Init();
     void UI_SetupSignal();
     void setupTrayIcon();
@@ -199,7 +209,6 @@ private:
     ProcessingDialog  *m_processingDialog;
     QSystemTrayIcon   *m_trayIcon;
     QElapsedTimer      m_runTimer;      // 整條流程一個，不是每步一個
-    QString            m_lastSourcePath;
 
     bool               m_flowActive;
     bool               m_flowCancelled;
@@ -208,6 +217,22 @@ private:
     FlowDecider        m_flowDecider;
     FlowCallback       m_flowCallback;
     QList<PythonRunner::PythonRunnerResult> m_flowResults;
+
+    // --- 功能實例 ---
+    SingleBuilding    *m_singleBuilding;
+
+    // 每個功能各自的來源路徑，鍵為功能名稱（即 tab 標題）。
+    //
+    // 只存在於執行期間，不寫入設定檔 —— 重新啟動後所有功能的來源路徑皆為空。
+    //
+    // 這個 map 同時是「路徑有沒有真的變動」的比對基準：切換 tab 時把文字框
+    // 還原成 map 中的值，之後的 editingFinished 比對相同就不會發出變更訊號。
+    // 還原因此不會被誤認成一次使用者修改 —— 否則使用者切個 tab 回來，功能
+    // 就會執行它為「路徑變了」所定義的重置行為。
+    QMap<QString, QString> m_functionSourcePaths;
+
+    // 目前顯示中的功能名稱。空字串代表沒有任何功能 tab。
+    QString            m_currentFunctionName;
 };
 
 #endif // PPS2_0DEVTOOL_H

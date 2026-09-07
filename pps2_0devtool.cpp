@@ -2,6 +2,7 @@
 #include "ui_pps2_0devtool.h"
 
 #include "ProcessingDialog.h"
+#include "SingleBuilding.h"
 #include "common.h"
 #include "debug.h"
 #include "result_code.h"
@@ -17,6 +18,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QStyle>
+#include <QTimer>
 #include <QSystemTrayIcon>
 #include <QVBoxLayout>
 
@@ -29,12 +31,22 @@ PPS2_0DevTool::PPS2_0DevTool(const Config &config, QWidget *parent)
     , m_trayIcon(Q_NULLPTR)
     , m_flowActive(false)
     , m_flowCancelled(false)
+    , m_singleBuilding(Q_NULLPTR)
 {
     ui->setupUi(this);
 
     setupToolService();
     UI_Init();
     UI_SetupSignal();
+
+    // 初次進入功能不能靠 currentChanged。tab 寫在 .ui 裡時，分頁索引在
+    // setupUi() 期間就已經從 -1 變成 0，那時訊號還沒接上 —— 等接上了，
+    // 當前分頁早就定案，訊號永遠不會來。少了這一次明確的呼叫，使用者
+    // 啟動後第一眼看到的會是空白畫面，得切走再切回才會載入。
+    //
+    // 延到事件迴圈啟動後才跑：載入會彈出 modal 對話框，而主視窗要等
+    // main() 裡的 show() 之後才存在，在建構期間彈對話框沒有父視窗可依附。
+    QTimer::singleShot(0, this, SLOT(onInitialFunctionEntry()));
 }
 
 PPS2_0DevTool::~PPS2_0DevTool()
@@ -48,8 +60,21 @@ PPS2_0DevTool::~PPS2_0DevTool()
 
 void PPS2_0DevTool::setupToolService()
 {
-    // 功能實例在這裡建立。目前沒有任何功能。
     QTDebug(QString("%1 %2 啟動").arg(TOOL_NAME, TOOL_VERSION));
+
+    // 功能實例在這裡建立。
+    m_singleBuilding = new SingleBuilding(this, this);
+}
+
+// 通知功能它被進入了。
+//
+// 這裡沒有再開一個廣播訊號 —— 外殼本來就在 setupToolService() 建立每個功能
+// 實例、在 UI_SetupSignal() 接它的元件，直接呼叫比多一條所有功能都收得到、
+// 卻只有一個功能該理會的訊號單純。
+void PPS2_0DevTool::notifyFunctionEntered(const QString &functionName)
+{
+    if (m_singleBuilding && functionName == SingleBuilding::functionName())
+        m_singleBuilding->enterFunction();
 }
 
 void PPS2_0DevTool::UI_Init()
@@ -63,7 +88,14 @@ void PPS2_0DevTool::UI_Init()
     ui->progressBar->setValue(0);
 
     // 功能依 isFunctionVisible() 決定是否 removeTabByTitle()。
-    // 目前沒有任何功能，tab widget 是空的。
+    if (!isFunctionVisible(SingleBuilding::functionName()))
+        removeTabByTitle(SingleBuilding::functionName());
+
+    // 記下開場的當前功能。移除分頁後索引可能已經變動，因此在這裡才讀。
+    const int current = ui->functionTabWidget->currentIndex();
+    m_currentFunctionName = (current >= 0)
+            ? ui->functionTabWidget->tabText(current)
+            : QString();
 
     setupTrayIcon();
 }
@@ -76,8 +108,28 @@ void PPS2_0DevTool::UI_SetupSignal()
             this, SLOT(onClearSourcePath()));
     connect(ui->sourcePathLineEdit, SIGNAL(editingFinished()),
             this, SLOT(onSourcePathEdited()));
+    connect(ui->functionTabWidget, SIGNAL(currentChanged(int)),
+            this, SLOT(onFunctionTabChanged(int)));
     connect(ui->actionAbout, SIGNAL(triggered()),
             this, SLOT(onAbout()));
+
+    // 功能的元件在這裡交給功能自己接。
+    if (m_singleBuilding) {
+        SingleBuildingWidgets widgets;
+        widgets.filterEdit          = ui->sbFilterLineEdit;
+        widgets.filterClearButton   = ui->sbFilterClearButton;
+        widgets.sourceView          = ui->sbSourceListView;
+        widgets.targetView          = ui->sbTargetListView;
+        widgets.addButton           = ui->sbAddButton;
+        widgets.removeButton        = ui->sbRemoveButton;
+        widgets.targetClearButton   = ui->sbTargetClearButton;
+        widgets.recoveryButton      = ui->sbRecoverySettingButton;
+        widgets.modifyButton        = ui->sbModifySettingButton;
+        m_singleBuilding->attachWidgets(widgets);
+
+        connect(this, SIGNAL(sourcePathChanged(QString,QString)),
+                m_singleBuilding, SLOT(onSourcePathChanged(QString,QString)));
+    }
 
     connect(m_runner, SIGNAL(progressStage(QString)),
             this, SLOT(onScriptProgress(QString)));
@@ -502,20 +554,61 @@ void PPS2_0DevTool::onBrowseSourcePath()
 
 void PPS2_0DevTool::onClearSourcePath()
 {
+    // 走 onSourcePathEdited() 而不是自己發訊號：清除路徑對功能來說就是一次
+    // 「路徑變成空字串」的變更，兩條路徑的後續處理必須完全一致。
+    //
+    // 這裡不發 workingDataCleared() —— 來源路徑既然是各功能私有的，清除它
+    // 只該影響當前功能，而那個訊號是廣播給所有功能的。
     ui->sourcePathLineEdit->clear();
-    m_lastSourcePath.clear();
-    emit workingDataCleared();
+    onSourcePathEdited();
 }
 
 void PPS2_0DevTool::onSourcePathEdited()
 {
-    const QString path = getUI_sourcePathLineEditText();
-    if (path == m_lastSourcePath)
+    if (m_currentFunctionName.isEmpty())
         return;
 
-    m_lastSourcePath = path;
-    QTDebug(QString("來源路徑變更：%1").arg(path));
-    emit sourcePathChanged(path);
+    const QString path = getUI_sourcePathLineEditText();
+    if (path == m_functionSourcePaths.value(m_currentFunctionName))
+        return;
+
+    m_functionSourcePaths[m_currentFunctionName] = path;
+    QTDebug(QString("[%1] 來源路徑變更：%2").arg(m_currentFunctionName, path));
+    emit sourcePathChanged(path, m_currentFunctionName);
+}
+
+void PPS2_0DevTool::onFunctionTabChanged(int index)
+{
+    const QString name = (index >= 0)
+            ? ui->functionTabWidget->tabText(index)
+            : QString();
+    if (name == m_currentFunctionName)
+        return;
+
+    m_currentFunctionName = name;
+
+    // 還原成該功能自己的路徑。這是還原，不是使用者修改 —— 因為填回去的
+    // 就是 m_functionSourcePaths 裡的值，稍後的 editingFinished 比對相同，
+    // 不會發出變更訊號。
+    ui->sourcePathLineEdit->setText(m_functionSourcePaths.value(name));
+
+    if (name.isEmpty())
+        return;
+
+    QTDebug(QString("進入功能：%1").arg(name));
+    notifyFunctionEntered(name);
+}
+
+void PPS2_0DevTool::onInitialFunctionEntry()
+{
+    if (m_currentFunctionName.isEmpty())
+        return;
+
+    ui->sourcePathLineEdit->setText(
+                m_functionSourcePaths.value(m_currentFunctionName));
+
+    QTDebug(QString("初次進入功能：%1").arg(m_currentFunctionName));
+    notifyFunctionEntered(m_currentFunctionName);
 }
 
 // ---------------------------------------------------------------------------

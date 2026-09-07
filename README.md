@@ -1,11 +1,12 @@
 # PPS 2.0 DevTool
 
-PPS 2.0 開發輔助工具。目前是 **v2.0.0 的外殼**：框架與腳本執行管線已完成，
-**尚未包含任何功能 tab**，功能之後會逐一加上。
+PPS 2.0 開發輔助工具。框架與腳本執行管線已完成，並帶有第一個功能 tab
+**Single Building**。
 
-框架已在 Windows（Qt Creator + MinGW）與 macOS 上建置並驗證。有兩項驗收因為
-「空外殼沒有觸發腳本的入口」而延後 —— 關閉 console 時清理子行程、以及 Qt 與
-Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待第一個功能 tab 做出來後補驗。
+框架已在 Windows（Qt Creator + MinGW）與 macOS 上建置並驗證。外殼交付時延後的
+兩項驗收 —— 關閉 Debug console 時清理子行程、以及 Qt 與 Python 的訊息同時出現在
+console 中 —— 在 Single Building 交付後才具備觸發腳本的入口，**尚待在 Windows
+實機補驗**。
 
 應用程式圖示已內嵌進執行檔，並在 Windows 上實機驗收通過（見 `openspec/changes/archive/2026-09-07-add-app-icon/tasks.md` 第 4 節）。
 
@@ -26,7 +27,11 @@ Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待�
 被其他 Python 呼叫端重用。
 
 **每一個功能 = 一個 tab。** 功能之間互相獨立：各自讀自己的設定、決定自己顯示與否、
-呼叫自己的腳本。**新增一個功能不需要修改任何框架程式碼。**
+呼叫自己的腳本、**各自保有自己的來源路徑**。
+
+畫面上方的來源路徑欄位是共用的，但它顯示的是**當前功能**的路徑：切換分頁時會還原成
+該功能自己的值，在某個分頁改路徑不會牽動其他分頁。還原不算「變更」，不會觸發任何
+功能重新載入。
 
 ```
                         ┌──────────── 別人 / CI ────────────┐
@@ -46,7 +51,8 @@ Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ �
 ```
 PPS2_0DevTool/
 ├── main.cpp                  啟動檢查、單一實例鎖、crash handler
-├── pps2_0devtool.{h,cpp,ui}  應用程式外殼
+├── pps2_0devtool.{h,cpp,ui}  應用程式外殼（含每個功能各自的來源路徑）
+├── SingleBuilding.{h,cpp}    功能：Single Building
 ├── json.{h,cpp}              設定檔讀取（只讀工具層級）
 ├── PythonRunner.{h,cpp}      腳本執行管線
 ├── ProcessingDialog.{h,cpp}  處理中對話框
@@ -55,7 +61,7 @@ PPS2_0DevTool/
 ├── result_code.h             Qt 端錯誤碼
 ├── version.h                 版本與檔名常數
 │
-├── PPS2_0DevTool.json        設定檔（Function 目前是空的）
+├── PPS2_0DevTool.json        設定檔
 ├── PPS2_0DevTool.pro         qmake 專案檔
 │
 ├── resources.qrc             Qt 資源清單（應用程式圖示）
@@ -70,9 +76,17 @@ PPS2_0DevTool/
 ├── scripts/
 │   ├── _function_template.py 功能腳本範本 ← 複製這個開始寫新腳本
 │   ├── script_io.py          信封處理
+│   ├── single_building_list_source.py       取得來源清單
+│   ├── single_building_list_target.py       讀取設定
+│   ├── single_building_modify_setting.py    寫入設定
+│   ├── single_building_recovery_setting.py  清空設定
 │   └── script_utils/
 │       ├── __init__.py
-│       └── logger.py         log（唯一設定 logging 的地方）
+│       ├── logger.py         log（唯一設定 logging 的地方）
+│       └── single_building/  Single Building 的業務邏輯
+│           ├── paths.py      暫存設定檔的位置（唯一決定的地方）
+│           ├── sources.py    掃描目錄該層的 .cpp
+│           └── setting.py    暫存設定檔的讀寫清空
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
@@ -162,6 +176,76 @@ python3 tools/make_app_icon.py
 
 Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統的圖示快取，
 不是建置失敗 —— 把執行檔複製到新路徑再看即可確認。
+
+---
+
+## 功能：Single Building
+
+從來源目錄挑出要處理的 `.cpp` 檔案，把選擇保存成一份設定。
+
+```
++-[ Single Building ]---------------------------------------------------------+
+|  +-- Source -------------------+          +-- Target -------------------+   |
+|  | Filter [_______] [ Clear ]  |          |                  [ Clear ]  |   |
+|  | +-------------------------+ |          | +-------------------------+ |   |
+|  | |   來源池（唯讀）          | | [  ->  ] | |  結果集（可增可減）        | |   |
+|  | |   來源路徑該層的 *.cpp    | | [  <-  ] | |  暫存設定檔的鏡子          | |   |
+|  | +-------------------------+ |          | +-------------------------+ |   |
+|  +-----------------------------+          +-----------------------------+   |
+|                                [ Recovery Setting ]  [ Modify Setting ]     |
++-----------------------------------------------------------------------------+
+```
+
+### 資料流
+
+真正的狀態儲存處是一個暫存 txt，四支腳本都繞著它轉：
+
+```
+   來源路徑（目錄）
+        |  list_source        掃描該層的 *.cpp（不遞迴）
+        v
+   Source list  --[ -> ]-->  Target list
+                 <--[ <- ]
+                                  |          ^
+                  modify_setting  |          |  list_target
+                  寫入絕對路徑     v          |  讀出絕對路徑
+                            +---------------------------+
+                            |  %TEMP%/PPS2_0DevTool_     |
+                            |  single_building.txt       |   <== 設定本體
+                            +---------------------------+
+                                       ^
+                                       |  recovery_setting
+                                       |  清空後回讀（結果必為空）
+```
+
+清單顯示的是**檔名**，設定檔存的是**絕對路徑** —— 完整路徑前綴完全相同又很長，
+顯示出來只會撐爆清單寬度，但設定必須指向確切的檔案。
+
+### 行為
+
+| 觸發 | 執行 |
+|---|---|
+| 進入分頁（含啟動時本分頁即為當前分頁） | `list_source` → `list_target` |
+| 進入分頁但來源路徑為空 | 只跑 `list_target`（不算失敗、不跳錯誤框） |
+| **在本分頁**修改來源路徑 | `recovery_setting`（清空設定）→ `list_source` |
+| 在**別的分頁**修改來源路徑 | 不受影響 |
+| `->` / `<-` / 兩顆 Clear | 純畫面操作，不碰設定檔 |
+| Modify Setting | 寫入設定檔 |
+| Recovery Setting | 先跳確認框，再清空設定檔並回讀 |
+
+- 過濾**區分**大小寫、排序**不分**大小寫 —— 過濾是使用者主動輸入，排序是被動看到的結果
+- 排序為自然排序：`a2.cpp` 排在 `a10.cpp` 之前
+- `->` 是複製，來源清單不會變短；已存在的項目靜默略過
+- 過濾文字一有變動就清空來源的選取 —— 否則按下 `->` 會送出畫面上看不到的項目
+
+### 已知行為
+
+**未按 Modify Setting 的選擇，在切換分頁後會遺失。** 進入分頁時結果清單一律
+自設定檔重新填入。要保留就先按 Modify Setting。
+
+**暫存設定檔可能自己消失。** 它放在系統暫存目錄，Windows 的磁碟清理與「儲存空間
+感知」會清理該處。若日後需要跨重啟保留，改 `scripts/script_utils/single_building/paths.py`
+裡那一個函式即可（`%LOCALAPPDATA%` 是正確的去處）。
 
 ---
 

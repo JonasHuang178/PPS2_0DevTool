@@ -50,8 +50,191 @@
     <item>
      <widget class="QTabWidget" name="functionTabWidget">
       <property name="currentIndex">
-       <number>-1</number>
+       <number>0</number>
       </property>
+      <widget class="QWidget" name="singleBuildingTab">
+       <attribute name="title">
+        <string>Single Building</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="sbMainLayout">
+        <item>
+         <layout class="QHBoxLayout" name="sbListsLayout">
+          <item>
+           <widget class="QGroupBox" name="sbSourceGroupBox">
+            <property name="title">
+             <string>Source</string>
+            </property>
+            <layout class="QVBoxLayout" name="sbSourceLayout">
+             <item>
+              <layout class="QHBoxLayout" name="sbFilterLayout">
+               <item>
+                <widget class="QLabel" name="sbFilterLabel">
+                 <property name="text">
+                  <string>Filter</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="sbFilterLineEdit">
+                 <property name="placeholderText">
+                  <string>輸入檔名片段以縮小範圍（區分大小寫）…</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="sbFilterClearButton">
+                 <property name="text">
+                  <string>Clear</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <widget class="QListView" name="sbSourceListView"/>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="sbArrowLayout">
+            <item>
+             <spacer name="sbArrowTopSpacer">
+              <property name="orientation">
+               <enum>Qt::Vertical</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>20</width>
+                <height>40</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="sbAddButton">
+              <property name="minimumSize">
+               <size>
+                <width>56</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>56</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>-&gt;</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="sbRemoveButton">
+              <property name="minimumSize">
+               <size>
+                <width>56</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>56</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>&lt;-</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="sbArrowBottomSpacer">
+              <property name="orientation">
+               <enum>Qt::Vertical</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>20</width>
+                <height>40</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="sbTargetGroupBox">
+            <property name="title">
+             <string>Target</string>
+            </property>
+            <layout class="QVBoxLayout" name="sbTargetLayout">
+             <item>
+              <layout class="QHBoxLayout" name="sbTargetTopLayout">
+               <item>
+                <spacer name="sbTargetTopSpacer">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+               <item>
+                <widget class="QPushButton" name="sbTargetClearButton">
+                 <property name="text">
+                  <string>Clear</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <widget class="QListView" name="sbTargetListView"/>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="sbActionLayout">
+          <item>
+           <spacer name="sbActionSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="sbRecoverySettingButton">
+            <property name="text">
+             <string>Recovery Setting</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="sbModifySettingButton">
+            <property name="text">
+             <string>Modify Setting</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
      </widget>
     </item>
     <item>

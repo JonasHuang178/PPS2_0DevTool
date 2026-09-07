@@ -16,7 +16,8 @@ SOURCES += \
     debug.cpp \
     common.cpp \
     PythonRunner.cpp \
-    ProcessingDialog.cpp
+    ProcessingDialog.cpp \
+    SingleBuilding.cpp
 
 HEADERS += \
     pps2_0devtool.h \
@@ -26,7 +27,8 @@ HEADERS += \
     result_code.h \
     version.h \
     PythonRunner.h \
-    ProcessingDialog.h
+    ProcessingDialog.h \
+    SingleBuilding.h
 
 FORMS += \
     pps2_0devtool.ui
