@@ -7,7 +7,7 @@ PPS 2.0 開發輔助工具。目前是 **v2.0.0 的外殼**：框架與腳本執
 「空外殼沒有觸發腳本的入口」而延後 —— 關閉 console 時清理子行程、以及 Qt 與
 Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待第一個功能 tab 做出來後補驗。
 
-應用程式圖示已完成並內嵌進執行檔，但**尚未在 Windows 上實機驗收**（見 `openspec/changes/archive/2026-09-07-add-app-icon/tasks.md` 第 4 節）。
+應用程式圖示已內嵌進執行檔，並在 Windows 上實機驗收通過（見 `openspec/changes/archive/2026-09-07-add-app-icon/tasks.md` 第 4 節）。
 
 ---
 
