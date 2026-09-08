@@ -4,12 +4,19 @@
 #include <QKeyEvent>
 #include <QPushButton>
 
-ProcessingDialog::ProcessingDialog(const QString &functionName, QWidget *parent)
+namespace {
+
+// 腳本回報 stage 前的初始文字。切換步驟時也用它把上一步的殘留文字蓋掉。
+const char *const kInitialStageText = "Processing...";
+
+} // namespace
+
+ProcessingDialog::ProcessingDialog(const QString &stepLabel, QWidget *parent)
     : QProgressDialog(parent)
     , m_cancelling(false)
 {
-    setWindowTitle(functionName.isEmpty() ? QString("Processing") : functionName);
-    setLabelText(QString("Processing..."));   // 腳本回報 stage 前的初始文字
+    setWindowTitle(stepLabel.isEmpty() ? QString("Processing") : stepLabel);
+    setLabelText(QString(kInitialStageText));
     setCancelButtonText(QString("Cancel"));
 
     // 跑馬燈：range 為 (0, 0) 才會是不確定進度。
@@ -29,6 +36,15 @@ ProcessingDialog::ProcessingDialog(const QString &functionName, QWidget *parent)
                    | Qt::CustomizeWindowHint);
 
     connect(this, SIGNAL(canceled()), this, SLOT(onCanceled()));
+}
+
+void ProcessingDialog::setStep(const QString &stepLabel)
+{
+    if (m_cancelling)
+        return;   // 取消中不再被流程的步驟切換覆蓋
+
+    setWindowTitle(stepLabel.isEmpty() ? QString("Processing") : stepLabel);
+    setLabelText(QString(kInitialStageText));
 }
 
 void ProcessingDialog::setStage(const QString &stage)

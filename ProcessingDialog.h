@@ -5,6 +5,16 @@
 
 // 執行期間的處理中對話框。
 //
+// 對話框由整條流程共用：流程啟動時建立、流程結束時銷毀，步驟之間只換文字，
+// 不關閉也不重建。每步重建會讓視窗真的消失再出現（Windows 上是 ShowWindow
+// 層級的閃爍與焦點重奪），並在步驟交界處留下沒有互斥遮罩的空窗。
+//
+// 文字分兩層，各自有自己的來源：
+//   標題列    步驟名稱，由功能提供（只有一步的流程就是功能名稱）
+//   標籤      階段文字，由腳本經 stderr 回報
+// 用標題列承載第二層而不是把兩行塞進標籤 —— QProgressDialog 會隨標籤內容
+// 重算大小，多行字串在步驟切換時會讓視窗尺寸跳動，換掉一種閃爍又換來另一種。
+//
 // 與預設的 QProgressDialog 有三處刻意的差異：
 //
 // 1. 取消鈕是唯一的取消途徑 —— Escape 與視窗關閉都被攔掉。
@@ -22,7 +32,12 @@ class ProcessingDialog : public QProgressDialog
     Q_OBJECT
 
 public:
-    explicit ProcessingDialog(const QString &functionName, QWidget *parent = Q_NULLPTR);
+    explicit ProcessingDialog(const QString &stepLabel, QWidget *parent = Q_NULLPTR);
+
+    // 切換到新的步驟：步驟名稱寫進標題列，階段文字重設回初始文字。
+    // 不重設的話，新步驟在回報第一則 stage 之前，畫面上留著的會是上一步
+    // 最後回報的階段文字 —— 使用者看到的是一段已經結束的工作。
+    void setStep(const QString &stepLabel);
 
     // 更新腳本回報的階段文字。
     void setStage(const QString &stage);

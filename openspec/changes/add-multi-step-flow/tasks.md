@@ -7,42 +7,42 @@
 
 ## 1. 處理中對話框的兩層文字
 
-- [ ] 1.1 在 `ProcessingDialog` 新增設定步驟名稱的介面（寫入標題列），並將建構子的 `functionName` 改為初始步驟名稱；驗證：標題列在未設定步驟名稱時仍顯示功能名稱，與現況一致（`ProcessingDialog.cpp:11`）
-- [ ] 1.2 新增「切換步驟時把階段文字重設為初始文字」的行為，避免新步驟沿用上一步最後回報的 stage；驗證：連續呼叫 setStage 後再切換步驟，`labelText` 回到 `"Processing..."`
-- [ ] 1.3 確認取消中狀態的既有保護仍然有效 —— `m_cancelling` 為真時，步驟名稱與階段文字皆不再被覆寫；驗證：`ProcessingDialog::setStage()` 的既有守衛（`ProcessingDialog.cpp:44`）擴及新增的步驟名稱介面
-- [ ] 1.4 確認未動到對話框版面：`setRange(0,0)` 跑馬燈、`setMinimumDuration(0)`、`ApplicationModal`、移除關閉鈕、Escape 與 closeEvent 攔截全部原樣；驗證：`git diff ProcessingDialog.cpp` 中這些行未出現在變更內
+- [x] 1.1 在 `ProcessingDialog` 新增設定步驟名稱的介面（寫入標題列），並將建構子的 `functionName` 改為初始步驟名稱；驗證：標題列在未設定步驟名稱時仍顯示功能名稱，與現況一致（`ProcessingDialog.cpp:11`）
+- [x] 1.2 新增「切換步驟時把階段文字重設為初始文字」的行為，避免新步驟沿用上一步最後回報的 stage；驗證：連續呼叫 setStage 後再切換步驟，`labelText` 回到 `"Processing..."`
+- [x] 1.3 確認取消中狀態的既有保護仍然有效 —— `m_cancelling` 為真時，步驟名稱與階段文字皆不再被覆寫；驗證：`ProcessingDialog::setStage()` 的既有守衛（`ProcessingDialog.cpp:44`）擴及新增的步驟名稱介面
+- [x] 1.4 確認未動到對話框版面：`setRange(0,0)` 跑馬燈、`setMinimumDuration(0)`、`ApplicationModal`、移除關閉鈕、Escape 與 closeEvent 攔截全部原樣；驗證：`git diff ProcessingDialog.cpp` 中這些行未出現在變更內
 
 ## 2. 流程狀態機（外殼內部）
 
-- [ ] 2.1 在 `PPS2_0DevTool` 定義流程步驟結構（步驟名稱、腳本路徑、動作、參數、額外環境變數、可選的直譯器覆寫）與流程結果結構（是否全部成功、失敗步驟索引、依序的所有步驟結果、整條流程耗時）；驗證：欄位與 `specs/script-execution/spec.md`「多步驟流程執行介面」「流程結果一次交付」逐條對得上
-- [ ] 2.2 新增流程狀態成員（流程是否進行中、是否已被取消、已完成結果的累積、決策函式、流程 callback）；驗證：所有成員在流程結束與取消兩條路徑上都被清空，沒有殘留狀態影響下一條流程
-- [ ] 2.3 實作「啟動一個步驟」的內部函式：組裝信封、決定直譯器（步驟覆寫優先，否則用功能設定區塊的 `Program`）、呼叫 `PythonRunner::start()`、更新對話框的步驟名稱；驗證：直譯器覆寫為空字串時取用的值與現行 `runFunctionScript()`（`pps2_0devtool.cpp:130`）相同
-- [ ] 2.4 實作步驟結果的接收：累積結果 → 呼叫決策函式 → 依回答啟動下一步或結束流程；驗證：決策函式在每一步結束後恰好被呼叫一次，且收到的已完成結果依執行順序排列
-- [ ] 2.5 改寫 `onScriptRunFinished()`：流程進行中且未取消時不關閉對話框，只有流程結束或已取消時才關閉；驗證：對照 `design.md` D3 的兩條路徑圖，正常結束路徑上 `runFinished` 不觸發任何對話框操作
-- [ ] 2.6 實作取消路徑：`onCancelRequested()` 先標記流程已取消再呼叫 `PythonRunner::cancel()`；`runFinished` 時關閉對話框、清空流程狀態、不呼叫決策函式也不呼叫流程 callback；驗證：取消後決策函式與流程 callback 皆無法被觸達，符合「取消後畫面完全不動」
-- [ ] 2.7 實作步驟啟動前失敗的處理：`PythonRunner::start()` 回傳 false 且執行器為閒置時，顯示錯誤訊息框、關閉對話框、結束流程且不呼叫決策函式；驗證：錯誤訊息內容與現行的腳本不存在／無法啟動 Python 訊息一致（`PythonRunner.cpp:73`、`PythonRunner.cpp:229`）
-- [ ] 2.8 確認 `PythonRunner.h` / `PythonRunner.cpp` 完全未被修改；驗證：`git diff --stat` 中不含這兩個檔案
+- [x] 2.1 在 `PPS2_0DevTool` 定義流程步驟結構（步驟名稱、腳本路徑、動作、參數、額外環境變數、可選的直譯器覆寫）與流程結果結構（是否全部成功、失敗步驟索引、依序的所有步驟結果、整條流程耗時）；驗證：欄位與 `specs/script-execution/spec.md`「多步驟流程執行介面」「流程結果一次交付」逐條對得上
+- [x] 2.2 新增流程狀態成員（流程是否進行中、是否已被取消、已完成結果的累積、決策函式、流程 callback）；驗證：所有成員在流程結束與取消兩條路徑上都被清空，沒有殘留狀態影響下一條流程
+- [x] 2.3 實作「啟動一個步驟」的內部函式：組裝信封、決定直譯器（步驟覆寫優先，否則用功能設定區塊的 `Program`）、呼叫 `PythonRunner::start()`、更新對話框的步驟名稱；驗證：直譯器覆寫為空字串時取用的值與現行 `runFunctionScript()`（`pps2_0devtool.cpp:130`）相同
+- [x] 2.4 實作步驟結果的接收：累積結果 → 呼叫決策函式 → 依回答啟動下一步或結束流程；驗證：決策函式在每一步結束後恰好被呼叫一次，且收到的已完成結果依執行順序排列
+- [x] 2.5 改寫 `onScriptRunFinished()`：流程進行中且未取消時不關閉對話框，只有流程結束或已取消時才關閉；驗證：對照 `design.md` D3 的兩條路徑圖，正常結束路徑上 `runFinished` 不觸發任何對話框操作
+- [x] 2.6 實作取消路徑：`onCancelRequested()` 先標記流程已取消再呼叫 `PythonRunner::cancel()`；`runFinished` 時關閉對話框、清空流程狀態、不呼叫決策函式也不呼叫流程 callback；驗證：取消後決策函式與流程 callback 皆無法被觸達，符合「取消後畫面完全不動」
+- [x] 2.7 實作步驟啟動前失敗的處理：`PythonRunner::start()` 回傳 false 且執行器為閒置時，顯示錯誤訊息框、關閉對話框、結束流程且不呼叫決策函式；驗證：錯誤訊息內容與現行的腳本不存在／無法啟動 Python 訊息一致（`PythonRunner.cpp:73`、`PythonRunner.cpp:229`）
+- [x] 2.8 確認 `PythonRunner.h` / `PythonRunner.cpp` 完全未被修改；驗證：`git diff --stat` 中不含這兩個檔案
 
 ## 3. 對話框與計時器的所有權搬移
 
-- [ ] 3.1 把對話框的建立從單次執行搬到流程啟動處，銷毀搬到流程結束處，步驟之間不建立也不銷毀；驗證：`new ProcessingDialog` 與 `deleteLater()` 在整份 `pps2_0devtool.cpp` 中各只出現在流程啟動與流程結束一處
-- [ ] 3.2 把 `m_runTimer.start()` 從 `runFunctionScript()`（現 `pps2_0devtool.cpp:153`）搬到流程啟動處，`elapsed()` 於流程結束時讀取一次並放進流程結果；驗證：`m_runTimer.start()` 在整份檔案中只出現一次
-- [ ] 3.3 保留既有的執行耗時診斷輸出，並確認它記的是整條流程的耗時而非最後一步；驗證：`onScriptRunFinished()` 現有的 `formatElapsedTime()` 呼叫改在流程結束處，且值與流程結果一致
+- [x] 3.1 把對話框的建立從單次執行搬到流程啟動處，銷毀搬到流程結束處，步驟之間不建立也不銷毀；驗證：`new ProcessingDialog` 與 `deleteLater()` 在整份 `pps2_0devtool.cpp` 中各只出現在流程啟動與流程結束一處
+- [x] 3.2 把 `m_runTimer.start()` 從 `runFunctionScript()`（現 `pps2_0devtool.cpp:153`）搬到流程啟動處，`elapsed()` 於流程結束時讀取一次並放進流程結果；驗證：`m_runTimer.start()` 在整份檔案中只出現一次
+- [x] 3.3 保留既有的執行耗時診斷輸出，並確認它記的是整條流程的耗時而非最後一步；驗證：`onScriptRunFinished()` 現有的 `formatElapsedTime()` 呼叫改在流程結束處，且值與流程結果一致
 
 ## 4. 對外介面
 
-- [ ] 4.1 新增流程執行介面（功能名稱、決策函式、流程 callback），立即回傳是否成功啟動；驗證：簽章與 `specs/script-execution/spec.md`「多步驟流程執行介面」一致，且不阻塞（無 `waitForFinished`／無巢狀事件迴圈）
-- [ ] 4.2 將 `runFunctionScript()` 改為建立一條只有一步的流程，外部簽章維持不變；驗證：`pps2_0devtool.h` 中該函式的宣告與變更前逐字相同
-- [ ] 4.3 更新忙碌守衛：流程進行中（含步驟之間）再次呼叫任一執行介面回傳 false，並記錄含功能名稱與步驟名稱的警告，不顯示訊息框；驗證：警告訊息包含這兩項資訊，且程式碼中該路徑沒有任何 `showUI_*MessageBox` 呼叫
-- [ ] 4.4 確認 `json.cpp` 與 `PPS2_0DevTool.json` 的結構未被修改 —— 直譯器覆寫由功能自行從設定區塊取值後填入步驟；驗證：`git diff --stat` 中不含 `json.cpp`
-- [ ] 4.5 確認未新增任何檔案，`PPS2_0DevTool.pro` 的 `SOURCES` / `HEADERS` 不需異動；驗證：`git status` 中無新增的 `.cpp` / `.h`
+- [x] 4.1 新增流程執行介面（功能名稱、決策函式、流程 callback），立即回傳是否成功啟動；驗證：簽章與 `specs/script-execution/spec.md`「多步驟流程執行介面」一致，且不阻塞（無 `waitForFinished`／無巢狀事件迴圈）
+- [x] 4.2 將 `runFunctionScript()` 改為建立一條只有一步的流程，外部簽章維持不變；驗證：`pps2_0devtool.h` 中該函式的宣告與變更前逐字相同
+- [x] 4.3 更新忙碌守衛：流程進行中（含步驟之間）再次呼叫任一執行介面回傳 false，並記錄含功能名稱與步驟名稱的警告，不顯示訊息框；驗證：警告訊息包含這兩項資訊，且程式碼中該路徑沒有任何 `showUI_*MessageBox` 呼叫
+- [x] 4.4 確認 `json.cpp` 與 `PPS2_0DevTool.json` 的結構未被修改 —— 直譯器覆寫由功能自行從設定區塊取值後填入步驟；驗證：`git diff --stat` 中不含 `json.cpp`
+- [x] 4.5 確認未新增任何檔案，`PPS2_0DevTool.pro` 的 `SOURCES` / `HEADERS` 不需異動；驗證：`git status` 中無新增的 `.cpp` / `.h`
 
 ## 5. 文件
 
-- [ ] 5.1 更新 `pps2_0devtool.h` 開頭的類別註解：說明流程編排屬於 Qt 端職責、單步業務運算仍在腳本、外殼本身仍不含判斷邏輯；驗證：與 `specs/script-execution/spec.md`「流程編排與業務運算的分工邊界」用語一致
-- [ ] 5.2 更新 `README.md` 的職責表（`README.md:19`），把流程編排明確列入 Qt 欄；驗證：「不該做的事」欄仍列出解析檔案格式、呼叫外部 API、產生報表、做 AI 分析
-- [ ] 5.3 在 `README.md` 新增多步驟流程章節：決策函式的寫法、步驟名稱自帶序號的慣例、決策函式內不得有使用者互動（會轉動事件迴圈）、資料量大時改以檔案路徑傳遞、腳本需可重入；驗證：五項皆有對應段落
-- [ ] 5.4 更新 `README.md` 中「新增一個功能的步驟」與 `pps2_0devtool.h` 的同段說明，讓兩處一致；驗證：兩處的步驟數與內容逐條對照無差異
+- [x] 5.1 更新 `pps2_0devtool.h` 開頭的類別註解：說明流程編排屬於 Qt 端職責、單步業務運算仍在腳本、外殼本身仍不含判斷邏輯；驗證：與 `specs/script-execution/spec.md`「流程編排與業務運算的分工邊界」用語一致
+- [x] 5.2 更新 `README.md` 的職責表（`README.md:19`），把流程編排明確列入 Qt 欄；驗證：「不該做的事」欄仍列出解析檔案格式、呼叫外部 API、產生報表、做 AI 分析
+- [x] 5.3 在 `README.md` 新增多步驟流程章節：決策函式的寫法、步驟名稱自帶序號的慣例、決策函式內不得有使用者互動（會轉動事件迴圈）、資料量大時改以檔案路徑傳遞、腳本需可重入；驗證：五項皆有對應段落
+- [x] 5.4 更新 `README.md` 中「新增一個功能的步驟」與 `pps2_0devtool.h` 的同段說明，讓兩處一致；驗證：兩處的步驟數與內容逐條對照無差異
 
 ## 6. 驗收（需 Qt/MinGW 建置環境，由專案作者執行）
 
