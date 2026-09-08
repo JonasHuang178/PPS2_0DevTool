@@ -29,6 +29,12 @@
 - 既有分工（`README.md:19` 的職責表）已把「組裝參數」列為 Qt 的職責，「不該做的事」列的是解析檔案格式、呼叫外部 API、產生報表、做 AI 分析。本次把流程編排明確歸入 Qt 端職責，並同時把界線寫成需求：**單一步驟的業務運算仍 MUST 在腳本內完成**。
 - 這是澄清邊界，不是推翻原則。外殼本身仍不含業務邏輯 —— 決策函式由功能提供，不在外殼裡。
 
+**修正 Escape 守衛（實作期間發現）**
+
+- `ProcessingDialog` 原本在 `keyPressEvent()` 攔 Escape，但那個守衛**從未生效**：`QProgressDialog` 在捷徑覆寫階段就把 Escape 消化掉，直接隱藏對話框並發出取消訊號，`keyPressEvent()` 根本不會被呼叫。以原生 `QProgressDialog` 子類別寫同樣的守衛可重現，因此是 `QProgressDialog` 的行為，不是本專案的寫法問題。
+- 這是既有缺陷，不是本次變更造成的；但流程放大了後果 —— Escape 中止的從一支腳本變成整條流程，因此在本次一併修掉：攔截點移到 `event()`，同時涵蓋按鍵與捷徑覆寫兩種事件。
+- **BREAKING**：無。修正之後 Escape 的行為才**開始**符合既有規格所寫的內容。
+
 **已知的代價（明列，不隱藏）**
 
 - 流程的分支判斷寫在 C++，因此**整條流程無法從命令列重現**，只能開 GUI 驗證。個別腳本仍可獨立以 `--request-stdin` 執行。
@@ -46,7 +52,7 @@
 
 ## Impact
 
-- **修改檔案**：`pps2_0devtool.h` / `pps2_0devtool.cpp`（新增流程介面、對話框與計時器所有權搬移、`runFunctionScript()` 改走流程路徑）、`ProcessingDialog.h` / `ProcessingDialog.cpp`（步驟名稱與階段文字兩層顯示）、`README.md`（職責表與流程章節）
+- **修改檔案**：`pps2_0devtool.h` / `pps2_0devtool.cpp`（新增流程介面、對話框與計時器所有權搬移、`runFunctionScript()` 改走流程路徑）、`ProcessingDialog.h` / `ProcessingDialog.cpp`（步驟名稱與階段文字兩層顯示、Escape 守衛移到 `event()`）、`README.md`（職責表與流程章節）
 - **不修改**：`PythonRunner.h` / `PythonRunner.cpp` —— 單步執行、取消、輸出解析的行為完全不變，流程狀態機建在它之上而非改寫它
 - **不修改**：`json.cpp` —— 步驟若需覆寫 `Program`（例如兩步跑在不同的 Python 環境），由功能自己從自己的設定區塊取值後填入步驟，外殼不解讀 `Function` 底下的任何鍵
 - **不修改**：`scripts/` 下的任何腳本與信封協定 —— 流程的每一步都是一次符合現有協定的普通執行

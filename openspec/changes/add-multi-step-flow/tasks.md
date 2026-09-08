@@ -10,6 +10,10 @@
 - [x] 1.1 在 `ProcessingDialog` 新增設定步驟名稱的介面（寫入標題列），並將建構子的 `functionName` 改為初始步驟名稱；驗證：標題列在未設定步驟名稱時仍顯示功能名稱，與現況一致（`ProcessingDialog.cpp:11`）
 - [x] 1.2 新增「切換步驟時把階段文字重設為初始文字」的行為，避免新步驟沿用上一步最後回報的 stage；驗證：連續呼叫 setStage 後再切換步驟，`labelText` 回到 `"Processing..."`
 - [x] 1.3 確認取消中狀態的既有保護仍然有效 —— `m_cancelling` 為真時，步驟名稱與階段文字皆不再被覆寫；驗證：`ProcessingDialog::setStage()` 的既有守衛（`ProcessingDialog.cpp:44`）擴及新增的步驟名稱介面
+- [x] 1.5 把 Escape 守衛從 `keyPressEvent()` 移到 `event()`，同時吞掉 `Key_Escape` 的 `ShortcutOverride` 與 `KeyPress`；`keyPressEvent()` 的舊守衛保留為第二道；驗證：Escape 送進對話框後保持顯示且 `canceled()` 不發出
+  > 見 `design.md` D8。原守衛從未被呼叫，是既有缺陷而非本次造成。
+- [x] 1.6 確認取消鈕不受 `event()` 覆寫影響；驗證：點擊取消鈕仍能取消整條流程
+  > 弄壞唯一的取消途徑會比原本的缺陷更糟，所以獨立驗證一次。
 - [x] 1.4 確認未動到對話框版面：`setRange(0,0)` 跑馬燈、`setMinimumDuration(0)`、`ApplicationModal`、移除關閉鈕、Escape 與 closeEvent 攔截全部原樣；驗證：`git diff ProcessingDialog.cpp` 中這些行未出現在變更內
 
 ## 2. 流程狀態機（外殼內部）
@@ -49,7 +53,8 @@
 > 2026-09-08：在 Linux 容器裝上 Qt 5.15.13 + g++ 後，專案建置通過
 > （`qmake` + `make`，`-Wall -Wextra` **零警告**），並以一支 scratchpad 測試程式
 > 直接驅動 `runFunctionFlow()` / `runFunctionScript()` 跑完 10 個情境、36 項斷言。
-> 除 6.11 外全數通過，逐項結果記於各項之後。
+> 首次執行時 6.11 未通過，修正後（見 1.5 / `design.md` D8）重跑 11 個情境、39 項
+> 斷言全數通過。逐項結果記於各項之後。
 >
 > **這份自動驗證的界線**：平台是 Linux + Qt 5.15.13 + g++ + offscreen，
 > 不是 Windows + MinGW；事件是程式合成的，不是真實按鍵。因此
@@ -78,23 +83,11 @@
   > 自動驗證：顯示錯誤訊息框、合成一筆 `hasJson=false` 的失敗結果附在第 2 筆、決策函式未再被呼叫。另驗證第一步就啟動失敗時 `runFunctionFlow()` 回傳 false 且不呼叫任何 callback、不留孤兒對話框。
 - [x] 6.10 直譯器覆寫：讓兩步使用不同的 Python 直譯器，確認各自以指定的直譯器啟動；驗證：腳本回報 `sys.executable`
   > 自動驗證：未覆寫的步驟用設定區塊的 `Program`，覆寫的步驟用指定的直譯器（以腳本回報的環境變數區分）。
-- [ ] 6.11 Escape 與視窗關閉在流程期間仍不觸發取消；驗證：目視
-  > **未通過。** 視窗關閉事件正確地不觸發取消；**Escape 會取消整條流程**。
-  > 追查結果：`ProcessingDialog::keyPressEvent` 的 Escape 守衛**從未被呼叫** ——
-  > Escape 先走 `QEvent::ShortcutOverride` 被 `QProgressDialog` 消化掉，
-  > 之後對話框被隱藏並發出 `canceled()`，經 `onCanceled()` 送出 `cancelRequested`，
-  > 外殼因此取消流程。
-  >
-  > 這**不是本次變更造成的** —— `ProcessingDialog::keyPressEvent` 與 `closeEvent`
-  > 逐字未動（見 1.4）。以一個**原生 `QProgressDialog` 子類別**寫同樣的守衛可重現，
-  > 所以是 Qt 5.15 的 `QProgressDialog` 行為，不是本專案的寫法問題。
-  > 但流程放大了後果：Escape 現在中止的是整條流程，不是一支腳本。
-  >
-  > 已驗證可行的修法：在 `ProcessingDialog::event()` 攔截 `Key_Escape` 的
-  > `ShortcutOverride` 與 `KeyPress` 並吞掉（早於 `QProgressDialog` 的處理）。
-  > 實測結果：對話框保持顯示、`canceled()` 不發出。
-  >
-  > 尚未確認：Windows 上的**真實按鍵**是否走同一條路徑（此處為 Linux/offscreen
-  > 的合成事件）。修不修、在本次變更修還是另開 change，待專案作者決定。
+- [x] 6.11 Escape 與視窗關閉在流程期間仍不觸發取消；驗證：目視
+  > 一度未通過：Escape 會取消整條流程，因為 `keyPressEvent()` 的守衛從未被呼叫
+  > （Escape 先走 `ShortcutOverride` 被 `QProgressDialog` 消化）。守衛移到 `event()`
+  > 後自動驗證通過：對話框保持顯示、`canceled()` 不發出、流程跑完並照常呼叫流程
+  > callback；視窗關閉事件本來就正確地不觸發取消。另驗證取消鈕仍然有效。
+  > 詳見 `design.md` D8。Windows 真實按鍵仍待實機確認。
 - [x] 6.12 忙碌守衛：以程式碼在流程進行中再次呼叫執行介面，確認回傳 false、不顯示訊息框、Debug console 的警告含功能名稱與步驟名稱；驗證：Debug console 輸出
   > 自動驗證：流程步驟之間呼叫 `runFunctionFlow()` 與 `runFunctionScript()` 皆回傳 false、未跳訊息框、進行中的流程不受影響；警告訊息含功能名稱與步驟名稱。

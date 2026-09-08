@@ -109,6 +109,22 @@
 
 **理由**：外殼一旦去讀 `Step_A_Program` 之類的鍵，就違反了「`Function` 物件 MUST NOT 被逐欄位解析」（`app-shell` 既有需求）。讓功能自己從自己的設定區塊取值再填進步驟，`json.cpp` 完全不用改，設定檔的形狀也繼續由功能自己決定。
 
+### D8：Escape 的守衛必須放在 `event()`，不能只放在 `keyPressEvent()`
+
+實作期間驗證時才發現：`ProcessingDialog` 原本在 `keyPressEvent()` 攔 Escape，那個守衛**從未被呼叫過**。Escape 先走 `QEvent::ShortcutOverride` 被 `QProgressDialog` 消化掉，對話框隨即被隱藏並發出 `canceled()`，經 `onCanceled()` 送出 `cancelRequested`，外殼因此取消。
+
+**這不是本次變更造成的**，`keyPressEvent()` 逐字未動；以一個**原生 `QProgressDialog` 子類別**寫同樣的守衛可重現，所以是 `QProgressDialog` 的行為而非本專案的寫法問題。但流程放大了後果：Escape 中止的從一支腳本變成整條流程，因此一併修掉。
+
+**選擇**：覆寫 `event()`，對 `Key_Escape` 同時吞掉 `ShortcutOverride` 與 `KeyPress` 兩種事件，早於 `QProgressDialog` 的任何處理。`keyPressEvent()` 的舊守衛保留為第二道 —— 這條路徑在不同 Qt 版本／平台上不保證一致，而多留一道的成本是零。
+
+**替代方案（已否決）**：覆寫 `reject()`。實測 `reject()` 在這條路徑上根本沒有被呼叫，擋不到。
+
+**替代方案（已否決）**：在對話框上裝事件過濾器。效果與覆寫 `event()` 相同，但多一個物件與一層間接，沒有換到任何東西。
+
+**驗證**：Escape 送進對話框後保持顯示、`canceled()` 不發出、流程跑完並照常呼叫流程 callback；同時確認**取消鈕本身仍然有效**（點擊後整條流程取消）—— 弄壞唯一的取消途徑會比原本的缺陷更糟。
+
+**尚未確認**：以上是 Linux + Qt 5.15.13 + offscreen 的合成事件。Windows 上的真實按鍵是否走同一條路徑未驗證，因此保留了 `keyPressEvent()` 那道守衛。
+
 ## Risks / Trade-offs
 
 - **流程的分支判斷寫在 C++，整條流程無法從命令列重現** → 個別步驟仍可獨立以 `--request-stdin` 執行，因此「單步做錯了什麼」仍可在命令列查。無法命令列驗證的只剩「步驟之間的接線」。緩解：把接線壓到最薄 —— 決策函式只做挑欄位、改名、讀 UI 值與分支判斷，任何計算、過濾、聚合一律推進腳本（已寫成 spec 需求）。
@@ -121,11 +137,13 @@
 
 - **決策函式的生命週期** → 它捕捉功能物件的指標，而流程是非同步的。若功能在流程進行中被銷毀，回呼會落到已釋放的物件上。緩解：流程期間主視窗被互斥遮罩鎖定，使用者無法觸發 tab 移除或功能銷毀；`removeTabByTitle()` 只在 `UI_Init()` 啟動階段呼叫。實作時仍以功能物件為 parent 建立流程狀態，讓銷毀時能一併中止。
 
+- **Escape 的攔截點是靠實測定位的，不是靠讀 Qt 文件** → 同一類問題（守衛看起來存在、實際上沒作用）在別的事件上也可能發生。緩解：`ProcessingDialog` 的標頭註解寫明為什麼攔在 `event()`，避免日後有人「整理」時把它搬回 `keyPressEvent()`。
+
 ## Migration Plan
 
 不涉及資料或設定格式，也沒有既有呼叫端需要遷移：
 
-1. 先做 `ProcessingDialog` 的標題／標籤兩層文字，單獨可驗證（現有單步行為不變）
+1. 先做 `ProcessingDialog` 的標題／標籤兩層文字與 Escape 守衛，單獨可驗證（現有單步行為不變）
 2. 再把對話框與計時器的所有權搬到流程狀態機，`runFunctionScript()` 改走流程路徑
 3. 最後開放流程介面
 

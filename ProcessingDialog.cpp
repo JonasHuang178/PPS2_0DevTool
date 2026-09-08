@@ -1,6 +1,7 @@
 #include "ProcessingDialog.h"
 
 #include <QCloseEvent>
+#include <QEvent>
 #include <QKeyEvent>
 #include <QPushButton>
 
@@ -75,9 +76,30 @@ void ProcessingDialog::onCanceled()
     emit cancelRequested();
 }
 
+bool ProcessingDialog::event(QEvent *event)
+{
+    // Escape 不算取消，而且必須在這裡攔。
+    //
+    // QProgressDialog 在 ShortcutOverride 階段就處理掉 Escape，之後直接把
+    // 對話框藏起來並發出 canceled() —— keyPressEvent() 從頭到尾不會被呼叫。
+    // 只在 keyPressEvent() 裡擋的話，守衛看起來存在，實際上完全沒作用。
+    //
+    // 兩個事件型別都要吞：ShortcutOverride 決定這個按鍵走不走捷徑路徑，
+    // KeyPress 則是它之後（在別的 Qt 版本或平台上）可能改走的一般路徑。
+    if (event->type() == QEvent::ShortcutOverride
+            || event->type() == QEvent::KeyPress) {
+        if (static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+            event->accept();
+            return true;
+        }
+    }
+    return QProgressDialog::event(event);
+}
+
 void ProcessingDialog::keyPressEvent(QKeyEvent *event)
 {
-    // Escape 不算取消。
+    // Escape 在 event() 就被吞掉了，正常情況下走不到這裡。守衛留著是因為
+    // 這條路徑在不同 Qt 版本／平台上不保證一致，而多留一道的成本是零。
     if (event->key() == Qt::Key_Escape) {
         event->ignore();
         return;

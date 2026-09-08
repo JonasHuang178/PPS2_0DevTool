@@ -18,8 +18,14 @@
 // 與預設的 QProgressDialog 有三處刻意的差異：
 //
 // 1. 取消鈕是唯一的取消途徑 —— Escape 與視窗關閉都被攔掉。
-//    誤觸 Escape 會砍掉一次長時間的呼叫，而因為取消時不呼叫 callback，
-//    畫面什麼都不會發生，使用者只會覺得「按了沒反應」。
+//    誤觸 Escape 會砍掉整條流程，而因為取消時不呼叫 callback，畫面什麼都
+//    不會發生，使用者只會覺得「按了沒反應」。
+//
+//    Escape 必須在 event() 攔，不能只靠 keyPressEvent()。QProgressDialog
+//    在 QEvent::ShortcutOverride 階段就把 Escape 消化掉了，keyPressEvent()
+//    根本不會被呼叫 —— 原本寫在那裡的守衛看起來對，實際上從未生效，對話框
+//    照樣被隱藏並發出 canceled()。以原生 QProgressDialog 子類別寫同樣的守衛
+//    可重現，所以這是 QProgressDialog 的行為，不是這裡寫錯。
 //
 // 2. setMinimumDuration(0)。預設是 4 秒 —— 在對話框實際顯示之前沒有
 //    互斥遮罩，主視窗仍可操作，直接違反「執行期間主視窗鎖定」。
@@ -47,6 +53,9 @@ signals:
     void cancelRequested();
 
 protected:
+    // Escape 的主要攔截點。keyPressEvent() 對 Escape 是攔不到的（見上）。
+    bool event(QEvent *event) Q_DECL_OVERRIDE;
+
     void keyPressEvent(QKeyEvent *event) Q_DECL_OVERRIDE;
     void closeEvent(QCloseEvent *event) Q_DECL_OVERRIDE;
 
