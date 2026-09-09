@@ -104,8 +104,6 @@ void PPS2_0DevTool::UI_SetupSignal()
 {
     connect(ui->sourcePathBrowseButton, SIGNAL(clicked()),
             this, SLOT(onBrowseSourcePath()));
-    connect(ui->sourcePathClearButton, SIGNAL(clicked()),
-            this, SLOT(onClearSourcePath()));
     connect(ui->sourcePathLineEdit, SIGNAL(editingFinished()),
             this, SLOT(onSourcePathEdited()));
     connect(ui->functionTabWidget, SIGNAL(currentChanged(int)),
@@ -541,6 +539,10 @@ bool PPS2_0DevTool::removeTabByTitle(const QString &title)
 // 來源路徑
 // ---------------------------------------------------------------------------
 
+// 來源路徑列上唯一的按鈕。
+//
+// 清除路徑沒有專屬按鈕：使用者把文字框清空即可，editingFinished 會走上
+// 同一條變更路徑。
 void PPS2_0DevTool::onBrowseSourcePath()
 {
     const QString dir = QFileDialog::getExistingDirectory(
@@ -549,14 +551,6 @@ void PPS2_0DevTool::onBrowseSourcePath()
         return;
 
     ui->sourcePathLineEdit->setText(dir);
-    onSourcePathEdited();
-}
-
-void PPS2_0DevTool::onClearSourcePath()
-{
-    // 走 onSourcePathEdited() 而不是自己發訊號：清除路徑對功能來說就是一次
-    // 「路徑變成空字串」的變更，兩條路徑的後續處理必須完全一致。
-    ui->sourcePathLineEdit->clear();
     onSourcePathEdited();
 }
 

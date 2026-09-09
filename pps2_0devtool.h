@@ -178,7 +178,6 @@ protected:
 
 private slots:
     void onBrowseSourcePath();
-    void onClearSourcePath();
     void onSourcePathEdited();
     void onFunctionTabChanged(int index);
     void onInitialFunctionEntry();
