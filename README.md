@@ -44,6 +44,23 @@ Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ �
 「給別人用」的正確介面是 `script_utils`，不是腳本 —— 別人要整合進自己的流程時，
 `from script_utils import gitlab_utils` 遠比「開子行程、組參數、parse JSON」好用。
 
+### 兩種分組軸
+
+`scripts/` 底下有兩種東西，各用各的分組方式：
+
+| | 分組依據 | 例子 |
+|---|---|---|
+| **入口腳本** | 應用**功能** | `scripts/single_building/` |
+| **共用模組** | 技術**領域** | `script_utils/system_utils/`、`script_utils/gitlab_utils/` |
+
+共用模組**不依功能分組** —— 那樣的話第二個功能需要同一個能力時就無處可放。
+只服務單一功能的東西留在 `scripts/<功能>/` 之下。
+
+因為入口腳本放進了子目錄，每支頂部都有一行把 `scripts/` 插進 `sys.path` 的設定，
+**不能刪**：Python 只把「腳本所在目錄」放進 `sys.path`，少了它，命令列直接執行時
+`script_io` 與 `script_utils` 都匯不到。Qt 雖然會注入指向 `scripts/` 的 `PYTHONPATH`，
+但命令列與 CI 沒有那個環境，而那是本專案明確支援的用法。
+
 ---
 
 ## 目錄結構
@@ -76,17 +93,20 @@ PPS2_0DevTool/
 ├── scripts/
 │   ├── _function_template.py 功能腳本範本 ← 複製這個開始寫新腳本
 │   ├── script_io.py          信封處理
-│   ├── single_building_list_source.py       取得來源清單
-│   ├── single_building_list_target.py       讀取設定
-│   ├── single_building_modify_setting.py    寫入設定
-│   ├── single_building_recovery_setting.py  清空設定
-│   └── script_utils/
-│       ├── __init__.py
+│   │
+│   ├── single_building/      入口腳本依「功能」分組
+│   │   ├── __init__.py       功能專屬：設定檔名、挑選的副檔名
+│   │   ├── single_building_list_source.py       取得來源清單
+│   │   ├── single_building_list_target.py       讀取設定
+│   │   ├── single_building_modify_setting.py    寫入設定
+│   │   └── single_building_recovery_setting.py  清空設定
+│   │
+│   └── script_utils/         共用模組依「技術領域」分組
 │       ├── logger.py         log（唯一設定 logging 的地方）
-│       └── single_building/  Single Building 的業務邏輯
-│           ├── paths.py      暫存設定檔的位置（唯一決定的地方）
-│           ├── sources.py    掃描目錄該層的 .cpp
-│           └── setting.py    暫存設定檔的讀寫清空
+│       ├── system_utils/     系統層面：檔案系統、暫存目錄
+│       │   ├── files.py      依副檔名列檔案、行式文字檔讀寫
+│       │   └── temp.py       暫存目錄下的路徑
+│       └── gitlab_utils/     GitLab REST（尚無內容）
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
@@ -302,7 +322,9 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
    `removeTabByTitle()`；`UI_SetupSignal()` 連接該 tab 的元件
 4. 在 `PPS2_0DevTool.json` 的 `Function` 加設定區塊
 5. 在 `PPS2_0DevTool.pro` 的 `SOURCES` / `HEADERS` 加檔案
-6. 複製 `scripts/_function_template.py` 寫對應的腳本
+6. 建立 `scripts/<功能名>/`，把 `scripts/_function_template.py` 複製進去寫成入口腳本
+   （範本本身留在 `scripts/` 這一層）；只服務這個功能的東西放這個目錄，跨功能的
+   共用能力放進 `script_utils/` 底下對應的技術領域分組
 
 **不需要修改 `json.cpp`。**
 

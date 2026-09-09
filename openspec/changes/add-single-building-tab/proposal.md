@@ -17,7 +17,7 @@ v2.0.0 的外殼已經完成，但沒有任何功能 tab —— 框架與腳本�
 
 ### 新增四支 Python 腳本
 
-四支皆由 `scripts/_function_template.py` 複製而來，業務邏輯放在 `script_utils/` 共用：
+四支皆由 `scripts/_function_template.py` 複製而來，放在 `scripts/single_building/` 之下：
 
 | 腳本 | 職責 |
 |---|---|
@@ -27,6 +27,15 @@ v2.0.0 的外殼已經完成，但沒有任何功能 tab —— 框架與腳本�
 | 清空設定 | 清空暫存 txt 後回讀（結果必為空） |
 
 暫存 txt 位於系統暫存目錄（Windows 上是 `%TEMP%`），內容為絕對路徑，一行一筆。它是這個功能唯一的狀態儲存處，重開機後消失是預期行為。
+
+### **BREAKING** 腳本目錄依用途重新分層
+
+- 入口腳本依功能分組：`scripts/<功能>/`，同一個功能的腳本收在一起
+- 共用模組依**技術領域**分組：`script_utils/system_utils/`（檔案系統、暫存目錄）、`script_utils/gitlab_utils/`（GitLab REST）；`logger.py` 維持單一入口，供所有模組共用
+- 共用模組層不再收單一功能的業務邏輯 —— 通用能力上提到領域分組，只服務一個功能的部分留在該功能的目錄
+- 入口腳本自行把 `scripts/` 加入模組搜尋路徑，不再依賴呼叫端的 `PYTHONPATH`
+- `_function_template.py` 與 `script_io.py` 位置不變
+- **BREAKING**：既有規格要求「入口腳本不得放進子目錄」，本次改為「入口腳本自行確保共用模組可匯入」
 
 ### **BREAKING** 外殼的來源路徑改為每個功能各自保有
 
@@ -44,6 +53,7 @@ v2.0.0 的外殼已經完成，但沒有任何功能 tab —— 框架與腳本�
 ### Modified Capabilities
 
 - `app-shell`: 「功能掛勾訊號」需求變更 —— 來源路徑從全域共用改為每個功能各自保有，並釐清「使用者修改」與「切換 tab 還原」的差別。「啟動時不含任何功能」需求隨第一個功能 tab 的加入而失效
+- `script-envelope`: 「目錄結構」需求變更 —— 入口腳本改為依功能分組並自行保證共用模組可匯入；共用模組依技術領域分組，不再依應用功能分組
 
 ## Impact
 
@@ -56,8 +66,10 @@ v2.0.0 的外殼已經完成，但沒有任何功能 tab —— 框架與腳本�
 
 ### 腳本
 
-- `scripts/` 新增四支入口腳本
-- `scripts/script_utils/` 新增 Single Building 的業務邏輯模組
+- `scripts/single_building/` 新增四支入口腳本
+- `scripts/script_utils/system_utils/` 新增檔案系統與暫存目錄的共用能力
+- `scripts/script_utils/gitlab_utils/` 建立分組（本次無內容，供後續 GitLab 需求使用）
+- `scripts/_function_template.py` 新增模組搜尋路徑的前導設定，讓複製出來的腳本放在子目錄也能直接執行
 
 ### 不受影響
 

@@ -8,9 +8,19 @@
     python single_building_modify_setting.py --request run.json
 """
 
+import os
+import sys
+
+# 入口腳本放在 scripts/<功能>/ 底下，而 Python 只把「腳本所在目錄」放進
+# sys.path —— 少了下面這一行，命令列直接執行時 script_io 與 script_utils
+# 都匯不到。Qt 會注入指向 scripts/ 的 PYTHONPATH，但那不能當成前提：
+# 命令列與 CI 直接執行時沒有那個環境，而那是本專案明確支援的用法。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import script_io
+import single_building
 from script_utils import logger
-from script_utils import single_building
+from script_utils import system_utils
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "modify_setting"
@@ -32,12 +42,12 @@ def main():
     )
 
     files = req["params"]["files"] or []
+    path = single_building.setting_file_path()
 
     logger.info("寫入 %d 筆設定", len(files))
     script_io.progress("寫入設定…")
 
-    written = single_building.write_setting(files)
-    path = single_building.setting_file_path()
+    written = system_utils.write_lines(path, files)
 
     logger.info("寫入完成：%s", path)
 

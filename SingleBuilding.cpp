@@ -21,10 +21,15 @@ namespace {
 // 清單項目上存放絕對路徑的角色。顯示的是檔名，寫進設定檔的是這個。
 const int kPathRole = Qt::UserRole + 1;
 
-const char *kListSourceScript     = "scripts/single_building_list_source.py";
-const char *kListTargetScript     = "scripts/single_building_list_target.py";
-const char *kModifySettingScript  = "scripts/single_building_modify_setting.py";
-const char *kRecoverySettingScript = "scripts/single_building_recovery_setting.py";
+// 入口腳本依功能分組收在 scripts/<功能>/ 之下。
+const char *kListSourceScript =
+        "scripts/single_building/single_building_list_source.py";
+const char *kListTargetScript =
+        "scripts/single_building/single_building_list_target.py";
+const char *kModifySettingScript =
+        "scripts/single_building/single_building_modify_setting.py";
+const char *kRecoverySettingScript =
+        "scripts/single_building/single_building_recovery_setting.py";
 
 // 自然排序的比較：數字段落依數值比較，其餘字元不分大小寫。
 //

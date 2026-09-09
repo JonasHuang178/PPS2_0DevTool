@@ -48,7 +48,8 @@ class SingleBuilding;
 //      removeTabByTitle()；UI_SetupSignal() 連接該 tab 的元件
 //   4. 在 PPS2_0DevTool.json 的 Function 加設定區塊
 //   5. 在 PPS2_0DevTool.pro 的 SOURCES / HEADERS 加檔案
-//   6. 複製 scripts/_function_template.py 寫對應的腳本
+//   6. 建立 scripts/<功能名>/，把 scripts/_function_template.py 複製進去寫成
+//      入口腳本；跨功能的共用能力放進 script_utils/ 底下對應的技術領域分組
 //
 // 不需要修改 json.cpp。
 

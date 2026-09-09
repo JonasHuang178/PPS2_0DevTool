@@ -43,6 +43,16 @@
 - [ ] 5.2 把新增的 `.h` / `.cpp` 加入 `PPS2_0DevTool.pro` 的 `HEADERS` / `SOURCES`；以 Windows（Qt Creator + MinGW）與 macOS 兩邊各建置一次驗證
   - `.pro` 已更新。**Linux + Qt 5.15.13 乾淨重建通過，`-Wall -Wextra` 無警告**；Windows 與 macOS 尚未建置（此環境沒有這兩個工具鏈）
 
+## 7. 腳本目錄重新分層
+
+- [x] 7.1 在 `_function_template.py` 加入模組搜尋路徑的前導設定，並註明刪掉會壞在哪；以把範本複製到子目錄後直接執行 `--help` 驗證共用模組匯入成功
+- [x] 7.2 建立 `script_utils/system_utils/`，把掃描目錄該層檔案、行式文字檔讀寫、暫存檔路徑三項通用能力自 `script_utils/single_building/` 上提；以直接呼叫這些函式驗證行為與搬移前相同
+- [x] 7.3 建立 `script_utils/gitlab_utils/`，`__init__.py` 只說明什麼該放進來；以匯入該套件不報錯驗證
+- [x] 7.4 移除 `script_utils/single_building/`，功能專屬的設定檔名常數改放 `scripts/single_building/__init__.py`；以 `grep` 確認 `script_utils` 底下不再有以應用功能命名的分組
+- [x] 7.5 把四支入口腳本移到 `scripts/single_building/` 並加上前導設定；以每支的 `--help` / `--dump-config` / `--request` 驗證，且**取消 `PYTHONPATH`** 後仍能執行
+- [x] 7.6 更新 `SingleBuilding.cpp` 中四個腳本路徑常數為 `scripts/single_building/…`；以重新建置並跑完整行為驗證通過
+- [x] 7.7 更新 `README.md` 的目錄結構與「新增一個功能」的步驟，說明入口腳本依功能分組、共用模組依技術領域分組
+
 ## 6. 驗收
 
 > 以下四項需要 Windows 實機，無法在開發容器中完成。

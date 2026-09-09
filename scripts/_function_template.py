@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """功能腳本範本 —— 複製這個檔案開始寫新腳本。
 
-這份範本原樣就能執行：
+這份範本留在 scripts/ 這一層（不屬於任何功能）。複製到 scripts/<功能>/
+底下再改，原樣就能執行：
 
     python _function_template.py --help
     python _function_template.py --dump-config > run.json
@@ -13,18 +14,28 @@
 
 三件必須遵守的事：
 
-1. 入口腳本放在 scripts/ 這一層，不要放進子目錄 —— Python 只會把入口
-   腳本所在目錄放進 sys.path，放子目錄的話 `from script_utils import ...`
-   在沒設 PYTHONPATH 時會失敗，別人直接執行就壞掉。
+1. 入口腳本放在 scripts/<功能>/ 底下，同一個功能的腳本收在一起。因為放進
+   了子目錄，**底下那段 sys.path 設定不能刪** —— Python 只把「腳本所在目錄」
+   放進 sys.path，少了它，命令列直接執行時 script_io 與 script_utils 都匯
+   不到。Qt 會注入指向 scripts/ 的 PYTHONPATH，但別把那當成前提：命令列與
+   CI 直接執行時沒有那個環境，而那是本專案明確支援的用法。
 
 2. 業務邏輯寫在 script_utils/ 裡，這支腳本只做轉接（收信封 → 呼叫
    script_utils → 回信封）。「給別人用」的正確介面是 script_utils，
    不是腳本。
 
+   script_utils/ 依**技術領域**分組（system_utils、gitlab_utils…），不依
+   應用功能分組 —— 依功能分組的話，第二個功能需要同一個能力時就無處可放。
+   只服務單一功能的東西留在 scripts/<功能>/ 之下。
+
 3. 只有結果 JSON 可以印到 stdout。診斷訊息用 logger（走 stderr）。
 """
 
 import os
+import sys
+
+# 見上面第 1 點。這一行要在匯入 script_io / script_utils 之前執行。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import script_io
 from script_utils import logger
