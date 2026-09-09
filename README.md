@@ -359,9 +359,12 @@ bool runFunctionFlow(const QString &functionName,
                      FlowCallback onDone);
 
 // 掛勾訊號（不需要來源路徑的功能不連接即可）
+//
+// 附帶功能名稱：來源路徑是各功能私有的，但 Qt 的訊號會送達所有已連接的
+// slot，功能端要比對自己的名稱後才決定要不要處理。
 signals:
-    void sourcePathChanged(const QString &sourceFilePath);
-    void workingDataCleared();
+    void sourcePathChanged(const QString &sourceFilePath,
+                           const QString &functionName);
 ```
 
 呼叫的樣子：

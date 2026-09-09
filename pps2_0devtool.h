@@ -165,9 +165,13 @@ signals:
     // 送達所有已連接的 slot，「只有該功能反應」無法靠「不廣播」達成 —— 因此
     // 訊號附帶路徑所屬的功能名稱，功能端比對自己的名稱後才決定要不要處理。
     // 少了這個比對，使用者為了別的 tab 調整路徑就會清掉這個功能的狀態。
+    //
+    // 這裡只有一個訊號。曾經還有一個廣播給所有功能的 workingDataCleared()，
+    // 在來源路徑改為各功能私有之後它失去了任何合理的觸發時機 —— 清除路徑
+    // 只該影響當前功能。宣告一個永遠不會發出的訊號是陷阱：後續開發者接上去
+    // 會編譯通過、connect 回傳 true、執行期什麼都不發生。
     void sourcePathChanged(const QString &sourceFilePath,
                            const QString &functionName);
-    void workingDataCleared();
 
 protected:
     void closeEvent(QCloseEvent *event) Q_DECL_OVERRIDE;

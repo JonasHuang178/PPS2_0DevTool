@@ -556,9 +556,6 @@ void PPS2_0DevTool::onClearSourcePath()
 {
     // 走 onSourcePathEdited() 而不是自己發訊號：清除路徑對功能來說就是一次
     // 「路徑變成空字串」的變更，兩條路徑的後續處理必須完全一致。
-    //
-    // 這裡不發 workingDataCleared() —— 來源路徑既然是各功能私有的，清除它
-    // 只該影響當前功能，而那個訊號是廣播給所有功能的。
     ui->sourcePathLineEdit->clear();
     onSourcePathEdited();
 }
