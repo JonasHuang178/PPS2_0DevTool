@@ -27,6 +27,8 @@ PPS2_0DevTool::PPS2_0DevTool(const Config &config, QWidget *parent)
     , m_runner(new PythonRunner(this))
     , m_processingDialog(Q_NULLPTR)
     , m_trayIcon(Q_NULLPTR)
+    , m_flowActive(false)
+    , m_flowCancelled(false)
 {
     ui->setupUi(this);
 
@@ -137,37 +139,64 @@ bool PPS2_0DevTool::runFunctionScript(const QString &functionName,
                                       PythonRunner::ResultCallback onDone,
                                       const QMap<QString, QString> &envVars)
 {
-    const QJsonObject functionConfig = getFunctionConfig(functionName);
+    // 單步執行就是「只有一步的流程」。對話框所有權、耗時起訖、取消語意三者
+    // 因此只有一份實作 —— 兩條路徑各寫一次的話，修了流程那條，單步這條還
+    // 留著同一個 bug。
+    FlowStep step;
+    step.label      = functionName;
+    step.scriptPath = scriptPath;
+    step.action     = action;
+    step.params     = params;
+    step.envVars    = envVars;
 
-    const QString program = functionConfig.value("Program").toString(
-                QString("python"));
+    // 第一次被問（還沒有任何結果）就給那一步，第二次被問就結束。
+    FlowDecider decide =
+            [step](const QList<PythonRunner::PythonRunnerResult> &done) -> FlowStep {
+        return done.isEmpty() ? step : FlowStep::done();
+    };
 
-    // 信封四個欄位。tool 身分不在這裡 —— 走 TOOLNAME / TOOLVERSION 環境變數。
-    QJsonObject envelope;
-    envelope.insert("source_path", getUI_sourcePathLineEditText());
-    envelope.insert("config",      functionConfig);
-    envelope.insert("action",      action);
-    envelope.insert("params",      params);
+    FlowCallback finished =
+            [onDone](const FlowResult &result) {
+        if (onDone && !result.results.isEmpty())
+            onDone(result.results.first());
+    };
 
-    QString failureMessage;
-    m_runTimer.start();
+    return runFunctionFlow(functionName, decide, finished);
+}
 
-    const bool started = m_runner->start(program,
-                                         scriptPath,
-                                         envelope,
-                                         envVars,
-                                         m_config.debugMode(),   // Debug_Mode 連動 -v
-                                         onDone,
-                                         &failureMessage);
-    if (!started) {
-        // 忙碌時只記警告不跳訊息框（見 PythonRunner::start）。
-        // 腳本不存在等啟動前失敗則要讓使用者看到。
-        if (!m_runner->isIdle())
-            return false;
-
-        showUI_ErrorMessageBox(failureMessage);
+bool PPS2_0DevTool::runFunctionFlow(const QString &functionName,
+                                    FlowDecider decide,
+                                    FlowCallback onDone)
+{
+    if (m_flowActive || !m_runner->isIdle()) {
+        // 忙碌時只記警告不跳訊息框 —— 執行期間主視窗被互斥遮罩鎖定，使用者
+        // 觸發不了這條，能觸發的只有程式化的連續呼叫，那是程式缺陷而非使用者
+        // 操作錯誤。警告要指出進行中的功能與步驟，否則從 console 看不出是
+        // 哪一條流程還沒結束。
+        QTWarn(QString("已有流程在執行中，忽略這次執行請求（進行中：%1 / %2）")
+               .arg(m_flowFunctionName.isEmpty() ? QString("(未知功能)")
+                                                 : m_flowFunctionName,
+                    m_flowStepLabel.isEmpty()    ? QString("(未知步驟)")
+                                                 : m_flowStepLabel));
         return false;
     }
+
+    if (!decide) {
+        // 沒有決策函式就沒有第一步。這是程式缺陷，不是使用者操作錯誤。
+        QTError(QString("流程 %1 未提供決策函式，無法啟動").arg(functionName));
+        return false;
+    }
+
+    m_flowActive       = true;
+    m_flowCancelled    = false;
+    m_flowFunctionName = functionName;
+    m_flowStepLabel.clear();
+    m_flowDecider      = decide;
+    m_flowCallback     = onDone;
+    m_flowResults.clear();
+
+    // 計時器與對話框都由整條流程持有：這裡起算、這裡建立，步驟之間不動它們。
+    m_runTimer.start();
 
     delete m_processingDialog;
     m_processingDialog = new ProcessingDialog(functionName, this);
@@ -175,7 +204,187 @@ bool PPS2_0DevTool::runFunctionScript(const QString &functionName,
             this, SLOT(onCancelRequested()));
     m_processingDialog->show();
 
+    // 第一步同樣走決策函式 —— 「第一步是什麼」也是功能的決定。
+    //
+    // 第一步不走 advanceFlow()：它和後續步驟在「啟動前失敗」時的處理不同，
+    // 而那個差異正是這裡要表達的東西。第一步沒跑成代表流程從未開始，同步
+    // 回報 false 就好，與單步介面的既有語意一致；後續步驟沒跑成時流程已經
+    // 產生過結果，得讓功能知道停在哪裡（見 advanceFlow）。
+    const FlowStep first = m_flowDecider(m_flowResults);
+
+    if (first.finish) {
+        // 決策函式第一次就回答結束，是合法的空流程。
+        finishFlow();
+        return true;
+    }
+
+    QString failureMessage;
+    if (!startFlowStep(first, &failureMessage)) {
+        reportStepStartFailure(failureMessage);
+        resetFlowState();   // 不呼叫任何 callback：流程從未開始
+        return false;
+    }
+
     return true;
+}
+
+// 只在一個步驟完成之後被呼叫，因此 m_flowResults 一定非空。第一步由
+// runFunctionFlow() 直接處理 —— 兩者在「啟動前失敗」時的行為不同。
+void PPS2_0DevTool::advanceFlow()
+{
+    // 取消後不再詢問決策函式 —— 取消路徑的收尾在 onScriptRunFinished()。
+    if (!m_flowActive || m_flowCancelled)
+        return;
+
+    const FlowStep step = m_flowDecider(m_flowResults);
+
+    if (step.finish) {
+        finishFlow();
+        return;
+    }
+
+    QString failureMessage;
+    if (startFlowStep(step, &failureMessage))
+        return;
+
+    // 啟動前失敗（腳本不存在、找不到 Python）。不再詢問決策函式 —— 這類失敗
+    // 是部署或設定問題，補救步驟解決不了，轉交只會讓每個功能各自重寫一次
+    // 相同的處理。
+    reportStepStartFailure(failureMessage);
+
+    // 合成一筆失敗結果，讓功能知道流程停在哪一步、為什麼停。PythonRunner
+    // 對「無法啟動 Python」也是這樣合成後走 callback。
+    PythonRunner::PythonRunnerResult synthetic;
+    synthetic.success  = false;
+    synthetic.hasJson  = false;
+    synthetic.exitCode = -1;
+    synthetic.message  = failureMessage;
+    m_flowResults.append(synthetic);
+
+    finishFlow();
+}
+
+bool PPS2_0DevTool::startFlowStep(const FlowStep &step, QString *failureMessage)
+{
+    const QJsonObject functionConfig = getFunctionConfig(m_flowFunctionName);
+
+    // 步驟可覆寫直譯器（兩步跑在不同 Python 環境時用）。覆寫值由功能自己從
+    // 自己的設定區塊取出後填進步驟 —— 外殼不解讀 Function 底下的任何鍵。
+    const QString program = step.program.isEmpty()
+            ? functionConfig.value("Program").toString(QString("python"))
+            : step.program;
+
+    // 信封四個欄位。tool 身分不在這裡 —— 走 TOOLNAME / TOOLVERSION 環境變數。
+    QJsonObject envelope;
+    envelope.insert("source_path", getUI_sourcePathLineEditText());
+    envelope.insert("config",      functionConfig);
+    envelope.insert("action",      step.action);
+    envelope.insert("params",      step.params);
+
+    m_flowStepLabel = step.label.isEmpty() ? m_flowFunctionName : step.label;
+
+    // 對話框不重建，只換標題列的步驟名稱，並把上一步殘留的階段文字蓋掉。
+    if (m_processingDialog)
+        m_processingDialog->setStep(m_flowStepLabel);
+
+    PythonRunner::ResultCallback stepCallback =
+            [this](const PythonRunner::PythonRunnerResult &result) {
+        onStepResult(result);
+    };
+
+    QString message;
+    const bool started = m_runner->start(program,
+                                         step.scriptPath,
+                                         envelope,
+                                         step.envVars,
+                                         m_config.debugMode(),   // Debug_Mode 連動 -v
+                                         stepCallback,
+                                         &message);
+    if (failureMessage)
+        *failureMessage = started ? QString() : message;
+
+    return started;
+}
+
+// startFlowStep() 失敗時的共同收尾。
+//
+// 先收對話框再讓使用者看到原因：錯誤訊息框疊在 application-modal 的處理中
+// 對話框上雖然可行（Qt 的 modal 是堆疊的，後顯示的在上層），但讓使用者同時
+// 看到「處理中」和「失敗了」兩個視窗沒有意義。
+void PPS2_0DevTool::reportStepStartFailure(const QString &failureMessage)
+{
+    closeProcessingDialog();
+
+    // 忙碌時不跳訊息框（見 PythonRunner::start）—— 那是程式缺陷不是使用者
+    // 操作錯誤，PythonRunner 已經記了警告。流程內走不到這條（只有前一步真的
+    // 結束了才會啟動下一步），但守衛留著，免得日後有人繞過流程直接呼叫時
+    // 靜默地變成一個訊息框。
+    if (m_runner->isIdle())
+        showUI_ErrorMessageBox(failureMessage);
+}
+
+void PPS2_0DevTool::onStepResult(const PythonRunner::PythonRunnerResult &result)
+{
+    // 取消時 PythonRunner 根本不呼叫 callback，所以這裡收到結果就代表流程
+    // 還活著。守衛留著只是不信任未來的自己。
+    if (!m_flowActive || m_flowCancelled)
+        return;
+
+    m_flowResults.append(result);
+    advanceFlow();
+}
+
+void PPS2_0DevTool::finishFlow()
+{
+    FlowResult result;
+    result.results   = m_flowResults;
+    result.elapsedMs = m_runTimer.elapsed();
+
+    for (int i = 0; i < m_flowResults.size(); ++i) {
+        if (!m_flowResults.at(i).success) {
+            result.success         = false;
+            result.failedStepIndex = i;   // 第一個失敗的步驟
+            break;
+        }
+    }
+
+    QTDebug(QString("流程 %1 結束（%2 步，%3），耗時 %4")
+            .arg(m_flowFunctionName)
+            .arg(m_flowResults.size())
+            .arg(result.success ? QString("全部成功")
+                                : QString("第 %1 步失敗").arg(result.failedStepIndex + 1))
+            .arg(formatElapsedTime(result.elapsedMs)));
+
+    FlowCallback callback = m_flowCallback;
+
+    closeProcessingDialog();
+    resetFlowState();
+
+    // callback 放在狀態清空之後，功能才能在 callback 裡直接啟動下一條流程。
+    // 這與 PythonRunner::finish() 先歸零 m_state 再呼叫 callback 是同一個理由。
+    if (callback)
+        callback(result);
+}
+
+void PPS2_0DevTool::closeProcessingDialog()
+{
+    if (!m_processingDialog)
+        return;
+
+    m_processingDialog->hide();
+    m_processingDialog->deleteLater();
+    m_processingDialog = Q_NULLPTR;
+}
+
+void PPS2_0DevTool::resetFlowState()
+{
+    m_flowActive    = false;
+    m_flowCancelled = false;
+    m_flowFunctionName.clear();
+    m_flowStepLabel.clear();
+    m_flowDecider  = FlowDecider();
+    m_flowCallback = FlowCallback();
+    m_flowResults.clear();
 }
 
 void PPS2_0DevTool::onScriptProgress(const QString &stage)
@@ -186,20 +395,32 @@ void PPS2_0DevTool::onScriptProgress(const QString &stage)
 
 void PPS2_0DevTool::onCancelRequested()
 {
+    // 先標記再要求終止：行程已經不在執行時，PythonRunner::cancel() 會同步
+    // 走到 finish() 並發出 runFinished，旗標晚一步設就來不及被看到。
+    m_flowCancelled = true;
     m_runner->cancel();
 }
 
 void PPS2_0DevTool::onScriptRunFinished()
 {
-    // 不論成功、失敗或取消都要收掉對話框。
-    if (m_processingDialog) {
-        m_processingDialog->hide();
-        m_processingDialog->deleteLater();
-        m_processingDialog = Q_NULLPTR;
+    // PythonRunner::finish() 把 runFinished 排在 callback 之前，所以到這裡時
+    // 外殼還不知道流程要不要繼續。正常結束的收尾一律留給 onStepResult() 之後
+    // 的 advanceFlow() —— 這裡什麼都不做，對話框才不會在步驟之間閃掉。
+    //
+    // 取消是唯一的例外：那條路徑上 callback 不會被呼叫，runFinished 是外殼
+    // 唯一會收到的通知。
+    if (m_flowActive && m_flowCancelled) {
+        QTDebug(QString("流程 %1 已取消，耗時 %2")
+                .arg(m_flowFunctionName,
+                     formatElapsedTime(m_runTimer.elapsed())));
+        closeProcessingDialog();
+        resetFlowState();
+        return;
     }
 
-    QTDebug(QString("腳本執行結束，耗時 %1")
-            .arg(formatElapsedTime(m_runTimer.elapsed())));
+    // 沒有流程在跑卻收到結束通知：不該發生，但別留下孤兒對話框。
+    if (!m_flowActive)
+        closeProcessingDialog();
 }
 
 // ---------------------------------------------------------------------------

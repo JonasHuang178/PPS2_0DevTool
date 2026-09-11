@@ -17,8 +17,13 @@ Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待�
 
 | 層 | 職責 | 不該做的事 |
 |---|---|---|
-| **Qt (C++)** | 顯示清單、接收選擇、組裝參數、呼叫腳本、呈現結果 | 解析檔案格式、呼叫外部 API、產生報表、做 AI 分析 |
-| **Python** | 全部業務邏輯 | 開視窗、管理 UI 狀態 |
+| **Qt (C++)** | 顯示清單、接收選擇、組裝參數、呼叫腳本、**編排多步驟流程**、呈現結果 | 解析檔案格式、呼叫外部 API、產生報表、做 AI 分析 |
+| **Python** | 單一步驟的全部業務邏輯 | 開視窗、管理 UI 狀態 |
+
+「編排流程」是指決定執行哪一步、依前一步的結果組裝下一步的參數、判定流程
+何時結束 —— 控制流在 Qt，運算在腳本。這條線一旦模糊（例如在 Qt 裡算出
+「筆數超過門檻就改用另一種做法」），那段邏輯就再也無法從命令列測試，也無法
+被其他 Python 呼叫端重用。
 
 **每一個功能 = 一個 tab。** 功能之間互相獨立：各自讀自己的設定、決定自己顯示與否、
 呼叫自己的腳本。**新增一個功能不需要修改任何框架程式碼。**
@@ -217,6 +222,8 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 
 **不需要修改 `json.cpp`。**
 
+> 這份清單與 `pps2_0devtool.h` 開頭的類別註解是同一份，改一邊要記得改另一邊。
+
 ### 外殼提供的服務
 
 ```cpp
@@ -240,6 +247,11 @@ void    showResultDialog(const QString &title, const QString &content, qint64 el
 QString getUI_sourcePathLineEditText() const;
 bool    removeTabByTitle(const QString &title);
 
+// 流程執行（非同步，一次操作依序跑多支腳本）
+bool runFunctionFlow(const QString &functionName,
+                     FlowDecider decide,
+                     FlowCallback onDone);
+
 // 掛勾訊號（不需要來源路徑的功能不連接即可）
 signals:
     void sourcePathChanged(const QString &sourceFilePath);
@@ -256,13 +268,78 @@ runFunctionScript("Log_Info", scriptPath, "get_log_info", params,
     });
 ```
 
+### 多步驟流程
+
+一個 button 要依序跑多支腳本時用 `runFunctionFlow()`。步驟**不預先列出**：
+每完成一步，外殼把目前為止所有已完成結果交給你的決策函式，由它回答下一步
+或結束。流程長度與路徑因此都可以依結果而定。
+
+```cpp
+runFunctionFlow("Log_Report",
+
+    // 決策函式：每完成一步被問一次
+    [this](const QList<PythonRunner::PythonRunnerResult> &done)
+            -> PPS2_0DevTool::FlowStep {
+        if (done.isEmpty()) {                       // 還沒跑過任何一步
+            PPS2_0DevTool::FlowStep step;
+            step.label      = "步驟 1/2：分析 log";
+            step.scriptPath = "scripts/analyse_log.py";
+            step.action     = "analyse";
+            step.params     = buildAnalyseParams();
+            return step;
+        }
+
+        const PythonRunner::PythonRunnerResult &first = done.first();
+        if (!first.success)
+            return PPS2_0DevTool::FlowStep::done();  // 第一步失敗就收工
+
+        if (done.size() == 1) {
+            PPS2_0DevTool::FlowStep step;
+            step.label      = "步驟 2/2：產生報表";
+            step.scriptPath = "scripts/make_report.py";
+            step.action     = "report";
+            step.params     = buildReportParams(first.data);   // 只挑欄位、改名
+            return step;
+        }
+
+        return PPS2_0DevTool::FlowStep::done();
+    },
+
+    // 流程結束時呼叫一次。取消時不會被呼叫。
+    [this](const PPS2_0DevTool::FlowResult &r) {
+        if (!r.success) { showUI_ErrorMessageBox("流程失敗"); return; }
+        applyToUi(r.results);            // 只有這裡碰 UI
+    });
+```
+
+寫流程時要記得的五件事：
+
+- **步驟序號自己寫進 `label`。** 流程長度不定，外殼無從得知總步數，所以不會
+  幫你編號。`label` 顯示在處理中對話框的標題列，腳本回報的 `stage` 顯示在
+  下面的標籤 —— 兩層文字，一個視窗，從頭到尾不重建。
+- **決策函式裡不要有使用者互動。** 它在步驟之間同步執行，事件迴圈不會轉動；
+  `QMessageBox::exec()`、`QFileDialog` 之類會開巢狀事件迴圈，把主視窗交給
+  那個迴圈接管。要問使用者，就在流程開始前問完。
+- **決策函式只搬資料，不做運算。** 挑欄位、改名、讀 UI 上的值、依成敗分支 ——
+  可以。計算、過濾、聚合 —— 推進腳本。理由見上面的職責表。
+- **資料量大時傳路徑，不要傳內容。** 前一步的 `data` 要進下一步的 `params`，
+  就得在 Qt 這邊再序列化一次。上萬筆的話讓前一步把結果寫成檔案、`data` 只
+  回傳路徑，下一步用路徑取用。
+- **參與流程的腳本要可重入。** 取消或失敗時畫面完全不變，但**已完成步驟的
+  副作用不會還原** —— 寫出去的檔案、送出去的請求都還在。以相同輸入重跑一次
+  不該產生重複或不一致的結果。需要補償的話，自己在決策函式裡排補救步驟。
+
 ### 三條必須遵守的規則
 
 - **UI 只在收到 `PASS` 之後才變更。** 執行過程中不做任何逐筆更新，
   一律等結果到齊才一次套用。所以取消或失敗時畫面完全不動，沒有東西需要回捲。
+  多步驟流程的「結果到齊」是指**整條流程結束**，不是單一步驟結束 —— 中間
+  步驟的結果自己留著，不要逐步套上畫面。
 - **取消時 callback 不會被呼叫。** 這是「取消後畫面不動」的物理保證，
-  呼叫端不需要寫取消分支。
+  呼叫端不需要寫取消分支。取消的對象是整條流程：後續步驟不會啟動，決策函式
+  也不會再被問到。
 - **一次只能執行一支腳本。** 執行期間主視窗被鎖定；程式化的連續呼叫會回 `false`。
+  流程進行中（含步驟之間的間隔）同樣算執行中。
 
 ---
 
