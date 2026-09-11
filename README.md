@@ -8,6 +8,13 @@ PPS 2.0 開發輔助工具。框架與腳本執行管線已完成，並帶有第
 console 中 —— 在 Single Building 交付後才具備觸發腳本的入口，**尚待在 Windows
 實機補驗**。
 
+> **Single Building 的 Windows 驗收進行中。**
+> 已在 Linux + Qt 5.15.13 完成 62 項自動化行為驗證；需要實機的部分共 46 項，
+> 目前完成 4 項（建置、部署、Python 可用）。
+> 進度、逐項步驟與交接方式見
+> [`openspec/changes/add-single-building-tab/tasks.md`](openspec/changes/add-single-building-tab/tasks.md)
+> 第 6 節。
+
 應用程式圖示已內嵌進執行檔，並在 Windows 上實機驗收通過（見 `openspec/changes/archive/2026-09-07-add-app-icon/tasks.md` 第 4 節）。
 
 ---

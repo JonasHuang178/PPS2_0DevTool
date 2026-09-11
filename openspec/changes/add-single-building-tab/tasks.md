@@ -59,8 +59,35 @@
 ## 6. 驗收
 
 > 以下四項需要 Windows 實機，無法在開發容器中完成。
-> 已在 Linux + Qt 5.15.13 以 offscreen 平台完成 45 項自動化行為驗證
+> 已在 Linux + Qt 5.15.13 以 offscreen 平台完成 62 項自動化行為驗證
 > （見 design.md 決策五、十一所記錄的兩個實作期修正）。
+
+### 驗收進行中
+
+**最後更新：2026-09-11**
+
+逐項的測試步驟與勾選狀態在這份清單：
+<https://claude.ai/code/artifact/fa964b23-c542-4c64-9342-7abdb5c314e9>
+
+勾選狀態存在該 artifact 的資料庫（collection `qa`、doc_id `single-building-windows`），
+以 Artifact 工具的 `read_db` / `write_db` 讀寫，**不綁任何 session** —— 換一個 session
+接手時，從那裡取得目前進度，並把新的結果寫回去。
+
+| | |
+|---|---|
+| **進度** | 4 / 46 |
+| **已完成** | 0.0 取得程式碼、0.1 Windows 建置、1.1 部署、1.2 Python 可用 |
+| **下一項** | 3.1 來源清單的內容與排序 |
+| **環境** | Windows + Qt Creator + MinGW |
+
+已在 Windows 上實際確認：建置成功、設定檔載入、選擇資料夾後 `.cpp` 清單正確載入。
+最後一項連帶證明了入口腳本搬進 `scripts/<功能>/` 之後，那行 `sys.path` 前導設定在
+Windows 上確實成立。
+
+**部署提醒**：`PPS2_0DevTool.pro` 有一段註解說會把設定檔與 `scripts/` 複製到執行檔旁，
+但底下沒有實際規則。每次建置後要手動複製，**改過 `scripts/` 底下的檔案也要重新複製**，
+否則程式讀到的還是舊的那份（第 9、10 節需要臨時加 `sleep`，特別容易在這裡卡住）。
+
 
 - [ ] 6.1 在 Windows 上完整走一次流程：選來源路徑 → 挑檔案 → Modify Setting → 重啟程式確認結果清單自設定檔還原 → Recovery Setting 確認清空
 - [ ] 6.2 補驗外殼延後的項目一：`Debug_Mode` 開啟時，於腳本執行中關閉 Debug console，確認子行程被終止且系統中無殘留（工作管理員確認）
