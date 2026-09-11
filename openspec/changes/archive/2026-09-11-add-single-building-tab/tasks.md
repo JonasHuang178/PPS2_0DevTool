@@ -62,40 +62,57 @@
 > 已在 Linux + Qt 5.15.13 以 offscreen 平台完成 62 項自動化行為驗證
 > （見 design.md 決策五、十一所記錄的兩個實作期修正）。
 
-### 驗收進行中
+### 驗收狀態：**未完成即歸檔**（2026-09-11）
 
-**最後更新：2026-09-11**
+> 這個 change 在 Windows 實機驗收尚未完成的情況下歸檔，是使用者明確的決定。
+> 以下如實記錄歸檔當下的狀態，不要把本節讀成「已驗證」。
 
-逐項的測試步驟與勾選狀態在這份清單：
-<https://claude.ai/code/artifact/fa964b23-c542-4c64-9342-7abdb5c314e9>
-
-勾選狀態存在該 artifact 的資料庫（collection `qa`、doc_id `single-building-windows`），
-以 Artifact 工具的 `read_db` / `write_db` 讀寫，**不綁任何 session** —— 換一個 session
-接手時，從那裡取得目前進度，並把新的結果寫回去。
+**未完成的 5 項任務**：5.2、6.1、6.2、6.3、6.4（見本檔各節，維持未勾選）。
 
 | | |
 |---|---|
-| **進度** | 4 / 46 |
-| **已完成** | 0.0 取得程式碼、0.1 Windows 建置、1.1 部署、1.2 Python 可用 |
-| **下一項** | 3.1 來源清單的內容與排序 |
+| **Windows 驗收進度** | 4 / 46（其中 2 項需重做，見下） |
+| **已驗收** | 0.0 取得程式碼、0.1 Windows 建置、1.1 部署、1.2 Python 可用 |
+| **需重做** | 0.1、1.1 —— `.pro` 於 commit `14e74d8` 加入自動部署規則後，做法已改變 |
+| **完全未驗** | 3.x 起的 42 項 |
 | **環境** | Windows + Qt Creator + MinGW |
 
-已在 Windows 上實際確認：建置成功、設定檔載入、選擇資料夾後 `.cpp` 清單正確載入。
-最後一項連帶證明了入口腳本搬進 `scripts/<功能>/` 之後，那行 `sys.path` 前導設定在
-Windows 上確實成立。
+逐項的測試步驟與勾選狀態仍在這份清單，歸檔後依然有效：
+<https://claude.ai/code/artifact/fa964b23-c542-4c64-9342-7abdb5c314e9>
 
-**部署提醒（已修正，需重建一次）**：`PPS2_0DevTool.pro` 原本只有一段「會把設定檔與
-`scripts/` 複製到執行檔旁」的註解，底下沒有實際規則，因此每次建置後都要手動複製。
-現已補上真正的規則（`deploy_runtime` 掛在 `PRE_TARGETDEPS`），**每次建置都會複製，
-只改 `scripts/` 底下的 `.py` 也會重新複製** —— 第 9、10 節加拆 `sleep` 不再需要手動同步。
+勾選狀態存在該 artifact 的資料庫（collection `qa`、doc_id `single-building-windows`），
+以 Artifact 工具的 `read_db` / `write_db` 讀寫，**不綁任何 session**。日後要接手補驗，
+從那裡取得進度並把結果寫回去即可。
 
-影響驗收清單兩項：**0.1 要重建一次**才會有這條規則；**1.1 的手動 `copy` / `xcopy` 不再需要**，
-改為確認建置後執行檔旁自動出現 `PPS2_0DevTool.json` 與 `scripts/single_building/`。
+#### 已經驗證到什麼程度
+
+- **Linux + Qt 5.15.13（offscreen）**：62 項自動化行為驗證全數通過
+  （見 design.md 決策五、十一所記錄的兩個實作期修正）。
+- **Windows 實機**：僅確認建置成功、設定檔載入、選擇資料夾後 `.cpp` 清單正確載入。
+  最後一項連帶證明入口腳本搬進 `scripts/<功能>/` 後，那行 `sys.path` 前導設定在
+  Windows 上確實成立。
+- **完全未驗證**：排序在 Windows 版 Qt 上的實際次序（design.md 決策五的 `QCollator`
+  風險）、設定檔的 Windows 絕對路徑往返、Debug console 的中文編碼與孤兒行程
+  （即任務 6.2、6.3）、以及 `.pro` 新部署規則的 Windows 分支（`copy` / `xcopy`）。
+
+#### 部署規則（commit `14e74d8`）
+
+`PPS2_0DevTool.pro` 原本只有一段「會把設定檔與 `scripts/` 複製到執行檔旁」的註解，
+底下沒有實際規則，因此每次建置後都要手動複製。現已補上真正的規則（`deploy_runtime`
+掛在 `PRE_TARGETDEPS`），**每次建置都會複製，只改 `scripts/` 底下的 `.py` 也會重新複製**。
+代價是每次建置連帶重新連結一次執行檔；複製是單向的，只覆蓋與新增，不會刪除。
 
 已在 Linux + Qt 5.15.13 驗證：乾淨重建零警告、部署內容與來源 `diff -r` 完全一致、
 重複建置不疊層、只改 `.py` 重建後執行檔旁那份確實更新、以部署好的那份可正常啟動。
-**Windows 分支（`copy` / `xcopy`）尚未實機執行過**，0.1 重建時請留意建置輸出。
+**Windows 分支尚未實機執行過。**
 
+#### 歸檔時的例外
+
+任務 6.5 要求先跑 `openspec validate add-single-building-tab --strict`。**這次沒有跑** ——
+歸檔環境中沒有 `openspec` CLI（`command not found`，且無法取得），因此 delta spec 併入
+主 spec 是手動完成的：`app-shell` 套用 1 ADDED（來源路徑掛勾）與 2 REMOVED（功能掛勾
+訊號、啟動時不含任何功能），`script-envelope` 套用 1 MODIFIED（目錄結構），
+`single-building` 整份新增為新能力。併入後已逐項比對確認與 delta 一致。
 
 - [ ] 6.1 在 Windows 上完整走一次流程：選來源路徑 → 挑檔案 → Modify Setting → 重啟程式確認結果清單自設定檔還原 → Recovery Setting 確認清空
 - [ ] 6.2 補驗外殼延後的項目一：`Debug_Mode` 開啟時，於腳本執行中關閉 Debug console，確認子行程被終止且系統中無殘留（工作管理員確認）
