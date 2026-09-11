@@ -19,6 +19,7 @@ namespace Ui { class PPS2_0DevTool; }
 QT_END_NAMESPACE
 
 class ProcessingDialog;
+class SingleBuilding;
 
 // 應用程式外殼。
 //
@@ -47,7 +48,8 @@ class ProcessingDialog;
 //      removeTabByTitle()；UI_SetupSignal() 連接該 tab 的元件
 //   4. 在 PPS2_0DevTool.json 的 Function 加設定區塊
 //   5. 在 PPS2_0DevTool.pro 的 SOURCES / HEADERS 加檔案
-//   6. 複製 scripts/_function_template.py 寫對應的腳本
+//   6. 建立 scripts/<功能名>/，把 scripts/_function_template.py 複製進去寫成
+//      入口腳本；跨功能的共用能力放進 script_utils/ 底下對應的技術領域分組
 //
 // 不需要修改 json.cpp。
 
@@ -158,16 +160,27 @@ public:
 
 signals:
     // 功能唯一的掛勾。不需要來源路徑的功能不連接即可。
-    void sourcePathChanged(const QString &sourceFilePath);
-    void workingDataCleared();
+    //
+    // 來源路徑是每個功能各自保有的（見 m_functionSourcePaths）。Qt 的訊號會
+    // 送達所有已連接的 slot，「只有該功能反應」無法靠「不廣播」達成 —— 因此
+    // 訊號附帶路徑所屬的功能名稱，功能端比對自己的名稱後才決定要不要處理。
+    // 少了這個比對，使用者為了別的 tab 調整路徑就會清掉這個功能的狀態。
+    //
+    // 這裡只有一個訊號。曾經還有一個廣播給所有功能的 workingDataCleared()，
+    // 在來源路徑改為各功能私有之後它失去了任何合理的觸發時機 —— 清除路徑
+    // 只該影響當前功能。宣告一個永遠不會發出的訊號是陷阱：後續開發者接上去
+    // 會編譯通過、connect 回傳 true、執行期什麼都不發生。
+    void sourcePathChanged(const QString &sourceFilePath,
+                           const QString &functionName);
 
 protected:
     void closeEvent(QCloseEvent *event) Q_DECL_OVERRIDE;
 
 private slots:
     void onBrowseSourcePath();
-    void onClearSourcePath();
     void onSourcePathEdited();
+    void onFunctionTabChanged(int index);
+    void onInitialFunctionEntry();
     void onAbout();
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void onScriptProgress(const QString &stage);
@@ -176,6 +189,7 @@ private slots:
 
 private:
     void setupToolService();
+    void notifyFunctionEntered(const QString &functionName);
     void UI_Init();
     void UI_SetupSignal();
     void setupTrayIcon();
@@ -199,7 +213,6 @@ private:
     ProcessingDialog  *m_processingDialog;
     QSystemTrayIcon   *m_trayIcon;
     QElapsedTimer      m_runTimer;      // 整條流程一個，不是每步一個
-    QString            m_lastSourcePath;
 
     bool               m_flowActive;
     bool               m_flowCancelled;
@@ -208,6 +221,22 @@ private:
     FlowDecider        m_flowDecider;
     FlowCallback       m_flowCallback;
     QList<PythonRunner::PythonRunnerResult> m_flowResults;
+
+    // --- 功能實例 ---
+    SingleBuilding    *m_singleBuilding;
+
+    // 每個功能各自的來源路徑，鍵為功能名稱（即 tab 標題）。
+    //
+    // 只存在於執行期間，不寫入設定檔 —— 重新啟動後所有功能的來源路徑皆為空。
+    //
+    // 這個 map 同時是「路徑有沒有真的變動」的比對基準：切換 tab 時把文字框
+    // 還原成 map 中的值，之後的 editingFinished 比對相同就不會發出變更訊號。
+    // 還原因此不會被誤認成一次使用者修改 —— 否則使用者切個 tab 回來，功能
+    // 就會執行它為「路徑變了」所定義的重置行為。
+    QMap<QString, QString> m_functionSourcePaths;
+
+    // 目前顯示中的功能名稱。空字串代表沒有任何功能 tab。
+    QString            m_currentFunctionName;
 };
 
 #endif // PPS2_0DEVTOOL_H

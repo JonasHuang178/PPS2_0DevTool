@@ -1,11 +1,22 @@
 # PPS 2.0 DevTool
 
-PPS 2.0 開發輔助工具。目前是 **v2.0.0 的外殼**：框架與腳本執行管線已完成，
-**尚未包含任何功能 tab**，功能之後會逐一加上。
+PPS 2.0 開發輔助工具。框架與腳本執行管線已完成，並帶有第一個功能 tab
+**Single Building**。
 
-框架已在 Windows（Qt Creator + MinGW）與 macOS 上建置並驗證。有兩項驗收因為
-「空外殼沒有觸發腳本的入口」而延後 —— 關閉 console 時清理子行程、以及 Qt 與
-Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待第一個功能 tab 做出來後補驗。
+框架已在 Windows（Qt Creator + MinGW）與 macOS 上建置並驗證。外殼交付時延後的
+兩項驗收 —— 關閉 Debug console 時清理子行程、以及 Qt 與 Python 的訊息同時出現在
+console 中 —— 在 Single Building 交付後才具備觸發腳本的入口，**尚待在 Windows
+實機補驗**。
+
+> **Single Building 的 Windows 實機驗收尚未完成，change 已先行歸檔。**
+> 已在 Linux + Qt 5.15.13 完成 62 項自動化行為驗證；需要實機的部分共 46 項，
+> 目前僅完成 4 項（取得程式碼、建置、部署、Python 可用），其中建置與部署兩項
+> 因 `.pro` 加入自動部署規則而需重做。**其餘 42 項未驗證**，包含排序在 Windows
+> 版 Qt 上的實際次序、設定檔的 Windows 絕對路徑往返，以及上述兩項延後驗收。
+> 未完成的任務為 5.2、6.1、6.2、6.3、6.4。
+> 逐項狀態與交接方式見
+> [`openspec/changes/archive/2026-09-11-add-single-building-tab/tasks.md`](openspec/changes/archive/2026-09-11-add-single-building-tab/tasks.md)
+> 第 6 節。
 
 應用程式圖示已內嵌進執行檔，並在 Windows 上實機驗收通過（見 `openspec/changes/archive/2026-09-07-add-app-icon/tasks.md` 第 4 節）。
 
@@ -26,7 +37,11 @@ Python 的訊息同時出現在 console 中；兩者程式碼都已完成，待�
 被其他 Python 呼叫端重用。
 
 **每一個功能 = 一個 tab。** 功能之間互相獨立：各自讀自己的設定、決定自己顯示與否、
-呼叫自己的腳本。**新增一個功能不需要修改任何框架程式碼。**
+呼叫自己的腳本、**各自保有自己的來源路徑**。
+
+畫面上方的來源路徑欄位是共用的，但它顯示的是**當前功能**的路徑：切換分頁時會還原成
+該功能自己的值，在某個分頁改路徑不會牽動其他分頁。還原不算「變更」，不會觸發任何
+功能重新載入。
 
 ```
                         ┌──────────── 別人 / CI ────────────┐
@@ -39,6 +54,23 @@ Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ �
 「給別人用」的正確介面是 `script_utils`，不是腳本 —— 別人要整合進自己的流程時，
 `from script_utils import gitlab_utils` 遠比「開子行程、組參數、parse JSON」好用。
 
+### 兩種分組軸
+
+`scripts/` 底下有兩種東西，各用各的分組方式：
+
+| | 分組依據 | 例子 |
+|---|---|---|
+| **入口腳本** | 應用**功能** | `scripts/single_building/` |
+| **共用模組** | 技術**領域** | `script_utils/system_utils/`、`script_utils/gitlab_utils/` |
+
+共用模組**不依功能分組** —— 那樣的話第二個功能需要同一個能力時就無處可放。
+只服務單一功能的東西留在 `scripts/<功能>/` 之下。
+
+因為入口腳本放進了子目錄，每支頂部都有一行把 `scripts/` 插進 `sys.path` 的設定，
+**不能刪**：Python 只把「腳本所在目錄」放進 `sys.path`，少了它，命令列直接執行時
+`script_io` 與 `script_utils` 都匯不到。Qt 雖然會注入指向 `scripts/` 的 `PYTHONPATH`，
+但命令列與 CI 沒有那個環境，而那是本專案明確支援的用法。
+
 ---
 
 ## 目錄結構
@@ -46,7 +78,8 @@ Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ �
 ```
 PPS2_0DevTool/
 ├── main.cpp                  啟動檢查、單一實例鎖、crash handler
-├── pps2_0devtool.{h,cpp,ui}  應用程式外殼
+├── pps2_0devtool.{h,cpp,ui}  應用程式外殼（含每個功能各自的來源路徑）
+├── SingleBuilding.{h,cpp}    功能：Single Building
 ├── json.{h,cpp}              設定檔讀取（只讀工具層級）
 ├── PythonRunner.{h,cpp}      腳本執行管線
 ├── ProcessingDialog.{h,cpp}  處理中對話框
@@ -55,7 +88,7 @@ PPS2_0DevTool/
 ├── result_code.h             Qt 端錯誤碼
 ├── version.h                 版本與檔名常數
 │
-├── PPS2_0DevTool.json        設定檔（Function 目前是空的）
+├── PPS2_0DevTool.json        設定檔
 ├── PPS2_0DevTool.pro         qmake 專案檔
 │
 ├── resources.qrc             Qt 資源清單（應用程式圖示）
@@ -70,9 +103,20 @@ PPS2_0DevTool/
 ├── scripts/
 │   ├── _function_template.py 功能腳本範本 ← 複製這個開始寫新腳本
 │   ├── script_io.py          信封處理
-│   └── script_utils/
-│       ├── __init__.py
-│       └── logger.py         log（唯一設定 logging 的地方）
+│   │
+│   ├── single_building/      入口腳本依「功能」分組
+│   │   ├── __init__.py       功能專屬：設定檔名、挑選的副檔名
+│   │   ├── single_building_list_source.py       取得來源清單
+│   │   ├── single_building_list_target.py       讀取設定
+│   │   ├── single_building_modify_setting.py    寫入設定
+│   │   └── single_building_recovery_setting.py  清空設定
+│   │
+│   └── script_utils/         共用模組依「技術領域」分組
+│       ├── logger.py         log（唯一設定 logging 的地方）
+│       ├── system_utils/     系統層面：檔案系統、暫存目錄
+│       │   ├── files.py      依副檔名列檔案、行式文字檔讀寫
+│       │   └── temp.py       暫存目錄下的路徑
+│       └── gitlab_utils/     GitLab REST（尚無內容）
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
@@ -165,6 +209,76 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 
 ---
 
+## 功能：Single Building
+
+從來源目錄挑出要處理的 `.cpp` 檔案，把選擇保存成一份設定。
+
+```
++-[ Single Building ]---------------------------------------------------------+
+|  +-- Source -------------------+          +-- Target -------------------+   |
+|  | Filter [_______] [ Clear ]  |          |                  [ Clear ]  |   |
+|  | +-------------------------+ |          | +-------------------------+ |   |
+|  | |   來源池（唯讀）          | | [  ->  ] | |  結果集（可增可減）        | |   |
+|  | |   來源路徑該層的 *.cpp    | | [  <-  ] | |  暫存設定檔的鏡子          | |   |
+|  | +-------------------------+ |          | +-------------------------+ |   |
+|  +-----------------------------+          +-----------------------------+   |
+|                                [ Recovery Setting ]  [ Modify Setting ]     |
++-----------------------------------------------------------------------------+
+```
+
+### 資料流
+
+真正的狀態儲存處是一個暫存 txt，四支腳本都繞著它轉：
+
+```
+   來源路徑（目錄）
+        |  list_source        掃描該層的 *.cpp（不遞迴）
+        v
+   Source list  --[ -> ]-->  Target list
+                 <--[ <- ]
+                                  |          ^
+                  modify_setting  |          |  list_target
+                  寫入絕對路徑     v          |  讀出絕對路徑
+                            +---------------------------+
+                            |  %TEMP%/PPS2_0DevTool_     |
+                            |  single_building.txt       |   <== 設定本體
+                            +---------------------------+
+                                       ^
+                                       |  recovery_setting
+                                       |  清空後回讀（結果必為空）
+```
+
+清單顯示的是**檔名**，設定檔存的是**絕對路徑** —— 完整路徑前綴完全相同又很長，
+顯示出來只會撐爆清單寬度，但設定必須指向確切的檔案。
+
+### 行為
+
+| 觸發 | 執行 |
+|---|---|
+| 進入分頁（含啟動時本分頁即為當前分頁） | `list_source` → `list_target` |
+| 進入分頁但來源路徑為空 | 只跑 `list_target`（不算失敗、不跳錯誤框） |
+| **在本分頁**修改來源路徑 | `recovery_setting`（清空設定）→ `list_source` |
+| 在**別的分頁**修改來源路徑 | 不受影響 |
+| `->` / `<-` / 兩顆 Clear | 純畫面操作，不碰設定檔 |
+| Modify Setting | 寫入設定檔 |
+| Recovery Setting | 先跳確認框，再清空設定檔並回讀 |
+
+- 過濾**區分**大小寫、排序**不分**大小寫 —— 過濾是使用者主動輸入，排序是被動看到的結果
+- 排序為自然排序：`a2.cpp` 排在 `a10.cpp` 之前
+- `->` 是複製，來源清單不會變短；已存在的項目靜默略過
+- 過濾文字一有變動就清空來源的選取 —— 否則按下 `->` 會送出畫面上看不到的項目
+
+### 已知行為
+
+**未按 Modify Setting 的選擇，在切換分頁後會遺失。** 進入分頁時結果清單一律
+自設定檔重新填入。要保留就先按 Modify Setting。
+
+**暫存設定檔可能自己消失。** 它放在系統暫存目錄，Windows 的磁碟清理與「儲存空間
+感知」會清理該處。若日後需要跨重啟保留，改 `scripts/script_utils/single_building/paths.py`
+裡那一個函式即可（`%LOCALAPPDATA%` 是正確的去處）。
+
+---
+
 ## 設定檔
 
 檔名 `PPS2_0DevTool.json`，根鍵 `PPS2_0DevTool`。
@@ -218,7 +332,9 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
    `removeTabByTitle()`；`UI_SetupSignal()` 連接該 tab 的元件
 4. 在 `PPS2_0DevTool.json` 的 `Function` 加設定區塊
 5. 在 `PPS2_0DevTool.pro` 的 `SOURCES` / `HEADERS` 加檔案
-6. 複製 `scripts/_function_template.py` 寫對應的腳本
+6. 建立 `scripts/<功能名>/`，把 `scripts/_function_template.py` 複製進去寫成入口腳本
+   （範本本身留在 `scripts/` 這一層）；只服務這個功能的東西放這個目錄，跨功能的
+   共用能力放進 `script_utils/` 底下對應的技術領域分組
 
 **不需要修改 `json.cpp`。**
 
@@ -253,9 +369,12 @@ bool runFunctionFlow(const QString &functionName,
                      FlowCallback onDone);
 
 // 掛勾訊號（不需要來源路徑的功能不連接即可）
+//
+// 附帶功能名稱：來源路徑是各功能私有的，但 Qt 的訊號會送達所有已連接的
+// slot，功能端要比對自己的名稱後才決定要不要處理。
 signals:
-    void sourcePathChanged(const QString &sourceFilePath);
-    void workingDataCleared();
+    void sourcePathChanged(const QString &sourceFilePath,
+                           const QString &functionName);
 ```
 
 呼叫的樣子：
