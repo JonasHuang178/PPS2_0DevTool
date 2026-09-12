@@ -62,21 +62,41 @@ Config::LoadStatus Config::load(const QString &filePath, QString *errorMessage)
         return LoadRootMissing;
     }
 
-    // 只讀這三個工具層級欄位。其餘一律不碰。
+    // 只讀這四個工具層級欄位。其餘一律不碰。
     m_debugMode     = toBool(root.value("Debug_Mode"));
     m_userGuideLink = root.value("User_Guide_Link").toString();
+    m_service       = root.value("Service").toObject();    // 整包保留，不解析
     m_function      = root.value("Function").toObject();   // 整包保留，不解析
+
+    // Service 缺席是合法的：不使用任何共用服務的部署不需要寫這一段。
+    // toObject() 對不存在的鍵回傳空物件，所以這裡不需要額外處理。
 
     return LoadOk;
 }
 
 QJsonObject Config::getFunctionConfig(const QString &functionName) const
 {
-    return m_function.value(functionName).toObject();
+    // 功能不存在時回傳空物件，而不是只回傳 Service —— 「這個功能沒有設定」
+    // 與「這個功能只有共用設定」是兩件事，後者會讓漏寫的功能區塊看起來像是
+    // 寫了一半。
+    if (!m_function.contains(functionName))
+        return QJsonObject();
+
+    const QJsonObject section = m_function.value(functionName).toObject();
+
+    // Service 先鋪底，功能區塊後蓋上去 —— 同名鍵因此以功能區塊為準。
+    QJsonObject merged = m_service;
+    for (QJsonObject::const_iterator it = section.constBegin();
+         it != section.constEnd(); ++it) {
+        merged.insert(it.key(), it.value());
+    }
+    return merged;
 }
 
 bool Config::isFunctionVisible(const QString &functionName) const
 {
+    // 這裡讀的是 Function 底下的原始區塊，不是 getFunctionConfig() 的合併
+    // 結果 —— 見標頭檔的說明。
     if (!m_function.contains(functionName)) {
         QTWarn(QString("Function/%1 未在設定檔中定義，預設隱藏").arg(functionName));
         return false;

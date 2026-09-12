@@ -18,6 +18,7 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class PPS2_0DevTool; }
 QT_END_NAMESPACE
 
+class AIAnalysisGitLabMR;
 class ProcessingDialog;
 class SingleBuilding;
 
@@ -46,12 +47,14 @@ class SingleBuilding;
 //   2. 在 pps2_0devtool.ui 加一個 tab，標題就是功能名稱
 //   3. 在 setupToolService() 建立實例；UI_Init() 依 isFunctionVisible() 決定是否
 //      removeTabByTitle()；UI_SetupSignal() 連接該 tab 的元件
-//   4. 在 PPS2_0DevTool.json 的 Function 加設定區塊
+//   4. 在 PPS2_0DevTool.example.json 的 Function 加設定區塊（跨功能共用的端點
+//      與憑證放 Service，不要抄進功能區塊）
 //   5. 在 PPS2_0DevTool.pro 的 SOURCES / HEADERS 加檔案
 //   6. 建立 scripts/<功能名>/，把 scripts/_function_template.py 複製進去寫成
 //      入口腳本；跨功能的共用能力放進 script_utils/ 底下對應的技術領域分組
 //
-// 不需要修改 json.cpp。
+// 不需要修改 json.cpp。新增共用服務的鍵也不需要 —— 只有新增一整個工具層級
+// 區塊才需要動它。
 
 class PPS2_0DevTool : public QMainWindow
 {
@@ -223,7 +226,8 @@ private:
     QList<PythonRunner::PythonRunnerResult> m_flowResults;
 
     // --- 功能實例 ---
-    SingleBuilding    *m_singleBuilding;
+    SingleBuilding     *m_singleBuilding;
+    AIAnalysisGitLabMR *m_aiAnalysisGitLabMR;
 
     // 每個功能各自的來源路徑，鍵為功能名稱（即 tab 標題）。
     //

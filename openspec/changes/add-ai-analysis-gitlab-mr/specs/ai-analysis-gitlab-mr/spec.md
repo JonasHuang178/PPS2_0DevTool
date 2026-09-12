@@ -158,7 +158,7 @@ Repository 清單 SHALL 列出功能設定中 `Repo_List` 的所有項目，每�
 
 ### Requirement: Merge Request 表格
 
-表格 SHALL 有五個欄位：編號、標題、作者、建立日期、狀態。MUST NOT 有 repository 欄 —— 表格的內容一律屬於當前選取的那一個 repository。
+表格 SHALL 有五個欄位，依序為：編號、狀態、標題、作者、建立日期。MUST NOT 有 repository 欄 —— 表格的內容一律屬於當前選取的那一個 repository。
 
 標題欄 SHALL 為唯一會隨視窗寬度伸縮的欄位，其餘四欄寬度固定。標題過長時 SHALL 截斷顯示，並以整列的提示文字提供完整標題。
 

@@ -1,6 +1,7 @@
 #include "pps2_0devtool.h"
 #include "ui_pps2_0devtool.h"
 
+#include "AIAnalysisGitLabMR.h"
 #include "ProcessingDialog.h"
 #include "SingleBuilding.h"
 #include "common.h"
@@ -32,6 +33,7 @@ PPS2_0DevTool::PPS2_0DevTool(const Config &config, QWidget *parent)
     , m_flowActive(false)
     , m_flowCancelled(false)
     , m_singleBuilding(Q_NULLPTR)
+    , m_aiAnalysisGitLabMR(Q_NULLPTR)
 {
     ui->setupUi(this);
 
@@ -64,6 +66,7 @@ void PPS2_0DevTool::setupToolService()
 
     // 功能實例在這裡建立。
     m_singleBuilding = new SingleBuilding(this, this);
+    m_aiAnalysisGitLabMR = new AIAnalysisGitLabMR(this, this);
 }
 
 // 通知功能它被進入了。
@@ -81,8 +84,32 @@ void PPS2_0DevTool::UI_Init()
 {
     setWindowTitle(QString("%1 %2").arg(TOOL_NAME, TOOL_VERSION));
 
-    // 固定尺寸 1200x830。
-    setFixedSize(1200, 830);
+    // 固定尺寸 1280x830。
+    //
+    // 寬度從 1200 加到 1280 是為了 MR 表格：固定欄（編號 / 作者 / 建立日期 /
+    // 狀態）合計約 330，左欄約 460，1200 之下標題欄只剩約 324px —— 中文標題
+    // 看得到約 22 字。標題是使用者唯一用來認出「是哪一筆 MR」的欄位，被截掉
+    // 的話那張表就退化成一行字的清單。
+    setFixedSize(1280, 830);
+
+    // 共用的清單選取樣式。
+    //
+    // 兩個 :!active 的規則不是複製貼上的贅字 —— Windows 上視窗焦點離開清單
+    // 之後，預設的選取高亮會退成很淡的灰色。使用者在清單裡選好之後，下一個
+    // 動作往往就是去點別的控件，焦點因此離開；少了 :!active 那兩條，他就看
+    // 不出自己選的是哪一項，而真正生效的正是那一項。
+    //
+    // :hover 寫在 :selected 之前：兩者特異度相同，後寫的贏，所以滑過已選取的
+    // 項目時仍然維持選取色。
+    setStyleSheet(QString(
+        "QListView::item:hover, QTableView::item:hover {"
+        "  background-color: #E5F3FF;"
+        "}"
+        "QListView::item:selected, QTableView::item:selected,"
+        "QListView::item:selected:!active, QTableView::item:selected:!active {"
+        "  background-color: #CCE8FF;"
+        "  color: #042C53;"
+        "}"));
 
     ui->progressBar->setRange(0, 100);
     ui->progressBar->setValue(0);
@@ -90,6 +117,9 @@ void PPS2_0DevTool::UI_Init()
     // 功能依 isFunctionVisible() 決定是否 removeTabByTitle()。
     if (!isFunctionVisible(SingleBuilding::functionName()))
         removeTabByTitle(SingleBuilding::functionName());
+
+    if (!isFunctionVisible(AIAnalysisGitLabMR::functionName()))
+        removeTabByTitle(AIAnalysisGitLabMR::functionName());
 
     // 記下開場的當前功能。移除分頁後索引可能已經變動，因此在這裡才讀。
     const int current = ui->functionTabWidget->currentIndex();
@@ -127,6 +157,31 @@ void PPS2_0DevTool::UI_SetupSignal()
 
         connect(this, SIGNAL(sourcePathChanged(QString,QString)),
                 m_singleBuilding, SLOT(onSourcePathChanged(QString,QString)));
+    }
+
+    // AI Analysis GitLab MR 不連接 sourcePathChanged —— 它不使用來源路徑。
+    // 不需要的功能不連接任何訊號即可正常運作。
+    if (m_aiAnalysisGitLabMR) {
+        AIAnalysisGitLabMRWidgets widgets;
+        widgets.modeCombo           = ui->aiModeComboBox;
+        widgets.debugFileCheck      = ui->aiDebugFileCheckBox;
+        widgets.saveDirEdit         = ui->aiSaveDirLineEdit;
+        widgets.saveDirBrowseButton = ui->aiSaveDirBrowseButton;
+        widgets.jiraKeyEdit         = ui->aiJiraKeyLineEdit;
+        widgets.jiraNoneRadio       = ui->aiJiraNoneRadioButton;
+        widgets.jiraManualRadio     = ui->aiJiraManualRadioButton;
+        widgets.jiraAutoRadio       = ui->aiJiraAutoRadioButton;
+        widgets.repoView            = ui->aiRepoListView;
+        widgets.manualMrRadio       = ui->aiManualMrRadioButton;
+        widgets.manualMrEdit        = ui->aiManualMrLineEdit;
+        widgets.getMrRadio          = ui->aiGetMrRadioButton;
+        widgets.onlyOpenCheck       = ui->aiOnlyOpenCheckBox;
+        widgets.createdAfterCheck   = ui->aiCreatedAfterCheckBox;
+        widgets.createdAfterSpin    = ui->aiCreatedAfterSpinBox;
+        widgets.refreshButton       = ui->aiRefreshButton;
+        widgets.mrView              = ui->aiMrTableView;
+        widgets.analysisButton      = ui->aiAnalysisButton;
+        m_aiAnalysisGitLabMR->attachWidgets(widgets);
     }
 
     connect(m_runner, SIGNAL(progressStage(QString)),
