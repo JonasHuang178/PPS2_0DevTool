@@ -12,7 +12,7 @@
 
 要寫新腳本，改三個常數、列出 config / params、填實作區就完成了。
 
-三件必須遵守的事：
+四件必須遵守的事：
 
 1. 入口腳本放在 scripts/<功能>/ 底下，同一個功能的腳本收在一起。因為放進
    了子目錄，**底下那段 sys.path 設定不能刪** —— Python 只把「腳本所在目錄」
@@ -29,6 +29,10 @@
    只服務單一功能的東西留在 scripts/<功能>/ 之下。
 
 3. 只有結果 JSON 可以印到 stdout。診斷訊息用 logger（走 stderr）。
+
+4. 不要整包 log 出 config。跨功能共用的憑證會被併進來，而 Debug_Mode 開啟時
+   那一行會直接出現在 debug console 上。憑證優先走環境變數，log 時只印出
+   你真正需要的那幾個鍵。
 """
 
 import os
@@ -81,8 +85,12 @@ def main():
     tool_name = os.environ.get("TOOLNAME", "")
 
     logger.info("開始處理 %s（%d 筆）", name, count)          # -> stderr
-    logger.debug("呼叫方 =%r，來源路徑 =%r，設定 =%r",
-                 tool_name, source_path, cfg)                  # -v 才會出現
+    logger.debug("呼叫方 =%r，來源路徑 =%r", tool_name, source_path)
+
+    # 不要整包印出 cfg。設定檔的 Service 區塊會被併進 config，裡面有權杖，
+    # 而 Debug_Mode 開啟時這一行會出現在 console 上。只印你真正需要的鍵：
+    #
+    #     logger.debug("伺服器 =%r", cfg.get("Example_Server_URL"))
 
     # ---- 實作區：呼叫 script_utils，拿回資料結構 ----
     items = []

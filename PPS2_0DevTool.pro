@@ -17,7 +17,8 @@ SOURCES += \
     common.cpp \
     PythonRunner.cpp \
     ProcessingDialog.cpp \
-    SingleBuilding.cpp
+    SingleBuilding.cpp \
+    AIAnalysisGitLabMR.cpp
 
 HEADERS += \
     pps2_0devtool.h \
@@ -28,7 +29,8 @@ HEADERS += \
     version.h \
     PythonRunner.h \
     ProcessingDialog.h \
-    SingleBuilding.h
+    SingleBuilding.h \
+    AIAnalysisGitLabMR.h
 
 FORMS += \
     pps2_0devtool.ui
@@ -54,6 +56,16 @@ QMAKE_TARGET_DESCRIPTION = PPS 2.0 DevTool
 
 # 把設定檔與腳本一併放到執行檔目錄旁，讓相對腳本路徑可以解析。
 # （開發期間的便利措施；正式部署由安裝程式負責。）
+#
+# 設定檔與 scripts/ 的複製語意刻意不同：
+#
+#   PPS2_0DevTool.json  只在執行檔旁「還沒有」的時候，從 .example.json 生一份。
+#                       已經存在就完全不動 —— 那份裡面有使用者自己填的權杖，
+#                       無條件覆蓋等於每次建置都把它清掉。
+#   scripts/            無條件覆蓋。腳本是程式的一部分，不是使用者編輯的東西。
+#
+# 代價：日後範本新增了設定鍵，既有部署不會自動長出來。症狀是腳本的必填檢查
+# 回報「缺少必填項目：設定 XXX」—— 指名道姓，照著 .example.json 補上即可。
 #
 # main.cpp 以 QCoreApplication::applicationDirPath() 找設定檔，PythonRunner 以
 # 同一個基準解析 scripts/ 底下的相對腳本路徑 —— 兩者都必須在執行檔「旁邊」。
@@ -92,20 +104,25 @@ win32 {
     # 詢問，/q 不逐檔列印。
     deploy_runtime.commands = \
         if not exist $$shell_quote($$shell_path($$DESTDIR)) mkdir $$shell_quote($$shell_path($$DESTDIR)) $$escape_expand(\\n\\t) \
-        copy /y $$shell_quote($$shell_path($$PWD/PPS2_0DevTool.json)) $$shell_quote($$shell_path($$DESTDIR/PPS2_0DevTool.json)) $$escape_expand(\\n\\t) \
+        if not exist $$shell_quote($$shell_path($$DESTDIR/PPS2_0DevTool.json)) copy /y $$shell_quote($$shell_path($$PWD/PPS2_0DevTool.example.json)) $$shell_quote($$shell_path($$DESTDIR/PPS2_0DevTool.json)) $$escape_expand(\\n\\t) \
         xcopy /e /i /y /q $$shell_quote($$shell_path($$PWD/scripts)) $$shell_quote($$shell_path($$DESTDIR/scripts))
 } else {
     # cp -R 的老問題：目的地已存在時複製的是目錄本身，會變成 dst/scripts/scripts。
     # 來源結尾加上 /. 複製的是內容而不是目錄，重跑才會是覆蓋而不是往下疊一層。
     deploy_runtime.commands = \
         mkdir -p $$shell_quote($$DESTDIR/scripts) $$escape_expand(\\n\\t) \
-        cp -f $$shell_quote($$PWD/PPS2_0DevTool.json) $$shell_quote($$DESTDIR/PPS2_0DevTool.json) $$escape_expand(\\n\\t) \
+        test -f $$shell_quote($$DESTDIR/PPS2_0DevTool.json) || cp -f $$shell_quote($$PWD/PPS2_0DevTool.example.json) $$shell_quote($$DESTDIR/PPS2_0DevTool.json) $$escape_expand(\\n\\t) \
         cp -f -R $$shell_quote($$PWD/scripts/.) $$shell_quote($$DESTDIR/scripts/)
 }
 
 QMAKE_EXTRA_TARGETS += deploy_runtime
 PRE_TARGETDEPS      += deploy_runtime_files
 
-# 注意：複製是單向的，只會覆蓋與新增，不會刪除。在 scripts/ 底下改名或刪檔之後，
-# 執行檔旁邊會留著舊的那一份。那不影響執行（Qt 端是以固定路徑指定腳本），但要
-# 確認「舊檔真的沒被用到」時，把執行檔旁的 scripts/ 整個刪掉再建一次最乾脆。
+# 注意：scripts/ 的複製是單向的，只會覆蓋與新增，不會刪除。在 scripts/ 底下改名
+# 或刪檔之後，執行檔旁邊會留著舊的那一份。那不影響執行（Qt 端是以固定路徑指定
+# 腳本），但要確認「舊檔真的沒被用到」時，把執行檔旁的 scripts/ 整個刪掉再建一次
+# 最乾脆。
+#
+# 設定檔則相反：它只在不存在時才生成，所以要重新從範本取得一份乾淨的，得先把
+# 執行檔旁的 PPS2_0DevTool.json 刪掉再建。另外 Windows 的 shadow build 有 debug/
+# 與 release/ 兩個 DESTDIR，兩邊各有自己的設定檔，權杖要各填一次。

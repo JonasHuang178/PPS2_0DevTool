@@ -80,6 +80,7 @@ PPS2_0DevTool/
 ├── main.cpp                  啟動檢查、單一實例鎖、crash handler
 ├── pps2_0devtool.{h,cpp,ui}  應用程式外殼（含每個功能各自的來源路徑）
 ├── SingleBuilding.{h,cpp}    功能：Single Building
+├── AIAnalysisGitLabMR.{h,cpp}  功能：AI Analysis GitLab MR
 ├── json.{h,cpp}              設定檔讀取（只讀工具層級）
 ├── PythonRunner.{h,cpp}      腳本執行管線
 ├── ProcessingDialog.{h,cpp}  處理中對話框
@@ -88,7 +89,8 @@ PPS2_0DevTool/
 ├── result_code.h             Qt 端錯誤碼
 ├── version.h                 版本與檔名常數
 │
-├── PPS2_0DevTool.json        設定檔
+├── PPS2_0DevTool.json        設定檔（**不納入版本控制**，見下）
+├── PPS2_0DevTool.example.json  設定檔範本（納入版本控制，憑證留空）
 ├── PPS2_0DevTool.pro         qmake 專案檔
 │
 ├── resources.qrc             Qt 資源清單（應用程式圖示）
@@ -279,6 +281,122 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 
 ---
 
+## 功能：AI Analysis GitLab MR
+
+在工具裡瀏覽某個 GitLab 專案的 Merge Request，挑一筆交給 AI 分析，結果以
+markdown 呈現在結果視窗。
+
+> **本次交付的範圍**：Qt 這一側整個是真的；六支腳本的**對外契約**也是真的；
+> 但分析流程五步的業務內臟是 **stub**，回傳寫死的假資料，不連線 AI 或 JIRA。
+> 唯一真的連線的是「取得 Merge Request 清單」那一支。
+
+### 畫面
+
+```
++-- AI Mode -------------+  +-- Merge Requests -------------------+
+| [Open AI          v]   |  | ( ) Manual Merge Request ID [____]  |
++-- Analysis Parameter --+  | (*) Get Merge Requests              |
+| [x] Add Debug ...file  |  |  +-- Merge Request Parameter ----+  |
+| Save path [____] [...] |  |  | [x]Only Open [x]Created after |  |
+|  +-- JIRA Key -------+ |  |  |   [ 7] days            [refr] |  |
+|  | ( )None ( )Manual | |  |  +-------------------------------+  |
+|  |          (*)Auto  | |  |  MR |Status| Title  |Author|Created |
+|  +-------------------+ |  |  ---+------+--------+------+------- |
++-- Repository ----------+  |                                     |
+| Jonas_Huang/lw-os      |  +-------------------------------------+
+| Jonas_Huang/Test_Sub.. |                        [ AI Analysis ]  
++------------------------+
+```
+
+分析單位是**一個 repo 的一個 MR** —— 兩個清單都是單選。
+
+### 行為
+
+**進入這個分頁不執行任何腳本。** Repository 清單來自設定檔，Merge Request 清單
+一律由使用者按重新整理才取得。與 Single Building 的「進入即載入」相反：這裡每次
+載入都是一次網路請求，照做的話每次切到這個分頁都會被一個互斥的對話框擋住。
+
+**切換 repository 或改動查詢條件會清空 MR 清單。** 否則畫面上顯示的是前一個
+repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那一個。
+
+**`AI Analysis` 在條件不足時停用，且不說明原因** —— 與 Single Building 的既有
+作法一致。條件是：選了 repository、指定了 MR、（勾了除錯時）存放目錄非空、
+（選了手動 JIRA 時）key 非空。
+
+**手動輸入的 MR 編號會自我修正。** 貼上 `!123` 或一整條 MR 網址都會被收斂成
+編號 —— 使用者最自然的動作就是從瀏覽器複製。
+
+### 分析流程
+
+按下 `AI Analysis` 啟動一條**固定五步**的流程：
+
+| 步 | 腳本 | 產物 |
+|---|---|---|
+| 1 | `..._description.py` | MR 描述 |
+| 2 | `..._script_selector.py` | `script_info`（狀態、裝置、JIRA key、處理方式） |
+| 3 | `..._summary.py` | AI 分析結果 |
+| 4 | `..._code_review.py` | 程式碼審閱報告 |
+| 5 | `..._merge_to_md.py` | 合併後的 markdown |
+
+**五步全部執行，Qt 端不跳過任何一步。**「要不要真的做事」由腳本看參數決定
+（例如第 4 步收到 `fetch_code_review=false` 就回空報告並成功）。這是為了讓同一批
+腳本能被 CI/CD 的 shell 直接串接 —— 分支若寫在 Qt 端，CI 那側就成為第二份編排
+實作，兩份必然漂移。
+
+**腳本路徑固定寫死在 C++**，不取自任何步驟的回傳資料。第 2 步回傳的 `handler`
+原樣往下傳，由第 3、5 步的腳本自己解讀。
+
+**任一步失敗即停**，以一個錯誤訊息框指出第幾步與該步腳本寫的原因，畫面不變。
+
+### 除錯分析檔
+
+勾選 `Add Debug Analysis file` 時，Qt 在流程啟動**前**建立
+`<Save_Analysis_File_Dir>/gitlab_mr_result_<repo>_<mr>_<時間戳>/`，並把路徑傳給
+每一步。目錄建立失敗（路徑打錯、沒有寫入權限）會在按下按鈕的當下就跳錯誤框，
+流程不啟動 —— 不會等到跑完前三步才發現寫不進去。
+
+```
+gitlab_mr_result_lw-os_123_20260912_143012/
+  01_description.md
+  02_script_info.json
+  03_summary.json
+  04_code_review.md
+  05_report.md
+  debug.log
+```
+
+**未勾選時整條流程不產生任何檔案。** 報告內容一律經由回應的 `data` 送回，
+結果視窗從那裡取內容，Qt 從不開檔。
+
+### 憑證
+
+GitLab 與 JIRA 的端點與權杖放在設定檔的 `Service`，由功能注入為環境變數
+（鍵名的全大寫形式）：
+
+```
+GITLAB_SERVER_URL    GITLAB_ACCESS_TOKEN    GITLAB_VERIFY_SSL
+JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
+```
+
+**腳本只從環境變數讀這些值，不從 `config` 讀。** 這樣 CI/CD 設定同名的環境變數
+就能執行同一批腳本，腳本端只有一條取值路徑。AI 的端點、金鑰與模型名則走 `params`。
+兩者都不會出現在行程的命令列上。
+
+`GITLAB_VERIFY_SSL` **未設定時視為不驗證**。這是刻意的取捨：目標環境是否使用
+自簽憑證尚不確定，而驗證失敗會讓功能完全無法使用。代價是關閉驗證時存取權杖
+會暴露給連線中間人，且被攔截時沒有任何徵兆。確認伺服器有正規憑證之後，把
+`Service.Gitlab_Verify_SSL` 設為 `"true"` 即可，不需要重新建置。自簽但想驗證的話
+改設 `SSL_CERT_FILE` 指向公司的 CA 憑證。
+
+### 已知行為
+
+- 單次取回上限 100 筆，不翻頁。達到上限時會提示結果可能未完整 —— 表格是單選的，
+  取回上千筆不會讓「挑一筆」更容易，範圍太大時該做的是調緊查詢條件。
+- 流程被取消時，已經建立的除錯目錄不會被清掉（規格明文：流程不保證外部副作用的
+  原子性）。目錄名含時間戳，不會互相覆蓋。
+- 取消發生在 AI 那一步時，已送出的請求可能照樣計費，而畫面完全不變。
+
+---
 ## 設定檔
 
 檔名 `PPS2_0DevTool.json`，根鍵 `PPS2_0DevTool`。
@@ -288,6 +406,12 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
   "PPS2_0DevTool": {
     "Debug_Mode": "false",
     "User_Guide_Link": "",
+    "Service": {                                       // 跨功能共用
+      "Gitlab_Server_URL": "https://gitlab.example.com",
+      "Gitlab_Access_Token": "",
+      "Jira_Server_URL": "https://jira.example.com",
+      "Jira_Access_Token": ""
+    },
     "Function": {
       "Log_Info": {
         "Program": "python",                              // 必備
@@ -301,15 +425,32 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 }
 ```
 
-外殼只讀 `Debug_Mode` / `User_Guide_Link` / `Function` 三個欄位，
-**`Function` 整包不解析** —— 功能自己取自己的區塊。
+外殼只讀 `Debug_Mode` / `User_Guide_Link` / `Service` / `Function` 四個欄位，
+**`Service` 與 `Function` 整包都不解析**。
+
+### `Service`：跨功能共用的服務設定
+
+GitLab、JIRA 這類會被多個功能共用的端點與憑證放在 `Service`，不要抄進每個
+功能區塊 —— 抄了之後使用者換憑證時漏改一處，那個功能就會回 401，而 401 的
+第一直覺是「憑證過期」，於是去重發一把新的，找錯方向。
+
+功能呼叫 `getFunctionConfig()` 拿到的是 **`Service` 併上自己區塊**的結果，
+同名鍵以功能區塊為準（讓個別功能能指向不同的伺服器）。信封的 `config` 因此
+也是合併後的物件 —— 腳本收到的仍是一個平坦的物件，不需要認得這個結構。
+
+唯一的例外是 `Visible`：它只看 `Function` 底下的原始區塊。否則 `Service` 裡
+一個誤放的 `Visible` 會讓所有沒設定它的功能從「預設隱藏」變成全部顯示。
+
+> **不要把整包 `config` log 出來。** 合併後它含有權杖，而 `Debug_Mode` 開啟時
+> 那一行會出現在 console 上。範本裡示範的 `logger.debug("設定 =%r", cfg)` 是
+> 給沒有憑證的功能看的，有憑證時請只印出你真正需要的那幾個鍵。
 
 ### 命名風格
 
 | 類型 | 風格 | 例 |
 |---|---|---|
 | 一般鍵名 | `Title_Case_With_Underscores` | `Debug_Mode` |
-| 腳本路徑 | `<動作>_Script_Path` | `Get_Log_Info_Script_Path` |
+| 腳本路徑 | `<動作>_Script_Path` | `Get_Log_Info_Script_Path`（見下方註） |
 | 目錄 | `*_Dir` | `Execute_Log_Script_Dir` |
 | 網址 | `*_URL` | `Jira_Server_URL` |
 | 憑證 | `*_Token` / `*_Key` | `Gitlab_Access_Token` |
@@ -319,8 +460,34 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 每個功能區塊必備 `Program`（執行 Python 的指令）與 `Visible`
 （非 `"true"` 時該 tab 會被移除；未設定時預設隱藏並記一筆警告）。
 
-> **Token 直接放設定檔**，由每位使用者在自己電腦上填自己的值。
-> 注意 `PPS2_0DevTool.json` 目前是被 git 追蹤的，加功能時小心不要把自己的 token commit 上去。
+> **腳本路徑實際上寫死在 C++ 裡**，不放設定檔。`SingleBuilding.cpp` 與
+> `AIAnalysisGitLabMR.cpp` 都是這樣做的 —— 腳本是程式的一部分，不是使用者該調的
+> 東西，放進設定檔只是多幾個能打錯的鍵，而打錯的症狀是「找不到腳本」。上表的
+> `_Script_Path` 風格留著給真的需要由設定決定路徑的場合。
+
+---
+
+## 設定檔與 git
+
+`PPS2_0DevTool.json` **不納入版本控制**（列在 `.gitignore`）。納入版本控制的是
+`PPS2_0DevTool.example.json`，它結構相同、憑證欄位留空。
+
+建置時的行為：
+
+| 執行檔旁 | 建置後 |
+|---|---|
+| 已有 `PPS2_0DevTool.json` | **完全不動它** —— 你填的權杖不會被蓋掉 |
+| 沒有 | 從 `PPS2_0DevTool.example.json` 生一份 |
+
+（`scripts/` 則相反，每次建置無條件覆蓋。腳本是程式的一部分。）
+
+**升級版本後看到「缺少必填項目：設定 XXX」是正常的。** 既有的設定檔不會被覆蓋，
+所以新版本新增的鍵不會自動長出來 —— 對照 `PPS2_0DevTool.example.json` 補上即可。
+
+**Windows 的 shadow build 有兩個目的地。** `debug/` 與 `release/` 各有自己的設定檔，
+權杖要各填一次。
+
+要重新取得一份乾淨的設定檔，把執行檔旁那份刪掉再建置。
 
 ---
 
@@ -330,13 +497,15 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 2. 在 `pps2_0devtool.ui` 加一個 tab，標題就是功能名稱
 3. 在 `setupToolService()` 建立實例；`UI_Init()` 依 `isFunctionVisible()` 決定是否
    `removeTabByTitle()`；`UI_SetupSignal()` 連接該 tab 的元件
-4. 在 `PPS2_0DevTool.json` 的 `Function` 加設定區塊
+4. 在 `PPS2_0DevTool.example.json` 的 `Function` 加設定區塊（跨功能共用的端點
+   與憑證放 `Service`，不要抄進功能區塊）
 5. 在 `PPS2_0DevTool.pro` 的 `SOURCES` / `HEADERS` 加檔案
 6. 建立 `scripts/<功能名>/`，把 `scripts/_function_template.py` 複製進去寫成入口腳本
    （範本本身留在 `scripts/` 這一層）；只服務這個功能的東西放這個目錄，跨功能的
    共用能力放進 `script_utils/` 底下對應的技術領域分組
 
-**不需要修改 `json.cpp`。**
+**不需要修改 `json.cpp`。** 新增共用服務的鍵也不需要 —— 只有新增一整個工具層級
+區塊才需要動它。
 
 > 這份清單與 `pps2_0devtool.h` 開頭的類別註解是同一份，改一邊要記得改另一邊。
 
@@ -468,9 +637,15 @@ runFunctionFlow("Log_Report",
 
 ```python
 #!/usr/bin/env python3
+import os
+import sys
+
+# 入口腳本在 scripts/<功能>/ 底下，這一行不能刪（見下）。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import script_io
-from script_utils import logger
 from script_utils import gitlab_utils      # 業務邏輯模組
+from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "get_gitlab_mr"
@@ -481,37 +656,49 @@ def main():
         action=ACTION,
         description=DESCRIPTION,
         template_version=TEMPLATE_VERSION,
-        config=[
-            script_io.cfg("Gitlab_Server_URL",   required=True, help="GitLab 伺服器網址"),
-            script_io.cfg("Gitlab_Access_Token", required=True, help="個人存取權杖"),
-        ],
+        # 憑證不在 config 宣告 —— 它們走環境變數（見「憑證」一節）。
+        config=[],
         params=[
             script_io.arg("repo", required=True, help="repo 完整路徑，例如 group/project"),
             script_io.arg("created_after_days", type=int, default=7,
-                          help="只抓最近 N 天的 MR，-1 表示不限"),
+                          help="只抓最近 N 天的 MR"),
         ],
     )
 
-    cfg = req["config"]
+    # 憑證只從環境變數讀。Qt 會自設定檔的 Service 區塊注入，CI 自行設定 ——
+    # 腳本端因此只有一條取值路徑，兩個呼叫端對它來說長得一模一樣。
+    server_url = os.environ.get("GITLAB_SERVER_URL", "")
+    token      = os.environ.get("GITLAB_ACCESS_TOKEN", "")
+    if not token:
+        script_io.reply_fail("未設定環境變數 GITLAB_ACCESS_TOKEN")
+
     logger.info("查詢 %s", req["params"]["repo"])
     script_io.progress("呼叫 GitLab API")
 
     # 業務邏輯寫在 script_utils 裡，這裡只做轉接
-    mrs = gitlab_utils.get_merge_requests(
-        cfg["Gitlab_Server_URL"], cfg["Gitlab_Access_Token"],
-        req["params"]["repo"],
+    result = gitlab_utils.list_merge_requests(
+        server_url=server_url,
+        token=token,
+        project=req["params"]["repo"],
         created_after_days=req["params"]["created_after_days"],
     )
 
-    script_io.reply(message="共 %d 筆" % len(mrs), data={"merge_requests": mrs})
+    script_io.reply(message="共 %d 筆" % len(result["merge_requests"]),
+                    data=result)
 
 if __name__ == "__main__":
     script_io.run(main)
 ```
 
-**入口腳本必須放在 `scripts/` 這一層，不能放子目錄** —— Python 只會把入口腳本
-所在目錄放進 `sys.path`，放子目錄的話 `from script_utils import ...` 在沒設
-`PYTHONPATH` 時會失敗，別人直接執行就壞掉。
+**入口腳本依功能分組放在 `scripts/<功能>/` 底下**，範本本身留在 `scripts/` 這一層。
+
+因為放進了子目錄，**開頭那一行 `sys.path.insert(...)` 不能刪** —— Python 只會把
+入口腳本所在目錄放進 `sys.path`，少了它，`from script_utils import ...` 在沒設
+`PYTHONPATH` 時就會失敗。Qt 會注入指向 `scripts/` 的 `PYTHONPATH`，但不能當成前提：
+命令列與 CI 直接執行時沒有那個環境，而那是本專案明確支援的用法。
+
+> 這條規則在加入 Single Building 時從「不准放子目錄」改成了「自己確保匯得到」。
+> 可匯入性是入口腳本自己的責任，不是對它放在第幾層的限制。
 
 ### 參數與設定只宣告一次
 

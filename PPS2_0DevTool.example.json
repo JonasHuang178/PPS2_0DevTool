@@ -1,0 +1,36 @@
+{
+  "PPS2_0DevTool": {
+    "Debug_Mode": "false",
+    "User_Guide_Link": "",
+    "Service": {
+      "Gitlab_Server_URL": "https://gitlab.example.com",
+      "Gitlab_Access_Token": "",
+      "Gitlab_Verify_SSL": "false",
+      "Jira_Server_URL": "https://jira.example.com",
+      "Jira_Access_Token": "",
+      "AI_Mode_List": [
+        {
+          "Name": "Open AI",
+          "Api_URL": "https://api.openai.com/v1/chat/completions",
+          "Api_Key": "",
+          "Model": "gpt-4o"
+        }
+      ]
+    },
+    "Function": {
+      "Single Building": {
+        "Visible": "true",
+        "Program": "python"
+      },
+      "AI Analysis GitLab MR": {
+        "Visible": "true",
+        "Program": "python",
+        "Repo_List": [
+          "Jonas_Huang/lw-os",
+          "Jonas_Huang/Test_Submodule"
+        ],
+        "Save_Analysis_File_Dir": "./analysis"
+      }
+    }
+  }
+}
