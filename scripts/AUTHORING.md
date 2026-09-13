@@ -365,39 +365,55 @@ if not token:
 
 ## 5. 建立一支新腳本：完整範例
 
-假設要新增一個叫 `Issue Report` 的功能，第一支腳本是「列出專案的 issue」。
+假設要新增一個叫 `MR Report` 的功能，第一支腳本是「統計某個專案的 Merge Request，
+依作者分組」。
 
-### 5.1 建立目錄與功能專屬定義
+> 底下的程式碼**實際跑過**，不是虛擬碼。它呼叫的 `gitlab_utils.list_merge_requests()`
+> 是這個專案裡真實存在的函式。
+
+### 5.1 先看 `script_utils/` 裡有什麼
+
+**動手寫之前先翻一遍共用模組。** 這一步最常被跳過，結果是同一個能力被實作第二次，
+而兩份實作的錯誤處理通常不一樣。
 
 ```
-scripts/issue_report/
+script_utils/
+  system_utils/     列目錄、行式文字檔的讀寫、暫存檔路徑
+  gitlab_utils/     GitLab REST
+    list_merge_requests(server_url, token, project,
+                        only_open=True, created_after_days=None,
+                        verify_ssl=True, limit=PER_PAGE_LIMIT)
+        -> {"merge_requests": [...], "truncated": bool}
+        每一筆：iid / title / author / created_at / state / web_url
+        失敗時拋出 GitLabAuthError / GitLabNotFoundError / GitLabTlsError /
+                   GitLabHttpError / GitLabConnectionError
+                   （都繼承自 GitLabError）
+```
+
+這次要的東西已經有了，所以這支腳本只做轉接：收信封 → 呼叫它 → 整理 → 回信封。
+
+### 5.2 建立目錄與功能專屬定義
+
+```
+scripts/mr_report/
   __init__.py
-  issue_report_list_issues.py
+  mr_report_summarise.py
 ```
 
 `__init__.py` 放這個功能自己的東西。跨功能的能力不放這裡，放 `script_utils/`：
 
 ```python
 #!/usr/bin/env python3
-"""Issue Report 的功能專屬定義。
-
-這裡的兩個 helper 服務同一件事：讓同一支腳本同時服務 Qt 與 CI 的 shell。
-    Qt   結果走 data，完全不碰檔案系統
-    CI   結果落檔，下一步以路徑讀進來
-"""
+"""MR Report 的功能專屬定義。"""
 
 import json
 import os
 
-__all__ = ["write_artifact", "resolve_text_input"]
+__all__ = ["write_artifact"]
 
 
 def write_artifact(out_path, content):
-    """把內容寫到 out_path。out_path 為空就什麼都不做。
-
-    「沒給路徑就不寫」是硬性行為：使用者沒要求產生檔案時，不該在檔案系統
-    留下任何東西。
-    """
+    """把內容寫到 out_path。out_path 為空就什麼都不做。"""
     if not out_path:
         return False
 
@@ -411,38 +427,22 @@ def write_artifact(out_path, content):
     with open(out_path, "w", encoding="utf-8") as handle:
         handle.write(content)
     return True
-
-
-def resolve_text_input(params, key):
-    """params[key] 有值就用它，否則讀 params[key + '_path']。"""
-    value = params.get(key)
-    if isinstance(value, str) and value.strip():
-        return value
-
-    path = params.get("%s_path" % key)
-    if isinstance(path, str) and path.strip():
-        with open(path, "r", encoding="utf-8") as handle:
-            return handle.read()
-
-    return ""
 ```
 
-### 5.2 複製範本
+### 5.3 複製範本，改三個常數
 
 ```bash
-cp scripts/_function_template.py scripts/issue_report/issue_report_list_issues.py
+cp scripts/_function_template.py scripts/mr_report/mr_report_summarise.py
 ```
 
-**複製，不要從零手寫，也不要從別的腳本抄。** 範本裡有幾樣東西看起來可有可無，其實
-不能少：那行 `sys.path.insert`、`TEMPLATE_VERSION` 常數、以及 `script_io.run(main)`
+**複製，不要從零手寫，也不要從別的功能的腳本抄。** 範本裡有幾樣東西看起來可有可無，
+其實不能少：那行 `sys.path.insert`、`TEMPLATE_VERSION` 常數、以及 `script_io.run(main)`
 這個統一的錯誤處理入口。
-
-### 5.3 改三個常數
 
 ```python
 TEMPLATE_VERSION = "2.0.0"          # 保留範本原本的值，不要改
-ACTION           = "list_issues"
-DESCRIPTION      = "列出指定專案的 issue"
+ACTION           = "summarise_merge_requests"
+DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
 ```
 
 `TEMPLATE_VERSION` 是「這支腳本依據哪一版範本寫的」，日後範本改版時靠它辨識哪些腳本
@@ -452,16 +452,17 @@ DESCRIPTION      = "列出指定專案的 issue"
 
 ```python
 #!/usr/bin/env python3
-"""Issue Report —— 列出指定專案的 issue。
+"""MR Report —— 統計指定專案的 Merge Request。
 
-    python issue_report_list_issues.py --help
-    python issue_report_list_issues.py --dump-config > run.json
-    python issue_report_list_issues.py --request run.json
+    python mr_report_summarise.py --help
+    python mr_report_summarise.py --dump-config > run.json
+    python mr_report_summarise.py --request run.json
 
 憑證走環境變數，不放進 request 檔案 —— 那個檔案會留在 CI runner 的工作目錄：
 
     GITLAB_SERVER_URL    https://gitlab.example.com
     GITLAB_ACCESS_TOKEN  glpat-...
+    GITLAB_VERIFY_SSL    true / false（未設定視為 false，即不驗證）
 """
 
 import os
@@ -472,14 +473,19 @@ import sys
 # scripts/ 的 PYTHONPATH，但那不能當成前提。
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import issue_report
+import mr_report
 import script_io
 from script_utils import gitlab_utils
 from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
-ACTION           = "list_issues"
-DESCRIPTION      = "列出指定專案的 issue"
+ACTION           = "summarise_merge_requests"
+DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
+
+
+def truthy(text):
+    """環境變數的布林轉換。bool("false") 在 Python 裡是 True，不能直接轉。"""
+    return str(text).strip().lower() in ("true", "1", "yes")
 
 
 def main():
@@ -496,20 +502,21 @@ def main():
             script_io.arg("repo", required=True,
                           help="專案，namespace/project 形式"),
             script_io.arg("only_open", type=bool, default=True,
-                          help="只取尚未關閉的 issue"),
-            script_io.arg("limit", type=int, default=50,
-                          help="最多取回幾筆（1-100）"),
+                          help="只統計尚未關閉的 Merge Request"),
+            script_io.arg("created_after_days", type=int, default=30,
+                          help="只統計這麼多天內建立的"),
             script_io.arg("out_path", default="",
-                          help="額外把結果寫到這個檔案；空字串代表不落檔"),
+                          help="額外把統計結果寫到這個檔案；空字串代表不落檔"),
         ],
     )
 
     params = req["params"]
     repo = params["repo"]
 
-    # --- 環境變數：只從這裡讀憑證 ---
+    # --- 環境變數：憑證只從這裡讀 ---
     server_url = os.environ.get("GITLAB_SERVER_URL", "").strip()
     token      = os.environ.get("GITLAB_ACCESS_TOKEN", "").strip()
+    verify_ssl = truthy(os.environ.get("GITLAB_VERIFY_SSL", "false"))
 
     if not server_url:
         script_io.reply_fail(
@@ -525,32 +532,82 @@ def main():
                    "環境變數；以命令列執行時請自行設定。",
             code="GITLAB_ACCESS_TOKEN_MISSING")
 
-    # 注意：reply_fail() 內部會 sys.exit()，走到這裡代表兩個值都有。
+    # reply_fail() 內部會 sys.exit()，走到這裡代表兩個值都有。
 
-    # --- 業務邏輯 ---
-    logger.info("查詢 %s 的 issue（only_open=%s, limit=%d）",
-                repo, params["only_open"], params["limit"])
-    script_io.progress("向 GitLab 查詢 issue…")
+    logger.info("查詢 %s 的 Merge Request（only_open=%s, days=%d）",
+                repo, params["only_open"], params["created_after_days"])
+    script_io.progress("向 GitLab 查詢 Merge Request…")
 
-    # 實際的 REST 呼叫寫在 script_utils/gitlab_utils/ 裡，這支腳本只做轉接。
-    # 權杖由這裡明著傳進去 —— 共用模組不自行讀環境變數。
-    issues = gitlab_utils.list_issues(server_url, token, repo,
-                                     only_open=params["only_open"],
-                                     limit=params["limit"])
+    # --- 呼叫共用模組 ---
+    #
+    # 權杖與 verify_ssl 都由這裡明著傳進去 —— 共用模組不自行讀環境變數，
+    # 所以同一個函式在任何機器上以相同參數呼叫，行為都一樣。
+    try:
+        result = gitlab_utils.list_merge_requests(
+            server_url=server_url,
+            token=token,
+            project=repo,
+            only_open=params["only_open"],
+            created_after_days=params["created_after_days"],
+            verify_ssl=verify_ssl,
+        )
+    except gitlab_utils.GitLabAuthError as exc:
+        # 權杖與專案的失敗訊息刻意不同：使用者的下一步完全不一樣，
+        # 一個去換權杖，一個去改設定檔的拼字。
+        script_io.reply_fail(
+            "GitLab 拒絕了這次請求，請檢查存取權杖",
+            detail="%s\n\n權杖來自環境變數 GITLAB_ACCESS_TOKEN。" % exc,
+            code="GITLAB_AUTH_FAILED")
+    except gitlab_utils.GitLabNotFoundError as exc:
+        script_io.reply_fail(
+            "找不到專案 %s" % repo,
+            detail="%s\n\n請檢查專案名稱是否為正確的 namespace/project 形式。"
+                   "\n注意：權杖若對該專案沒有權限，GitLab 也會回 404。" % exc,
+            code="GITLAB_PROJECT_NOT_FOUND")
+    except gitlab_utils.GitLabTlsError as exc:
+        script_io.reply_fail(
+            "TLS 憑證驗證失敗",
+            detail="%s\n\n把受信任的 CA 憑證指給 SSL_CERT_FILE，或把設定檔的"
+                   "Service.Gitlab_Verify_SSL 設為 \"false\"。" % exc,
+            code="GITLAB_TLS_FAILED")
+    except gitlab_utils.GitLabError as exc:
+        # 其餘的 GitLab 錯誤（HTTP、連線）收在這裡。
+        # 不要 except Exception —— 那會蓋掉 script_io.run() 的統一處理。
+        script_io.reply_fail("GitLab 查詢失敗：%s" % exc,
+                             code="GITLAB_REQUEST_FAILED")
 
-    logger.info("取回 %d 筆", len(issues))
+    items = result["merge_requests"]
 
-    result = {"issues": issues, "count": len(issues)}
+    # --- 業務邏輯：依作者分組 ---
+    script_io.progress("整理統計…")
+
+    by_author = {}
+    for item in items:
+        author = item["author"] or "(未知)"
+        by_author[author] = by_author.get(author, 0) + 1
+
+    summary = {
+        "repo": repo,
+        "total": len(items),
+        "by_author": by_author,
+        "truncated": result["truncated"],
+    }
+
+    logger.info("共 %d 筆，%d 位作者", len(items), len(by_author))
 
     # --- 輸出雙軌：data 必有，out_path 給了才額外落檔 ---
-    issue_report.write_artifact(params["out_path"], result)
+    mr_report.write_artifact(params["out_path"], summary)
 
-    # 取回 0 筆是成功而非失敗 —— 條件太緊是正常結果，回 FAIL 會讓使用者
-    # 每次收斂條件都看到一個錯誤訊息框。
+    message = "共 %d 筆 Merge Request，%d 位作者" % (len(items), len(by_author))
+    if result["truncated"]:
+        message += "（已達單次取回上限 %d，結果可能未完整）" \
+                   % gitlab_utils.PER_PAGE_LIMIT
+
+    # 取回 0 筆是成功而非失敗 —— 條件太緊是正常結果。
     script_io.reply(
-        message="取得 %d 筆 issue" % len(issues),
+        message=message,
         detail="專案：%s" % repo,
-        data=result,
+        data=summary,
     )
 
 
@@ -558,33 +615,58 @@ if __name__ == "__main__":
     script_io.run(main)
 ```
 
-### 5.5 業務邏輯放哪裡
+### 5.5 這支腳本示範了什麼
 
-上面那個 `gitlab_utils.list_issues()` 不該寫在入口腳本裡。它是「對 GitLab REST 的呼叫」，屬於技術
-領域的共用能力，要放 `script_utils/gitlab_utils/`，並遵守 3.8 的四條規則：
+| 位置 | 規則 |
+|---|---|
+| 開頭的 `sys.path.insert` | 3.9 —— 不能刪 |
+| `config=[]` | 3.5 —— 憑證不宣告成設定鍵 |
+| `os.environ.get(..., "")` | 4.1 —— 一定要給預設值 |
+| `truthy()` | 4.2 —— 環境變數的布林要自己轉 |
+| 缺憑證時 `reply_fail` 並點名變數 | 4.2 —— 不寫的話症狀是 401，使用者會去查權杖有沒有過期 |
+| 三個 `except` 分開處理 | 失敗訊息不同，因為使用者的下一步不同 |
+| `except gitlab_utils.GitLabError` 收尾 | 6 —— **不要** `except Exception`，那會蓋掉 `script_io.run()` 的統一處理 |
+| `write_artifact(params["out_path"], ...)` | 3.6 —— 沒給路徑就不寫檔 |
+| `data=summary` | 3.6 —— 結果一律進 `data` |
+| 0 筆回 `reply()` 而非 `reply_fail()` | 條件太緊是正常結果，不是錯誤 |
 
-```python
-# script_utils/gitlab_utils/issues.py
-def list_issues(server_url, token, project, only_open=True, limit=50):
-    """回傳 [{...}, ...]。失敗時拋出例外，不結束行程、不印 stdout。"""
-    ...
-```
+### 5.6 什麼時候該新增共用模組
 
-入口腳本只做三件事：收信封、呼叫共用模組、回信封。**判斷「這段程式碼該放哪」的問題
-是：第二個功能會不會需要它？** 會 → `script_utils/`；不會 → `scripts/<功能>/`。
+上面沒有新增任何共用模組，因為要的能力已經有了。**判斷的問題是：第二個功能會不會
+需要它？**
 
-### 5.6 接進 Qt（由 C++ 那一側做）
+- 會 → 放 `script_utils/<技術領域>/`，並遵守 3.8 的四條規則
+- 不會 → 留在 `scripts/<功能>/`
+
+分組依**技術領域**（`system_utils`、`gitlab_utils`），不依應用功能。依功能分組的話，
+第二個功能需要同一個能力時就無處可放。
+
+新增共用模組時，錯誤要以**可區分的例外型別**拋出，不要全部塞進一個 `Exception` ——
+入口腳本要靠型別給出不同的訊息（見 5.4 那三個 `except`）。
+
+### 5.7 接進 Qt（由 C++ 那一側做）
 
 腳本寫完之後，功能那一側要：
 
 1. 在功能的 `.cpp` 裡加一個腳本路徑常數（**寫死，不放設定檔**）
 2. 呼叫 `runFunctionScript()`，把參數放進 `QJsonObject`
 3. **記得帶上 `serviceEnvVars()`** —— 它是帶預設值的參數，漏了不會有編譯錯誤，
-   腳本會拿到空的憑證然後回報「未設定環境變數」
+   腳本會拿到空的憑證然後回報「未設定環境變數」，看起來像使用者沒設定
 
-### 5.7 驗證
+### 5.8 驗證
 
-見第 10 章。最少要跑過四種操作，而且**不要設定 `PYTHONPATH`**。
+見第 10 章。上面那支腳本實際跑過這幾條：
+
+```
+--help                        成功
+--dump-config                 模板含 _template_version 與四個參數
+缺 GITLAB_SERVER_URL          FAIL，code = GITLAB_SERVER_URL_MISSING
+缺必填的 repo                 FAIL，訊息為「缺少必填項目：參數 repo」
+伺服器位址不存在              FAIL，code = GITLAB_REQUEST_FAILED
+權杖無效（真的打 gitlab.com） FAIL，code = GITLAB_AUTH_FAILED
+```
+
+每一條的 stdout 都只有一個 JSON 物件，exit code 都是 1（除了前兩條）。
 
 ---
 
