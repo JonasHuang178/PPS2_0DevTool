@@ -113,10 +113,11 @@ PPS2_0DevTool/
 │   │
 │   └── script_utils/         共用模組依「技術領域」分組
 │       ├── logger.py         log（唯一設定 logging 的地方）
-│       ├── system_utils/     系統層面：檔案系統、暫存目錄、環境變數
+│       ├── system_utils/     系統層面：檔案系統、暫存目錄、環境變數、路徑表示法
 │       │   ├── files.py      建立資料夾、依副檔名列檔案、行式文字檔讀寫
 │       │   ├── temp.py       暫存目錄下的路徑
-│       │   └── env.py        讀取環境變數（給入口腳本用）
+│       │   ├── env.py        讀取環境變數（給入口腳本用）
+│       │   └── paths.py      路徑字串轉成 Windows 表示法
 │       └── gitlab_utils/     GitLab REST（尚無內容）
 │
 └── openspec/                 規格與設計決策
