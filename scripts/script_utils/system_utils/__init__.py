@@ -7,11 +7,13 @@
 """
 
 from .env import get_env_var
-from .files import list_files_by_suffix, read_lines, write_lines
+from .files import (create_folder, list_files_by_suffix, read_lines,
+                    write_lines)
 from .temp import temp_file_path
 
 __all__ = [
     "get_env_var",
+    "create_folder",
     "list_files_by_suffix",
     "read_lines",
     "write_lines",

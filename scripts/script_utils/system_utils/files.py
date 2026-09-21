@@ -5,7 +5,42 @@ import os
 
 from script_utils import logger
 
-__all__ = ["list_files_by_suffix", "read_lines", "write_lines"]
+__all__ = ["create_folder", "list_files_by_suffix", "read_lines", "write_lines"]
+
+
+def create_folder(folder_path):
+    """建立資料夾，路徑中缺少的上層目錄一併建立。
+
+    資料夾已經存在是**成功**而非錯誤：腳本必須可重入（同樣的輸入重跑不產生
+    額外的副作用），把「已經在那裡了」當成失敗會讓重跑的流程在第二次就斷掉。
+
+    路徑已存在但不是資料夾時拋出 ValueError —— 這種情況靜默通過的話，之後
+    往裡面寫檔會在別的地方以難懂的錯誤爆開，離真正的成因很遠。
+
+    回傳建立後的絕對路徑，供呼叫端記錄或往下組路徑用。
+
+    權限不足等作業系統層級的失敗以 OSError 原樣拋出 —— 共用模組不結束行程，
+    是否中止由入口腳本決定。
+    """
+    if not isinstance(folder_path, str) or not folder_path.strip():
+        raise ValueError("資料夾路徑必須是非空字串：%r" % (folder_path,))
+
+    absolute = os.path.abspath(folder_path)
+
+    if os.path.exists(absolute) and not os.path.isdir(absolute):
+        raise ValueError("路徑已存在但不是資料夾：%s" % absolute)
+
+    existed = os.path.isdir(absolute)
+
+    # exist_ok=True 連同上層目錄一起建立，且已存在時不拋例外。
+    os.makedirs(absolute, exist_ok=True)
+
+    if existed:
+        logger.debug("資料夾已存在：%s", absolute)
+    else:
+        logger.debug("建立資料夾：%s", absolute)
+
+    return absolute
 
 
 def list_files_by_suffix(directory, suffix, recursive=False):
