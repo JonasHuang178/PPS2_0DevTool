@@ -113,9 +113,10 @@ PPS2_0DevTool/
 │   │
 │   └── script_utils/         共用模組依「技術領域」分組
 │       ├── logger.py         log（唯一設定 logging 的地方）
-│       ├── system_utils/     系統層面：檔案系統、暫存目錄
+│       ├── system_utils/     系統層面：檔案系統、暫存目錄、環境變數
 │       │   ├── files.py      依副檔名列檔案、行式文字檔讀寫
-│       │   └── temp.py       暫存目錄下的路徑
+│       │   ├── temp.py       暫存目錄下的路徑
+│       │   └── env.py        讀取環境變數（給入口腳本用）
 │       └── gitlab_utils/     GitLab REST（尚無內容）
 │
 └── openspec/                 規格與設計決策
@@ -529,6 +530,9 @@ if __name__ == "__main__":
 2. 不可以 `sys.exit()`，要 `raise` —— 否則 import 它的人會被整個打死
 3. 不該自己讀設定檔或環境變數 —— 參數明著傳
 4. 回傳資料結構，不回傳 JSON 字串 —— 序列化是入口腳本的責任
+
+第 3 條約束的是「共用模組自己去拿設定」。`system_utils.get_env_var()` 不是它的例外，
+而是給**入口腳本**用的薄封裝：由入口腳本讀出值，再當參數明著傳給共用模組。
 
 ### `script_io` API
 
