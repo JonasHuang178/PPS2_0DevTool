@@ -119,10 +119,11 @@ PPS2_0DevTool/
 │       └── gitlab_utils/     GitLab REST（尚無內容）
 │
 └── openspec/                 規格與設計決策
-    ├── specs/                現行行為契約（三個 capability）
+    ├── specs/                現行行為契約（四個 capability）
     │   ├── app-shell/
     │   ├── script-execution/
-    │   └── script-envelope/
+    │   ├── script-envelope/
+    │   └── single-building/
     └── changes/              進行中與已歸檔的變更
         └── archive/          已完成的變更（含當時的 proposal / design / tasks）
 ```
@@ -274,8 +275,8 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 自設定檔重新填入。要保留就先按 Modify Setting。
 
 **暫存設定檔可能自己消失。** 它放在系統暫存目錄，Windows 的磁碟清理與「儲存空間
-感知」會清理該處。若日後需要跨重啟保留，改 `scripts/script_utils/single_building/paths.py`
-裡那一個函式即可（`%LOCALAPPDATA%` 是正確的去處）。
+感知」會清理該處。若日後需要跨重啟保留，改 `scripts/single_building/__init__.py`
+裡的 `setting_file_path()` 即可（`%LOCALAPPDATA%` 是正確的去處）。
 
 ---
 
@@ -745,13 +746,14 @@ python get_gitlab_mr.py ... -v      # 打開 DEBUG 等級的診斷輸出
 
 規格與決策記錄在 `openspec/` 底下。
 
-**`openspec/specs/`** —— 現行的行為契約，這是**權威來源**。三個 capability：
+**`openspec/specs/`** —— 現行的行為契約，這是**權威來源**。四個 capability：
 
 | capability | 涵蓋範圍 |
 |---|---|
-| `app-shell` | 設定檔讀取與查詢、功能掛勾訊號、Debug console、共用 UI 服務、視窗與啟動行為 |
-| `script-execution` | `runFunctionScript` 契約、通道分離、成敗判定、取消狀態機、處理中對話框、行程環境 |
-| `script-envelope` | Request/Response 信封、`script_io` API、參數與設定宣告、logger、exit code、跨平台 |
+| `app-shell` | 設定檔讀取與查詢、來源路徑掛勾（各功能私有）、Debug console、共用 UI 服務、視窗與啟動行為、應用程式圖示 |
+| `script-execution` | `runFunctionScript` 與 `runFunctionFlow` 契約、通道分離、成敗判定、取消狀態機、處理中對話框、行程環境、流程編排與業務運算的分工邊界 |
+| `script-envelope` | Request/Response 信封、`script_io` API、參數與設定宣告、logger、exit code、跨平台、腳本目錄結構 |
+| `single-building` | Single Building 功能：兩個清單的挑選與過濾、四支腳本的觸發與串接、暫存設定檔、失敗與取消的處理 |
 
 **`openspec/changes/archive/`** —— 已完成的變更，保留當時的 `proposal.md`（為什麼要做）、
 `design.md`（決策與取捨理由）與 `tasks.md`（實作與驗證記錄）。
