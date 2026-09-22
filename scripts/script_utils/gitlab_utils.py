@@ -471,66 +471,92 @@ def get_mr_info(server_url, token, project_id, mr_iid,
                    timeout=timeout, verify_ssl=verify_ssl)
 
 
+def _render_file_diff(entry):
+    """把 GitLab 的單檔 diff 物件還原成 git 風格的區段。
+
+    GitLab 的 `diff` 欄位只有 `@@` 起頭的內容，沒有檔頭三行，因此這裡補上
+    `diff --git` / `---` / `+++`。新增與刪除的檔案要指向 /dev/null，改名要補
+    rename 兩行 —— 少了這些，輸出雖然看得懂，但餵給任何吃 unified diff 的工具
+    都會在那幾個情況失敗。
+    """
+    old_path = entry.get("old_path") or entry.get("new_path") or ""
+    new_path = entry.get("new_path") or old_path
+
+    lines = ["diff --git a/%s b/%s" % (old_path, new_path)]
+
+    if entry.get("new_file"):
+        lines.append("new file mode %s" % (entry.get("b_mode") or "100644"))
+    elif entry.get("deleted_file"):
+        lines.append("deleted file mode %s" % (entry.get("a_mode") or "100644"))
+    elif entry.get("renamed_file"):
+        lines.append("rename from %s" % old_path)
+        lines.append("rename to %s" % new_path)
+
+    body = entry.get("diff") or ""
+
+    # 二進位檔沒有 @@ 區段，GitLab 給的是一句說明（或空字串）。那種情況補
+    # --- / +++ 只會產生一份不合法的 diff，直接放說明本身。
+    if body.startswith("@@"):
+        lines.append("--- %s" % ("/dev/null" if entry.get("new_file")
+                                 else "a/%s" % old_path))
+        lines.append("+++ %s" % ("/dev/null" if entry.get("deleted_file")
+                                 else "b/%s" % new_path))
+
+    text = "\n".join(lines) + "\n"
+    if body:
+        text += body if body.endswith("\n") else body + "\n"
+    return text
+
+
 def get_mr_plain_diff(server_url, token, project_id, mr_iid, max_bytes=None,
                       timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """取得 merge request 的 unified diff 純文字。
 
-    抓的是 GitLab 網頁路由的 `.diff`：
+    走 /api/v4 取回各檔案的 diff，再組成一份 git 風格的 unified diff。
 
-        https://<server>/<group>/<project>/-/merge_requests/<iid>.diff
+    **為什麼不抓網頁路由的 `.diff`**：那條路由（`/<group>/<project>/-/
+    merge_requests/<iid>.diff`）回來的是原汁原味的 diff，不需要重組，本函式
+    最初就是那樣寫的。但它**不接受 PRIVATE-TOKEN 標頭認證** —— GitLab 只在
+    /api/v4 底下認那個標頭，網頁路由把請求當成匿名訪客，而私有專案對匿名訪客
+    一律回 404（不是 403，那是為了不洩漏「這個專案存在」）。症狀是「token 明明
+    可以用，卻說找不到」，實測後改走這條。
 
-    回來的就是原汁原味的 diff，不需要重組。相對的做法是打 /api/v4 的 changes
-    端點再把各檔案的 diff 串起來，但那樣 `diff --git` / `---` / `+++` 三行是
-    呼叫方重組的，改名、改權限與二進位檔的標頭可能與真正的 git diff 有出入。
+    代價是 `diff --git` / `---` / `+++` 這幾行由本函式重組，不是 GitLab 給的。
+    新增、刪除、改名與二進位檔都有對應處理（見 _render_file_diff），但與 git
+    自己產生的輸出仍可能有細微差異。
 
-    ⚠️ 這個路由**不在 /api/v4 底下**，因此不是版本化 API，而且前面若有 SSO 或
-    反向代理，可能導去登入頁並回 200 + HTML。那會變成「拿到一坨 HTML 卻以為是
-    diff」的靜默錯誤，所以這裡檢查 Content-Type，收到 HTML 一律轉成明確的失敗。
-
-    project_id 傳數字 ID 時會**多一次請求**把它換成完整路徑 —— 網頁路由只認
-    路徑。傳完整路徑就沒有這次額外請求。
+    端點先試 `/diffs`（較新），404 時退回 `/changes`（較舊、已標記為 deprecated
+    但仍可用）—— 兩者在不同版本的 GitLab 上各自存在，寫死任何一個都會在某些
+    伺服器上失敗。
 
     max_bytes 限制回傳大小，None 表示不限。改了幾十個檔案的 MR，diff 輕易就是
     數百 KB 到數 MB，而它要經 stdout 進結果信封再交給 Qt。截斷時會在結尾附一行
     說明 —— 靜默截斷的話呼叫端會把半截 diff 當成完整的。
-
-    非 UTF-8 的位元組以替代字元取代，不讓一個編碼例外毀掉整份 diff。
     """
-    _require_requests()
+    if not isinstance(mr_iid, (str, int)) or str(mr_iid).strip() == "":
+        raise GitLabError("merge request iid 不可為空")
 
-    project_path = str(project_id)
-    if project_path.isdigit():
-        # 網頁路由只認路徑，數字 ID 要先換過來。
-        project = get_project(server_url, token, project_id,
-                              timeout=timeout, verify_ssl=verify_ssl)
-        project_path = (project or {}).get("path_with_namespace", "")
-        if not project_path:
-            raise GitLabError("專案 %s 沒有回傳 path_with_namespace，無法組出 "
-                              "diff 的網址" % project_id)
-
-    url = "%s/%s/-/merge_requests/%s.diff" % (
-        server_url.strip().rstrip("/"), project_path.strip("/"), mr_iid)
-
-    session = _new_session(token)
-    # 這條路由回的是純文字，不是 JSON。Accept 不改的話 GitLab 可能挑別的格式。
-    session.headers["Accept"] = "text/plain"
+    base = "/projects/%s/merge_requests/%s" % (_encode_path(project_id),
+                                               _encode_path(mr_iid))
 
     try:
-        logger.debug("GitLab GET %s", url)
-        response = http_utils.send(session, "GET", url, None, None,
-                                   timeout, verify_ssl, GitLabError)
-        _check_response(response, url)
+        entries = get_paged(server_url, token, base + "/diffs",
+                            timeout=timeout, verify_ssl=verify_ssl)
+    except GitLabError as exc:
+        if exc.status_code != 404:
+            raise
+        # 舊版沒有 /diffs。/changes 回的是物件，清單在 changes 欄位底下。
+        logger.debug("/diffs 不存在，改試 /changes：%s", base)
+        body = request(server_url, token, "GET", base + "/changes",
+                       timeout=timeout, verify_ssl=verify_ssl)
+        entries = (body or {}).get("changes") or []
 
-        content_type = response.headers.get("Content-Type", "")
-        if "html" in content_type.lower():
-            raise GitLabError(
-                "取得 diff 時收到 HTML 而不是純文字，多半是被導去登入頁："
-                "請確認權杖有效，且這台 GitLab 的網頁路由不需要另外的登入",
-                status_code=response.status_code, url=url)
+    if not isinstance(entries, list):
+        raise GitLabError("diff 端點回傳的不是清單：%s" % base)
 
-        raw = response.content
-    finally:
-        session.close()
+    raw = "".join(_render_file_diff(one) for one in entries).encode("utf-8")
+    logger.debug("MR %s 的 diff 共 %d 個檔案、%d bytes",
+                 mr_iid, len(entries), len(raw))
 
     truncated_note = ""
     if max_bytes is not None and len(raw) > max_bytes:
