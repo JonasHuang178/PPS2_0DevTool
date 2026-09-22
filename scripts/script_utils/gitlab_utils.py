@@ -55,6 +55,7 @@ __all__ = [
     "get_file_content",
     "get_all_mr",
     "get_mr_info",
+    "get_mr_plain_diff",
 ]
 
 
@@ -527,3 +528,75 @@ def get_mr_info(server_url, token, project_id, mr_iid,
                    "/projects/%s/merge_requests/%s"
                    % (_encode_path(project_id), _encode_path(mr_iid)),
                    timeout=timeout, verify_ssl=verify_ssl)
+
+
+def get_mr_plain_diff(server_url, token, project_id, mr_iid, max_bytes=None,
+                      timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """取得 merge request 的 unified diff 純文字。
+
+    抓的是 GitLab 網頁路由的 `.diff`：
+
+        https://<server>/<group>/<project>/-/merge_requests/<iid>.diff
+
+    回來的就是原汁原味的 diff，不需要重組。相對的做法是打 /api/v4 的 changes
+    端點再把各檔案的 diff 串起來，但那樣 `diff --git` / `---` / `+++` 三行是
+    呼叫方重組的，改名、改權限與二進位檔的標頭可能與真正的 git diff 有出入。
+
+    ⚠️ 這個路由**不在 /api/v4 底下**，因此不是版本化 API，而且前面若有 SSO 或
+    反向代理，可能導去登入頁並回 200 + HTML。那會變成「拿到一坨 HTML 卻以為是
+    diff」的靜默錯誤，所以這裡檢查 Content-Type，收到 HTML 一律轉成明確的失敗。
+
+    project_id 傳數字 ID 時會**多一次請求**把它換成完整路徑 —— 網頁路由只認
+    路徑。傳完整路徑就沒有這次額外請求。
+
+    max_bytes 限制回傳大小，None 表示不限。改了幾十個檔案的 MR，diff 輕易就是
+    數百 KB 到數 MB，而它要經 stdout 進結果信封再交給 Qt。截斷時會在結尾附一行
+    說明 —— 靜默截斷的話呼叫端會把半截 diff 當成完整的。
+
+    非 UTF-8 的位元組以替代字元取代，不讓一個編碼例外毀掉整份 diff。
+    """
+    _require_requests()
+
+    project_path = str(project_id)
+    if project_path.isdigit():
+        # 網頁路由只認路徑，數字 ID 要先換過來。
+        project = get_project(server_url, token, project_id,
+                              timeout=timeout, verify_ssl=verify_ssl)
+        project_path = (project or {}).get("path_with_namespace", "")
+        if not project_path:
+            raise GitLabError("專案 %s 沒有回傳 path_with_namespace，無法組出 "
+                              "diff 的網址" % project_id)
+
+    url = "%s/%s/-/merge_requests/%s.diff" % (
+        server_url.strip().rstrip("/"), project_path.strip("/"), mr_iid)
+
+    session = _new_session(token)
+    # 這條路由回的是純文字，不是 JSON。Accept 不改的話 GitLab 可能挑別的格式。
+    session.headers["Accept"] = "text/plain"
+
+    try:
+        logger.debug("GitLab GET %s", url)
+        response = _send(session, "GET", url, None, None, timeout, verify_ssl)
+        _check_response(response, url)
+
+        content_type = response.headers.get("Content-Type", "")
+        if "html" in content_type.lower():
+            raise GitLabError(
+                "取得 diff 時收到 HTML 而不是純文字，多半是被導去登入頁："
+                "請確認權杖有效，且這台 GitLab 的網頁路由不需要另外的登入",
+                status_code=response.status_code, url=url)
+
+        raw = response.content
+    finally:
+        session.close()
+
+    truncated_note = ""
+    if max_bytes is not None and len(raw) > max_bytes:
+        truncated_note = ("\n（已截斷：只取前 %d bytes，原始大小 %d bytes）\n"
+                          % (max_bytes, len(raw)))
+        logger.warn("MR %s 的 diff 有 %d bytes，截斷為 %d bytes",
+                    mr_iid, len(raw), max_bytes)
+        raw = raw[:max_bytes]
+
+    # 截斷可能切在多位元組字元中間，errors="replace" 讓它變成替代字元而不是例外。
+    return raw.decode("utf-8", errors="replace") + truncated_note
