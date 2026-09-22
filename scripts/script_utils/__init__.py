@@ -8,7 +8,7 @@
     file_utils.py    檔案內容的讀寫
     http_utils.py    REST 呼叫的共用底層（session、逾時、重試、例外基底）
     gitlab_utils.py  GitLab REST
-    jira_utils.py    Jira REST（尚無內容）（尚無內容）
+    jira_utils.py    Jira REST（Server/DC，/rest/api/2）（尚無內容）
 
 依功能分組會讓第二個功能需要同一個能力時無處可放。只服務單一功能的邏輯不
 屬於這裡，應該留在 scripts/<功能>/ 之下。
