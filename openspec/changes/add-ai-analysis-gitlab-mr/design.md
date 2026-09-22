@@ -218,7 +218,7 @@ AI Analysis GitLab MR 是本工具的第二個功能，也是第一個需要對�
 
 - `Repo_List` 採 `namespace/project` 字串是否足以識別專案（URL-encode 之後）
 - 憑證經環境變數傳遞的整條路徑是否真的接通
-- `script_utils/gitlab_utils/` 這個分組第一次有內容時的形狀
+- `script_utils/gitlab_utils` 用起來的形狀（本 change 原先要自己建立它，後來改為沿用主線既有的模組 —— 見決策二十一）
 - 畫面上的查詢條件如何對應到 GitLab 的查詢參數
 
 它同時是風險最低的一支：唯讀、單一端點、失敗了只是表格空著。
@@ -227,11 +227,23 @@ AI Analysis GitLab MR 是本工具的第二個功能，也是第一個需要對�
 
 每支腳本一律從 `scripts/_function_template.py` 複製後改寫（既有規則，本次在 `tasks.md` 中逐支列為可勾選項目）。複製時不得刪除設定模組搜尋路徑的那一行，且須保留 `TEMPLATE_VERSION`。
 
-### 二十一、GitLab 的 HTTP 呼叫以標準函式庫實作
+### 二十一、GitLab 的 HTTP 呼叫以標準函式庫實作 —— **已被推翻**
 
-**決定**：`script_utils/gitlab_utils/` 中的 REST 呼叫使用 Python 標準函式庫（`urllib.request`），不引入第三方套件。
+> **這條決定在本 change 進行期間失效。** 原文與新決定都留著：日後有人問「為什麼不用
+> 標準函式庫」時，答案不在 commit 紀錄裡翻，在這裡。
 
-**理由**：本專案目前沒有任何 Python 相依清單，`.pro` 的註解也寫明 Windows 端拿到專案用 Qt Creator 開啟即可建置、不需要安裝套件。引入 `requests` 會讓「安裝相依」變成部署與 CI 的新步驟，而這支腳本的需求只是一個帶標頭的 GET。
+**原決定**：`script_utils/gitlab_utils/` 中的 REST 呼叫使用 Python 標準函式庫（`urllib.request`），不引入第三方套件。
+
+**原理由**：本專案目前沒有任何 Python 相依清單，`.pro` 的註解也寫明 Windows 端拿到專案用 Qt Creator 開啟即可建置、不需要安裝套件。引入 `requests` 會讓「安裝相依」變成部署與 CI 的新步驟，而這支腳本的需求只是一個帶標頭的 GET。
+
+**為什麼失效**：主線在本 change 之後、合併之前，獨立地把 `script_utils` 擴充成七個模組，其中 `gitlab_utils`、`jira_utils` 與共用的 `http_utils` 全部建立在 `requests` 之上，並新增了 `requirements.txt`。原理由的前提（「本專案沒有任何 Python 相依清單」）因此不再成立 —— 相依已經在那裡了，這條腳本再自己寫一份 `urllib` 版本，換到的不是「少一個相依」，而是**兩套並存的錯誤處理**。
+
+**現行決定**：本功能的腳本使用主線的 `script_utils/gitlab_utils.py`（單一模組、`requests`、共用 `http_utils` 的逾時與重試）。本 change 原先自帶的 `gitlab_utils/` 套件（`__init__` / `errors` / `merge_requests`）在 rebase 時整個移除。
+
+**連帶的兩處改變**：
+
+- **例外型別**：原本五個可區分的型別（`GitLabAuthError` / `NotFound` / `Tls` / `Http` / `Connection`）收斂成單一 `GitLabError`，由 `.status_code` 分流。入口腳本給出的四種不同使用者指引全部保留 —— 改變的只是分流的寫法，不是使用者看到的訊息。
+- **取回筆數**：主線的 `get_all_mr()` 會自動翻頁，因此「不翻頁」改以 `max_items` 表達（見決策二十二）。
 
 共用模組的既有四條規則同樣適用：不印 stdout、不結束行程、不自行讀環境變數或設定檔、回傳資料結構。權杖由入口腳本自環境變數取出後明著傳入。
 
@@ -240,6 +252,12 @@ AI Analysis GitLab MR 是本工具的第二個功能，也是第一個需要對�
 **決定**：取得 Merge Request 清單時以單次請求取回最多 100 筆，不跟著分頁連結往下翻。
 
 **理由**：畫面上的表格是單選的 —— 使用者要從中挑出**一筆**。取回上千筆不會讓那個動作更容易，只會讓等待變長、讓表格更難掃。查詢條件（只取未關閉的、只取 N 天內建立的）本來就是為了把範圍縮到人看得完的大小；若 100 筆還不夠，正確的操作是調緊條件，而不是往下翻頁。
+
+**實作方式（決策二十一被推翻後）**：主線的 `get_all_mr()` 會自動翻頁，因此上限改以 `max_items=100` 表達，並沿用原本的判斷：取回筆數達到上限即視為「可能未完整」。
+
+**為什麼不多要一筆**：`max_items=101` 能精確分辨「正好 100 筆」與「被截斷了」，但 GitLab 每頁上限就是 100，第 101 筆必然要再打一次請求 —— 而本 change 的規格明文要求「MUST NOT 跟著分頁連結往下翻」、場景也寫明「腳本沒有為了取回其餘筆數而發出額外的請求」。精確度不值得違反那條。代價是剛好 100 筆時也會說「可能未完整」，而使用者的下一步（調緊查詢條件）在兩種情況下本來就一樣。
+
+上限常數 `MERGE_REQUEST_LIMIT` 放在功能自己的 `scripts/ai_analysis_gitlab_mr/__init__.py`，不放共用模組：「一次要看多少筆」是這個畫面的產品決定，不是 GitLab 的技術限制，換一個功能想看更多時不該去改共用模組。
 
 100 也剛好是 GitLab `per_page` 參數的上限，因此是一次請求就能拿到的最大值，不需要任何翻頁邏輯。
 
@@ -255,7 +273,9 @@ AI Analysis GitLab MR 是本工具的第二個功能，也是第一個需要對�
 
 **保留開關而非寫死的理由**：一，行為看得見 ——「我們沒有驗證憑證」寫在設定檔裡，而不是藏在程式碼中讓所有人被迫接受且無人察覺。二，可逐台機器、逐環境調整，日後確認目標環境其實有正規憑證時，把它改成 `"true"` 即可，不需要重新建置。
 
-**日後要改回驗證時**：多數自簽情境不需要關閉驗證 —— Python 的 `urllib` 遵守 `SSL_CERT_FILE` 環境變數，把公司的 CA 憑證指過去就能正常驗證。屆時把開關設為 `"true"`、設定該環境變數即可，程式碼不需要改。
+**日後要改回驗證時**：多數自簽情境不需要關閉驗證 —— 把公司的 CA 憑證指給 `REQUESTS_CA_BUNDLE` 環境變數就能正常驗證。屆時把開關設為 `"true"`、設定該環境變數即可，程式碼不需要改。
+
+⚠️ **變數名稱隨決策二十一一起變了**：原本寫的是 `SSL_CERT_FILE`（`urllib` 的變數）。改用 `requests` 之後那個變數**不再有效** —— `requests` 只讀 `REQUESTS_CA_BUNDLE` 與 `CURL_CA_BUNDLE`（可在 `Session.merge_environment_settings` 的原始碼驗證）。設錯的症狀是「憑證明明指過去了還是驗證失敗」，而那種失敗看不出是變數名稱的問題。
 
 **範圍**：本次只加 GitLab 的開關。JIRA 尚未有真實連線，依本專案「宣告了卻永遠不會觸發的東西是陷阱」的原則，等它真的要連線時再加對應的鍵。
 
@@ -282,6 +302,6 @@ AI Analysis GitLab MR 是本工具的第二個功能，也是第一個需要對�
 
 （分頁、TLS 驗證、以及「憑證無效與專案不存在需給出不同訊息」三項原本列於此，已分別由決策二十二、二十三與 delta spec 解決。）
 
-Proxy 不需要額外處理：`urllib` 本身遵守 `HTTP_PROXY` / `HTTPS_PROXY` 環境變數。
+Proxy 不需要額外處理：`requests` 本身遵守 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 環境變數（改用 `requests` 之前是 `urllib`，這一點兩者相同）。
 
 `Repo_List` 是否足以識別專案（原本列為待確認）由本輪的真實實作直接給出答案。

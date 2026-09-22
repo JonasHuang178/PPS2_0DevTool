@@ -83,14 +83,21 @@
 
 ## 7. 共用模組：GitLab REST
 
-- [x] 7.1 在 `scripts/script_utils/gitlab_utils/` 新增 REST 呼叫模組，以標準函式庫 `urllib.request` 實作，不引入第三方套件
-- [x] 7.2 遵守共用模組四條規則：不印 stdout、不結束行程（錯誤以例外拋出）、不自行讀環境變數或設定檔、回傳資料結構而非 JSON 字串
-- [x] 7.3 專案識別以 `namespace/project` 字串做 URL 編碼後組成請求路徑
-- [x] 7.4 支援查詢參數：只取未關閉的、只取指定天數內建立的
-- [x] 7.5 401 / 404 / TLS 驗證失敗各自拋出可區分的例外型別，讓入口腳本能給出不同的訊息
-- [x] 7.6 單次請求以 `per_page=100` 取回，**不翻頁**；回傳值需讓呼叫端能判斷是否達到上限
-- [x] 7.7 是否驗證 TLS 憑證由呼叫端明著傳入（共用模組自己不得讀環境變數）；模組本身不設預設值，預設由入口腳本決定
-- [x] 7.8 更新 `gitlab_utils/__init__.py` 的 docstring（目前寫著「本次交付尚未有任何 GitLab 需求，因此這個分組目前是空的」）
+> **本節在 rebase 到主線時整個作廢。** 這些任務原先要自建一份 `gitlab_utils`，而主線
+> 已經有了（`requests` + `http_utils`）。自建的那份在 rebase 時移除，本功能改接主線的
+> 模組。原委見 design.md 決策二十一。
+>
+> 勾選狀態維持原樣：它們**當時確實做完了**，作廢的是這條路線而不是那些工作。底下逐項
+> 註明現在由誰滿足。
+
+- [x] 7.1 ~~在 `scripts/script_utils/gitlab_utils/` 新增 REST 呼叫模組，以標準函式庫 `urllib.request` 實作~~ → 改用主線的 `gitlab_utils.py`（`requests`）
+- [x] 7.2 遵守共用模組四條規則：不印 stdout、不結束行程（錯誤以例外拋出）、不自行讀環境變數或設定檔、回傳資料結構而非 JSON 字串 → 主線模組同樣遵守
+- [x] 7.3 專案識別以 `namespace/project` 字串做 URL 編碼後組成請求路徑 → 主線的 `_encode_path()` 負責
+- [x] 7.4 支援查詢參數：只取未關閉的、只取指定天數內建立的 → 主線以 `status` 與 `created_after` 表達；「N 天內」的換算移到入口腳本（共用模組只收 ISO 8601 或 date/datetime）
+- [x] 7.5 ~~401 / 404 / TLS 驗證失敗各自拋出可區分的例外型別~~ → 主線只拋 `GitLabError`，由 `.status_code` 分流。**入口腳本給出的四種不同指引全部保留**，改變的是分流的寫法而不是使用者看到的訊息
+- [x] 7.6 ~~單次請求以 `per_page=100` 取回，不翻頁~~ → 主線的 `get_all_mr()` 自動翻頁，上限改以 `max_items` 表達（要 `上限 + 1` 筆才判斷得出是否截斷）
+- [x] 7.7 是否驗證 TLS 憑證由呼叫端明著傳入（共用模組自己不得讀環境變數）→ 主線的 `verify_ssl` 參數同樣由呼叫端傳入
+- [x] 7.8 ~~更新 `gitlab_utils/__init__.py` 的 docstring~~ → 該檔案已不存在
 
 ## 8. 入口腳本
 
@@ -100,7 +107,8 @@
 - [x] 8.2 自範本複製出取得 MR 清單的腳本；**真實實作**：自環境變數取權杖、呼叫 `gitlab_utils`、回傳 `data.merge_requests`
 - [x] 8.3 該支的 401 / 404 失敗訊息需彼此不同：前者點名環境變數，後者點名設定中的專案名稱
 - [x] 8.3a 該支自 `GITLAB_VERIFY_SSL` 讀取驗證開關（**未設定視為不驗證**）並明著傳入 `gitlab_utils`
-- [x] 8.3b 開關被設為 `"true"` 而驗證失敗時，訊息指出可把 CA 憑證指給 `SSL_CERT_FILE`，或把 `Gitlab_Verify_SSL` 設回 `"false"`
+- [x] 8.3b 開關被設為 `"true"` 而驗證失敗時，訊息指出可把 CA 憑證指給 `REQUESTS_CA_BUNDLE`，或把 `Gitlab_Verify_SSL` 設回 `"false"`
+  - 變數名稱隨決策二十一一起改了：原本寫 `SSL_CERT_FILE`（`urllib` 的變數），而 `requests` 不讀它，只讀 `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE`
 - [x] 8.3c 取回筆數達到 100 時，於回傳的 `message` 或 `data` 中標示結果可能未完整，讓功能能讓使用者知道
 - [x] 8.4 自範本複製出步驟 1「取得 MR 描述」；stub，回傳假的 `description`
 - [x] 8.5 自範本複製出步驟 2「取得相關資訊」；stub，回傳假的 `script_info`（含 `status` / `device` / `jira_key` / `ai_summary` / `merge_to_md`）

@@ -345,10 +345,15 @@ if not token:
 
 | 變數 | 效果 |
 |---|---|
-| `SSL_CERT_FILE` | `urllib` 與 `requests` 會拿它當受信任的 CA 憑證 |
-| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | 兩者都會自動遵守 |
+| `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE` | `requests` 拿它當受信任的 CA 憑證 |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | `requests` 與 `urllib` 都會自動遵守 |
 | `TEMP` / `TMPDIR` | `tempfile.gettempdir()` 的來源 |
 | `PATH` | 呼叫外部執行檔時 |
+
+⚠️ **CA 憑證的變數是 `REQUESTS_CA_BUNDLE`，不是 `SSL_CERT_FILE`。** 本專案的 REST
+呼叫走 `requests`，而它只讀前兩個（`Session.merge_environment_settings` 的原始碼可
+驗證）；`SSL_CERT_FILE` 是 Python `ssl` 模組的變數，`requests` 不理它。設錯的症狀是
+「憑證明明指過去了還是驗證失敗」。
 
 ### 4.4 詳細輸出旗標
 
@@ -570,13 +575,14 @@ def main():
                      - datetime.timedelta(days=params["created_after_days"]))
 
     try:
-        # 多要一筆才判斷得出「還有更多」：拿到 max_items 就停，剛好取滿時
-        # 無法分辨是「正好這麼多」還是「被截斷了」。
+        # max_items 剛好等於上限。多要一筆雖然能精確分辨「正好這麼多」與「被截斷
+        # 了」，但 GitLab 每頁上限就是 100，第 101 筆必然要再打一次請求。代價是
+        # 剛好取滿時也會說「可能未完整」—— 使用者的下一步（調緊條件）一樣。
         raw = gitlab_utils.get_all_mr(
             server_url, token, repo,
             created_after=created_after,
             status=("opened",) if params["only_open"] else ("all",),
-            max_items=mr_report.MERGE_REQUEST_LIMIT + 1,
+            max_items=mr_report.MERGE_REQUEST_LIMIT,
             verify_ssl=verify_ssl,
         )
     except gitlab_utils.GitLabError as exc:
@@ -604,7 +610,7 @@ def main():
                                         or "certificate" in lowered):
             script_io.reply_fail(
                 "TLS 憑證驗證失敗",
-                detail="%s\n\n把受信任的 CA 憑證指給 SSL_CERT_FILE，或把設定檔的"
+                detail="%s\n\n把受信任的 CA 憑證指給 REQUESTS_CA_BUNDLE，或把設定檔的"
                        "Service.Gitlab_Verify_SSL 設為 \"false\"。" % exc,
                 code="GITLAB_TLS_FAILED")
 
@@ -613,9 +619,9 @@ def main():
 
     # 挑欄位是入口腳本的職責：共用模組回的是 GitLab 原樣的物件，整包塞進信封
     # 的話一百筆就有幾百 KB 要經 stdout 送回 Qt，而這裡只用得到作者。
-    truncated = len(raw) > mr_report.MERGE_REQUEST_LIMIT
+    truncated = len(raw) >= mr_report.MERGE_REQUEST_LIMIT
     items = [{"author": (one.get("author") or {}).get("name") or ""}
-             for one in raw[:mr_report.MERGE_REQUEST_LIMIT]]
+             for one in raw]
 
     # --- 業務邏輯：依作者分組 ---
     script_io.progress("整理統計…")

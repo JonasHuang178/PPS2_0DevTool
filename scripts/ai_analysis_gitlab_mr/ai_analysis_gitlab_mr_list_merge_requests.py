@@ -134,13 +134,17 @@ def main():
     limit = ai_analysis_gitlab_mr.MERGE_REQUEST_LIMIT
 
     try:
-        # 多要一筆才判斷得出「還有更多」：get_all_mr 拿到 max_items 就停，
-        # 剛好取滿 limit 時無法分辨是「正好這麼多」還是「被截斷了」。
+        # max_items 剛好等於上限，不多要一筆。多要一筆雖然能精確分辨「正好這麼
+        # 多」與「被截斷了」，但 GitLab 每頁上限就是 100，第 101 筆必然要再打一次
+        # 請求 —— 而規格明文要求不得為了取回其餘筆數發出額外的請求。
+        #
+        # 代價是剛好 100 筆時也會說「可能未完整」。那是規格接受的不精確：使用者
+        # 的下一步（調緊查詢條件）在兩種情況下都一樣。
         raw = gitlab_utils.get_all_mr(
             server_url, token, repo,
             created_after=created_after,
             status=("opened",) if params["only_open"] else ("all",),
-            max_items=limit + 1,
+            max_items=limit,
             verify_ssl=verify_ssl,
         )
     except gitlab_utils.GitLabError as exc:
@@ -172,17 +176,19 @@ def main():
             script_io.reply_fail(
                 "TLS 憑證驗證失敗",
                 detail="%s\n\n兩種解法：\n"
-                       "  1. 把受信任的 CA 憑證指給環境變數 SSL_CERT_FILE\n"
+                       "  1. 把受信任的 CA 憑證指給環境變數 REQUESTS_CA_BUNDLE\n"
                        "  2. 把設定檔的 Service.Gitlab_Verify_SSL 設為 \"false\"\n"
-                       "第一種較安全 —— 關閉驗證時，存取權杖會暴露給連線中間人。"
+                       "第一種較安全 —— 關閉驗證時，存取權杖會暴露給連線中間人。\n"
+                       "注意是 REQUESTS_CA_BUNDLE 而不是 SSL_CERT_FILE："
+                       "底層改用 requests 之後，只有前者會被讀取。"
                        % exc,
                 code="GITLAB_TLS_FAILED")
 
         script_io.reply_fail("GitLab 查詢失敗：%s" % exc,
                              code="GITLAB_REQUEST_FAILED")
 
-    truncated = len(raw) > limit
-    items = [_row(one) for one in raw[:limit]]
+    truncated = len(raw) >= limit
+    items = [_row(one) for one in raw]
     result = {"merge_requests": items, "truncated": truncated}
 
     logger.info("取回 %d 筆%s", len(items), "（已達上限）" if truncated else "")

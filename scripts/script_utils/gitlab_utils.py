@@ -398,6 +398,9 @@ def get_all_mr(server_url, token, project_id, created_after, status=("opened",),
     排序 —— 不排的話輸出會是「所有 opened、接著所有 merged」，那個次序對呼叫端
     沒有意義，而且同一批資料每次跑的順序還可能不同。
 
+    max_items 會往下傳給翻頁層，取夠就停止翻頁 —— 不是先抓完再切。專案的歷史
+    MR 動輒數千筆，兩者的差別是幾趟請求與幾 MB 的傳輸。
+
     回傳 GitLab 原樣的 MR 物件清單，不挑欄位 —— 挑哪些欄位是呼叫端的決定。
     共用模組先砍的話，下一個呼叫端就得回來改這裡。一筆 MR 約 2～4 KB，入口腳本
     放進結果信封之前請自行挑選需要的欄位。
@@ -421,8 +424,14 @@ def get_all_mr(server_url, token, project_id, created_after, status=("opened",),
         params = dict(base_params)
         params["state"] = one
 
+        # max_items 要往下傳，否則翻頁層會把整個專案的 MR 都拉回來再由這裡
+        # 切掉 —— 那不只是多切幾筆，是多打好幾趟請求、多拉回幾 MB 的資料。
+        #
+        # 多狀態時每個狀態各自取到 max_items 為止：合併後要依建立時間取最新的
+        # max_items 筆，而那些筆數必定落在「各狀態各自最新的 max_items 筆」之內。
         for item in get_paged(server_url, token, path, params=params,
-                              timeout=timeout, verify_ssl=verify_ssl):
+                              timeout=timeout, verify_ssl=verify_ssl,
+                              max_items=max_items):
             identifier = item.get("id")
             if identifier is not None and identifier in seen_ids:
                 continue

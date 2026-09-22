@@ -26,7 +26,9 @@
 
 全部由 `scripts/_function_template.py` 複製而來，放在 `scripts/ai_analysis_gitlab_mr/` 之下：一支供重新整理鈕取得 Merge Request 清單，五支為分析流程的各個步驟。
 
-GitLab REST 的呼叫封裝放進 `scripts/script_utils/gitlab_utils/` —— 該分組在上一個 change 建立時即已保留給這個用途，本次首次有內容。呼叫以 Python 標準函式庫實作，不引入第三方套件（本專案目前沒有任何 Python 相依清單，加一個就等於替部署與 CI 加一個安裝步驟）。
+GitLab REST 的呼叫沿用主線既有的 `scripts/script_utils/gitlab_utils.py`（`requests` + 共用的 `http_utils`）。
+
+> 本 change 原先要自己在 `scripts/script_utils/gitlab_utils/` 建立一份以標準函式庫實作的版本，理由是「本專案沒有任何 Python 相依清單」。該前提在本 change 進行期間失效 —— 主線獨立地把 `script_utils` 擴充成七個模組並加入 `requirements.txt`。本 change 因此在 rebase 時移除自帶的那份，改接主線的模組。原委見 design.md 決策二十一。
 
 **取得 Merge Request 清單那一支為真實實作**，其餘五支本次回傳寫死的假資料（見下）。
 
@@ -86,7 +88,7 @@ JIRA Key 的模式（`none` / `manual` / `auto`）、手動指定的 key、以�
 | 取得 Merge Request 清單 | **真實實作**，真的連線至 GitLab |
 | 分析流程五步 | 回傳寫死的假資料 |
 
-取得清單那支做成真的，是因為它一次驗證掉四件否則要等下一個 change 才知道的事：`namespace/project` 字串是否足以識別專案、憑證經環境變數的整條路徑是否接通、`gitlab_utils` 第一次有內容時的形狀、以及畫面上的查詢條件如何對應到實際的查詢參數。它同時是風險最低的一支：唯讀、單一端點、失敗了只是表格空著。
+取得清單那支做成真的，是因為它一次驗證掉四件否則要等下一個 change 才知道的事：`namespace/project` 字串是否足以識別專案、憑證經環境變數的整條路徑是否接通、`gitlab_utils` 用起來的形狀、以及畫面上的查詢條件如何對應到實際的查詢參數。它同時是風險最低的一支：唯讀、單一端點、失敗了只是表格空著。
 
 ## Capabilities
 
@@ -112,7 +114,7 @@ JIRA Key 的模式（`none` / `manual` / `auto`）、手動指定的 key、以�
 ### 腳本
 
 - `scripts/ai_analysis_gitlab_mr/` 新增入口腳本
-- `scripts/script_utils/gitlab_utils/` 首次填入內容：GitLab REST 的呼叫封裝
+- `scripts/script_utils/gitlab_utils.py`：沿用主線既有模組，本 change 不新增共用模組（原計畫要自建一份，見 design.md 決策二十一）
 - `scripts/single_building/` 四支腳本不需修改
 
 ### 設定與部署
