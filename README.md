@@ -506,8 +506,8 @@ def main():
         ],
         params=[
             script_io.arg("repo", required=True, help="repo 完整路徑，例如 group/project"),
-            script_io.arg("created_after_days", type=int, default=7,
-                          help="只抓最近 N 天的 MR，-1 表示不限"),
+            script_io.arg("created_after", default="",
+                          help="只抓這個時間之後建立的 MR，ISO 8601；留空表示不限"),
         ],
     )
 
@@ -516,13 +516,18 @@ def main():
     script_io.progress("呼叫 GitLab API")
 
     # 業務邏輯寫在 script_utils 裡，這裡只做轉接
-    mrs = gitlab_utils.get_merge_requests(
+    mrs = gitlab_utils.get_all_mr(
         cfg["Gitlab_Server_URL"], cfg["Gitlab_Access_Token"],
         req["params"]["repo"],
-        created_after_days=req["params"]["created_after_days"],
+        created_after=req["params"]["created_after"],
     )
 
-    script_io.reply(message="共 %d 筆" % len(mrs), data={"merge_requests": mrs})
+    # 挑欄位是入口腳本的事：共用模組回傳 GitLab 原樣的物件（一筆約 2～4 KB），
+    # 整包塞進信封的話 100 筆就有幾百 KB 要經 stdout 送回 Qt。
+    rows = [{"iid": m["iid"], "title": m["title"], "web_url": m["web_url"]}
+            for m in mrs]
+
+    script_io.reply(message="共 %d 筆" % len(rows), data={"merge_requests": rows})
 
 if __name__ == "__main__":
     script_io.run(main)

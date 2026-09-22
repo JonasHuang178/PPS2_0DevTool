@@ -14,9 +14,9 @@ issue、pipeline…），以資料結構回傳，不做 UI、不讀設定檔、�
 
 所有公開函式的前兩個參數都是 `server_url` 與 `token`，沒有 client 物件：
 
-    mrs = gitlab_utils.get_merge_requests(
+    mrs = gitlab_utils.get_all_mr(
         cfg["Gitlab_Server_URL"], cfg["Gitlab_Access_Token"],
-        "group/project", created_after_days=7)
+        "group/project", created_after="2026-09-01", status=("opened",))
 
 這是本專案先前就寫進 README 的契約，也與 system_utils 的平坦函式一致。代價是
 每次呼叫各自建立連線；入口腳本通常只打一兩支 API，那點成本可以忽略，而真正
@@ -35,6 +35,7 @@ script_io 的統一處理變成一則說得清楚的 FAIL。
 """
 
 import base64
+import datetime
 import time
 
 try:
@@ -49,9 +50,10 @@ __all__ = [
     "request",
     "get_paged",
     "get_project",
+    "get_repo_id",
     "list_branches",
     "get_file_content",
-    "get_merge_requests",
+    "get_all_mr",
     "get_merge_request",
 ]
 
@@ -70,6 +72,9 @@ _PER_PAGE = 100
 
 # 分頁的硬上限，防止伺服器回傳異常的 next page 時無限迴圈。
 _MAX_PAGES = 1000
+
+# GitLab 的 merge request state 只收這幾個值，而且一次只收一個。
+_MR_STATES = ("opened", "closed", "merged", "locked", "all")
 
 
 class GitLabError(Exception):
@@ -119,6 +124,63 @@ def _encode_path(value):
     """
     from urllib.parse import quote
     return quote(str(value), safe="")
+
+
+def _to_iso(value):
+    """把時間值正規化成 GitLab 吃的 ISO 8601。
+
+    收字串與 date / datetime 物件。字串原樣送出 —— 呼叫端已經自己寫好格式了，
+    在這裡二次解析只會多一種解析失敗的方式。
+
+    刻意**不收**「幾天前」這種數字：同一個參數有時是日期、有時是天數，呼叫端
+    讀簽章讀不出來該傳什麼。需要那種語意請自己先換算成日期。
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+    raise GitLabError("時間參數只接受 ISO 8601 字串或 date/datetime，收到 %r"
+                      % (value,))
+
+
+def _normalize_states(status):
+    """把 status 正規化成一個 tuple。
+
+    字串與序列都收。收字串是因為 ("opened") 在 Python 裡**不是 tuple** 而是
+    字串（逗號才是關鍵，不是括號），那個寫法太容易打錯；若只當序列處理，
+    它會被迭代成 'o','p','e','n','e','d' 六個狀態，而錯誤訊息會指向一個
+    看起來毫無道理的地方。
+
+    含 "all" 時直接收斂成 ("all",) —— GitLab 的 all 已經涵蓋其餘狀態，
+    再多打幾趟只是拿回重複的資料。
+    """
+    if isinstance(status, str):
+        states = (status,)
+    else:
+        try:
+            states = tuple(status)
+        except TypeError:
+            raise GitLabError("status 必須是字串或字串序列，收到 %r" % (status,))
+
+    if not states:
+        raise GitLabError("status 不可為空")
+
+    for one in states:
+        if one not in _MR_STATES:
+            raise GitLabError("不支援的 merge request 狀態 %r，可用的有：%s"
+                              % (one, "、".join(_MR_STATES)))
+
+    if "all" in states:
+        return ("all",)
+    # 去重但保留呼叫端給的次序
+    seen, unique = set(), []
+    for one in states:
+        if one not in seen:
+            seen.add(one)
+            unique.append(one)
+    return tuple(unique)
 
 
 def _new_session(token):
@@ -323,6 +385,25 @@ def get_project(server_url, token, repo, timeout=DEFAULT_TIMEOUT,
                    timeout=timeout, verify_ssl=verify_ssl)
 
 
+def get_repo_id(server_url, token, repo_name, timeout=DEFAULT_TIMEOUT,
+                verify_ssl=True):
+    """把專案的完整路徑換成數字專案 ID。
+
+    repo_name 是**完整路徑**，例如 "group/subgroup/project" —— 不是只有專案名。
+    只給名字的話得走 /projects?search=，而 search 是模糊比對：三個群組底下
+    都有 tool 時會回三筆，挑第一筆是賭博，挑錯了症狀會出現在很後面。
+
+    找不到時拋出 GitLabError（code 為 GITLAB_404），不回 None —— 回 None 的話
+    呼叫端忘了檢查就會拿 None 去打下一支 API，錯誤在很遠的地方才爆開。
+
+    多數端點其實可以直接吃編碼過的完整路徑，不需要先換 ID。需要數字 ID 的場合
+    是少數（例如某些跨專案端點），以及單純想確認「這個專案存在而且我看得到」。
+    """
+    project = get_project(server_url, token, repo_name,
+                          timeout=timeout, verify_ssl=verify_ssl)
+    return (project or {}).get("id")
+
+
 def list_branches(server_url, token, repo, search=None,
                   timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """列出專案的分支。search 有值時只回傳名稱含該字串的分支。"""
@@ -362,38 +443,64 @@ def get_file_content(server_url, token, repo, file_path, ref,
 
 # --- Merge request ---------------------------------------------------------
 
-def get_merge_requests(server_url, token, repo, state="opened",
-                       created_after_days=None, target_branch=None,
-                       source_branch=None, max_items=None,
-                       timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+def get_all_mr(server_url, token, repo, created_after, status=("opened",),
+               target_branch=None, source_branch=None, max_items=None,
+               timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """列出專案的 merge request。
 
-    state 為 "opened" / "closed" / "merged" / "all"。
+    repo 為 "group/project" 完整路徑或數字專案 ID。
 
-    created_after_days 只取最近 N 天建立的 MR。None 或**負數**表示不限 ——
-    負數也接受，是因為入口腳本常把「不限」寫成 -1（參數宣告要有預設值，而
-    「不限」沒有自然的數字表示）。
+    created_after 收 ISO 8601 字串或 date / datetime 物件；None 表示不限時間。
 
-    回傳 GitLab 原樣的 MR 物件清單，不做欄位挑選 —— 要挑哪些欄位是呼叫端的
-    決定，共用模組先砍掉欄位的話，下一個呼叫端就得回來改這裡。
+    status 收單一字串或字串序列，合法值見 _MR_STATES。GitLab 的 state 參數
+    **一次只收一個值**（"opened,merged" 它不認），所以多狀態是一個狀態打一趟
+    再把結果合併。狀態通常只有一兩個，這比「抓 state=all 回來自己過濾」省得多
+    —— 後者要把整個專案的歷史 MR 都拉回來。
+
+    合併後依 id 去重（呼叫端給重複狀態時不會拿到重複資料），再依建立時間新到舊
+    排序 —— 不排的話輸出會是「所有 opened、接著所有 merged」，那個次序對呼叫端
+    沒有意義，而且同一批資料每次跑的順序還可能不同。
+
+    回傳 GitLab 原樣的 MR 物件清單，不挑欄位 —— 挑哪些欄位是呼叫端的決定。
+    共用模組先砍的話，下一個呼叫端就得回來改這裡。一筆 MR 約 2～4 KB，入口腳本
+    放進結果信封之前請自行挑選需要的欄位。
     """
-    params = {"state": state}
+    states = _normalize_states(status)
 
-    if created_after_days is not None and created_after_days >= 0:
-        # GitLab 收 ISO 8601。用 UTC 是因為伺服器與使用者未必同一時區，
-        # 而這個條件只要求「最近 N 天」，不需要當地日界線的精確度。
-        cutoff = time.gmtime(time.time() - created_after_days * 86400)
-        params["created_after"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", cutoff)
-
+    base_params = {}
+    iso = _to_iso(created_after)
+    if iso:
+        base_params["created_after"] = iso
     if target_branch:
-        params["target_branch"] = target_branch
+        base_params["target_branch"] = target_branch
     if source_branch:
-        params["source_branch"] = source_branch
+        base_params["source_branch"] = source_branch
 
-    return get_paged(server_url, token,
-                     "/projects/%s/merge_requests" % _encode_path(repo),
-                     params=params, timeout=timeout, verify_ssl=verify_ssl,
-                     max_items=max_items)
+    path = "/projects/%s/merge_requests" % _encode_path(repo)
+
+    merged = []
+    seen_ids = set()
+    for one in states:
+        params = dict(base_params)
+        params["state"] = one
+
+        for item in get_paged(server_url, token, path, params=params,
+                              timeout=timeout, verify_ssl=verify_ssl):
+            identifier = item.get("id")
+            if identifier is not None and identifier in seen_ids:
+                continue
+            if identifier is not None:
+                seen_ids.add(identifier)
+            merged.append(item)
+
+    # 新到舊。缺 created_at 的排最後，不讓一筆異常資料把整串的次序弄亂。
+    merged.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
+    logger.debug("MR 查詢 %s 狀態 %s，共 %d 筆", repo, states, len(merged))
+
+    if max_items is not None:
+        return merged[:max_items]
+    return merged
 
 
 def get_merge_request(server_url, token, repo, mr_iid,
