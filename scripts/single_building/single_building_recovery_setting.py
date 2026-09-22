@@ -24,8 +24,8 @@ import os
 
 import script_io
 import single_building
+from script_utils import file_utils
 from script_utils import logger
-from script_utils import system_utils
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "recovery_setting"
@@ -45,12 +45,12 @@ def main():
 
     logger.info("清空設定檔：%s", path)
     script_io.progress("清空設定…")
-    system_utils.write_lines(path, [])
+    file_utils.write_lines(path, [])
 
     # 回讀而不是直接回傳空清單：讓回傳的內容真的來自檔案，
     # 清空沒生效時這裡就會顯示出來，而不是靜默地宣稱成功。
     files = [{"name": os.path.basename(line), "path": line}
-             for line in system_utils.read_lines(path)]
+             for line in file_utils.read_lines(path)]
     logger.info("清空後回讀 %d 筆", len(files))
 
     script_io.reply(

@@ -61,10 +61,22 @@ Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ �
 | | 分組依據 | 例子 |
 |---|---|---|
 | **入口腳本** | 應用**功能** | `scripts/single_building/` |
-| **共用模組** | 技術**領域** | `script_utils/system_utils/`、`script_utils/gitlab_utils/` |
+| **共用模組** | 技術**領域** | `script_utils/system_utils.py`、`file_utils.py`、`gitlab_utils.py` |
 
 共用模組**不依功能分組** —— 那樣的話第二個功能需要同一個能力時就無處可放。
 只服務單一功能的東西留在 `scripts/<功能>/` 之下。
+
+一個分組**預設是單一 `.py` 檔案**，**不以行數為拆檔的理由**。唯一該拆成目錄的
+情況是分組內出現**彼此不相依的獨立關切**；拆的時候由該目錄的 `__init__.py` 原樣
+re-export。呼叫端一律寫 `from script_utils import <分組>`，兩種形式在 import 端
+完全相同，拆與不拆都不必改任何一行呼叫 —— 所以**先全部寫在單一檔案裡，真的該拆
+的時候一口氣拆開**。先拆換到的只有一份要跟著維護的再匯出清單，漏掉一筆的症狀是
+「函式明明寫好了卻搆不到」。
+
+行數不是判準：長度只是內聚性的代理指標，指錯方向的時候比指對的多。`jira_utils`
+七百多行，但整份圍繞同一個 client、同一種認證、同一套錯誤處理 —— 照行數拆只會把
+一件事切成三份。（Python 標準庫的 `argparse` 約 2500 行、`http/client.py` 約
+1500 行，都是單檔。）
 
 因為入口腳本放進了子目錄，每支頂部都有一行把 `scripts/` 插進 `sys.path` 的設定，
 **不能刪**：Python 只把「腳本所在目錄」放進 `sys.path`，少了它，命令列直接執行時
@@ -90,6 +102,7 @@ PPS2_0DevTool/
 │
 ├── PPS2_0DevTool.json        設定檔
 ├── PPS2_0DevTool.pro         qmake 專案檔
+├── requirements.txt          Python 第三方相依（requests）
 │
 ├── resources.qrc             Qt 資源清單（應用程式圖示）
 ├── resources/icons/
@@ -113,10 +126,16 @@ PPS2_0DevTool/
 │   │
 │   └── script_utils/         共用模組依「技術領域」分組
 │       ├── logger.py         log（唯一設定 logging 的地方）
-│       ├── system_utils/     系統層面：檔案系統、暫存目錄
-│       │   ├── files.py      依副檔名列檔案、行式文字檔讀寫
-│       │   └── temp.py       暫存目錄下的路徑
-│       └── gitlab_utils/     GitLab REST（尚無內容）
+│       ├── system_utils.py   向作業系統要東西：環境變數、建立資料夾、
+│       │                     依副檔名列檔案、暫存目錄、路徑轉 Windows 表示法
+│       ├── file_utils.py     檔案內容：整檔讀寫、行號區間讀取與置換、
+│       │                     尋找、複製、搬移、刪除、行式文字檔讀寫
+│       ├── json_utils.py     JSON：讀檔、寫檔、序列化成字串
+│       ├── http_utils.py     REST 共用底層：session、逾時、重試、例外基底
+│       ├── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
+│       │                     檔案內容、merge request
+│       └── jira_utils.py     Jira REST（Server/DC）：通用呼叫、分頁、JQL 搜尋、
+│                             issue 查詢／建立／ensure、留言、描述更新、附件
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
@@ -160,6 +179,17 @@ qmake PPS2_0DevTool.pro && make
 執行 Python 的指令，帶著空設定啟動只會讓使用者在每個 tab 都撞牆。
 
 執行環境還需要系統上有可用的 **Python 3**（啟動時會檢查）。
+
+用到 GitLab 的功能還需要 **requests**（本專案唯一的第三方相依）：
+
+```bash
+<設定檔 Program 指定的那個 python> -m pip install -r requirements.txt
+```
+
+裝在哪個直譯器裡是重點 —— Qt 是用設定檔 `Function/<功能>/Program` 指定的直譯器去
+啟動腳本的。裝錯地方的症狀是命令列跑得好好的、從工具裡跑卻失敗。沒裝時不會在匯入
+階段爆掉，`gitlab_utils` 會延到真正呼叫時才拋出一則說得清楚的錯誤（若在匯入階段拋，
+結果信封根本來不及產生，Qt 端只會顯示「腳本沒有回傳結果」）。
 
 圖示不在這個清單裡 —— 它內嵌在執行檔內，不需要也不會去讀外部圖檔。
 
@@ -487,8 +517,8 @@ def main():
         ],
         params=[
             script_io.arg("repo", required=True, help="repo 完整路徑，例如 group/project"),
-            script_io.arg("created_after_days", type=int, default=7,
-                          help="只抓最近 N 天的 MR，-1 表示不限"),
+            script_io.arg("created_after", default="",
+                          help="只抓這個時間之後建立的 MR，ISO 8601；留空表示不限"),
         ],
     )
 
@@ -497,13 +527,18 @@ def main():
     script_io.progress("呼叫 GitLab API")
 
     # 業務邏輯寫在 script_utils 裡，這裡只做轉接
-    mrs = gitlab_utils.get_merge_requests(
+    mrs = gitlab_utils.get_all_mr(
         cfg["Gitlab_Server_URL"], cfg["Gitlab_Access_Token"],
         req["params"]["repo"],
-        created_after_days=req["params"]["created_after_days"],
+        created_after=req["params"]["created_after"],
     )
 
-    script_io.reply(message="共 %d 筆" % len(mrs), data={"merge_requests": mrs})
+    # 挑欄位是入口腳本的事：共用模組回傳 GitLab 原樣的物件（一筆約 2～4 KB），
+    # 整包塞進信封的話 100 筆就有幾百 KB 要經 stdout 送回 Qt。
+    rows = [{"iid": m["iid"], "title": m["title"], "web_url": m["web_url"]}
+            for m in mrs]
+
+    script_io.reply(message="共 %d 筆" % len(rows), data={"merge_requests": rows})
 
 if __name__ == "__main__":
     script_io.run(main)
@@ -529,6 +564,9 @@ if __name__ == "__main__":
 2. 不可以 `sys.exit()`，要 `raise` —— 否則 import 它的人會被整個打死
 3. 不該自己讀設定檔或環境變數 —— 參數明著傳
 4. 回傳資料結構，不回傳 JSON 字串 —— 序列化是入口腳本的責任
+
+第 3 條約束的是「共用模組自己去拿設定」。`system_utils.get_env_var()` 不是它的例外，
+而是給**入口腳本**用的薄封裝：由入口腳本讀出值，再當參數明著傳給共用模組。
 
 ### `script_io` API
 
