@@ -10,11 +10,12 @@
 
 import os
 import shutil
+import tempfile
 
 from script_utils import logger
 
-__all__ = ["read_file", "write_file", "get_lines",
-           "copy_file", "move_file", "delete_file",
+__all__ = ["read_file", "write_file", "get_lines", "replace_lines",
+           "find_file_path", "copy_file", "move_file", "delete_file",
            "read_lines", "write_lines"]
 
 
@@ -269,3 +270,136 @@ def delete_file(file_path):
     os.remove(file_path)
     logger.debug("已刪除 %s", file_path)
     return True
+
+
+def find_file_path(directory, file_name):
+    """在 directory 底下遞迴尋找名為 file_name 的檔案，回傳絕對路徑。
+
+    參數名是 directory 而不是 dir —— dir 會遮蔽 Python 內建的 dir()，而且與
+    system_utils.list_files_by_suffix() 的第一個參數不一致。
+
+    **找不到時回傳 None**，不拋例外。這與 read_file() 的「不存在就拋」刻意不同：
+    read_file 的呼叫端已經認定那個檔案該在那裡，而「找找看」本來就包含「不在」
+    這個正常答案。呼叫端要把「找不到」當失敗的話，自己判斷 None 後回報即可。
+
+    **比對不分大小寫**，理由與 list_files_by_suffix() 相同：Windows 的檔案系統
+    本身就不分，只收完全相符會讓使用者看不到自己明明放在那裡的檔案。
+
+    同名檔案存在於多個子目錄時回傳**第一個**，並記一筆警告指出共有幾個 ——
+    靜默挑一個而不說，之後「怎麼讀到別的檔案」會查很久。走訪次序經過排序，
+    因此同一棵目錄樹每次跑都得到同一個結果；不排序的話 os.walk 的次序由檔案
+    系統決定，同一份輸入可能回傳不同的檔案。
+
+    走訪會把整棵樹掃完，不是找到第一個就停 —— 上面那筆「共有幾個」的警告需要
+    完整的數量。代價是大目錄樹上會多花時間；換來的是「明明有兩個同名檔案」這件
+    事一定被說出來，而不是靜默地挑一個。
+    """
+    if not isinstance(directory, str) or not directory.strip():
+        raise ValueError("目錄路徑必須是非空字串：%r" % (directory,))
+    if not isinstance(file_name, str) or not file_name.strip():
+        raise ValueError("檔案名稱必須是非空字串：%r" % (file_name,))
+
+    if not os.path.isdir(directory):
+        raise ValueError("路徑不是一個目錄：%s" % directory)
+
+    wanted = file_name.lower()
+    matches = []
+
+    for root, dirs, names in os.walk(directory):
+        # 就地排序，讓走訪次序可重現（os.walk 的預設次序由檔案系統決定）。
+        dirs.sort()
+        for name in sorted(names):
+            if name.lower() == wanted:
+                matches.append(os.path.abspath(os.path.join(root, name)))
+
+    if not matches:
+        logger.debug("在 %s 底下找不到 %s", directory, file_name)
+        return None
+
+    if len(matches) > 1:
+        logger.warn("在 %s 底下找到 %d 個 %s，回傳第一個：%s",
+                    directory, len(matches), file_name, matches[0])
+
+    logger.debug("找到 %s：%s", file_name, matches[0])
+    return matches[0]
+
+
+def replace_lines(file_path, start_line, end_line, new_content):
+    """把檔案中某個行號區間換成新的內容，回傳置換後的總行數。
+
+    行號語意與 get_lines() 完全一致：**自 1 起算、頭尾都包含**。兩支函式常常
+    成對使用（先讀出來看、再換掉），語意若不一致，呼叫端一定會在某次差一行。
+
+    new_content 收字串或字串清單。字串會依換行切開；清單的每一筆是一行，其中
+    的換行字元會被去掉，不會產生半行。傳空字串或空清單表示**刪掉那個區間**，
+    那是有效操作而非錯誤。
+
+    檔案原本的換行風格（CRLF / LF）會被偵測並沿用於整個檔案，檔尾原本有沒有
+    換行也維持原樣。不這麼做的話，在 Windows 編輯過的檔案被這支函式改過之後
+    會變成混合換行，而 diff 會顯示整個檔案都變動了。
+
+    start_line 超過總行數時拋出 ValueError —— 那通常代表呼叫端的行號來自另一
+    個版本的檔案，靜默接受只會把新內容接到不相干的位置。end_line 超過檔尾則
+    取到檔尾為止。
+
+    寫入採「先寫暫存檔再原子置換」：中途失敗時原檔完好，不會留下半份被截斷的
+    檔案。用 os.replace 而不是 os.rename，因為 rename 在 Windows 上遇到已存在
+    的目的檔會失敗。
+    """
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError("檔案路徑必須是非空字串：%r" % (file_path,))
+
+    for name, value in (("start_line", start_line), ("end_line", end_line)):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("%s 必須是整數：%r" % (name, value))
+    if start_line < 1:
+        raise ValueError("start_line 自 1 起算，收到 %d" % start_line)
+    if end_line < start_line:
+        raise ValueError("end_line (%d) 不可小於 start_line (%d)"
+                         % (end_line, start_line))
+
+    if isinstance(new_content, str):
+        replacement = new_content.splitlines()
+    elif isinstance(new_content, (list, tuple)):
+        replacement = [str(line).rstrip("\n").rstrip("\r")
+                       for line in new_content]
+    else:
+        raise ValueError("new_content 必須是字串或字串清單，收到 %s"
+                         % type(new_content).__name__)
+
+    # newline="" 讓換行字元原樣保留，才能看出原檔用的是 CRLF 還是 LF。
+    with open(file_path, "r", encoding="utf-8", newline="") as handle:
+        original = handle.read()
+
+    newline = "\r\n" if "\r\n" in original else "\n"
+    ends_with_newline = original.endswith(("\n", "\r"))
+    lines = original.splitlines()
+
+    if start_line > len(lines):
+        raise ValueError("start_line (%d) 超過檔案總行數 (%d)：%s"
+                         % (start_line, len(lines), file_path))
+
+    updated = lines[:start_line - 1] + replacement + lines[end_line:]
+
+    payload = newline.join(updated)
+    if payload and ends_with_newline:
+        payload += newline
+
+    # 暫存檔建在同一個目錄：跨檔案系統時 os.replace 不是原子操作，
+    # 而 %TEMP% 與目標檔常常不在同一顆磁碟。
+    folder = os.path.dirname(os.path.abspath(file_path))
+    handle_fd, temp_path = tempfile.mkstemp(dir=folder, suffix=".tmp")
+    try:
+        with os.fdopen(handle_fd, "w", encoding="utf-8", newline="") as temp:
+            temp.write(payload)
+        os.replace(temp_path, file_path)
+    except BaseException:
+        # 失敗時不要留下暫存垃圾；原檔此時尚未被動過。
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise
+
+    logger.debug("%s 第 %d~%d 行換成 %d 行，總行數 %d -> %d",
+                 file_path, start_line, end_line, len(replacement),
+                 len(lines), len(updated))
+    return len(updated)
