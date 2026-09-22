@@ -122,7 +122,7 @@ PPS2_0DevTool/
 │       ├── logger.py         log（唯一設定 logging 的地方）
 │       ├── system_utils.py   向作業系統要東西：環境變數、建立資料夾、
 │       │                     依副檔名列檔案、暫存目錄、路徑轉 Windows 表示法
-│       ├── file_utils.py     檔案內容：行式文字檔的讀寫
+│       ├── file_utils.py     檔案內容：整檔讀寫、複製、行式文字檔讀寫
 │       └── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
 │                             檔案內容、merge request
 │
