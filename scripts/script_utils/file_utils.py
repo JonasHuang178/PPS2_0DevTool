@@ -13,7 +13,8 @@ import shutil
 
 from script_utils import logger
 
-__all__ = ["read_file", "write_file", "copy_file",
+__all__ = ["read_file", "write_file", "get_lines",
+           "copy_file", "move_file", "delete_file",
            "read_lines", "write_lines"]
 
 
@@ -151,3 +152,120 @@ def copy_file(source_path, target_path):
 
     logger.debug("複製 %s -> %s", source_path, absolute)
     return absolute
+
+
+def get_lines(file_path, start_line, end_line=None):
+    """讀出檔案中某個行號區間的內容，回傳字串清單。
+
+    行號**自 1 起算，且頭尾都包含** —— 「第 10 到 20 行」就是編輯器與編譯器
+    訊息裡的那 10 行，不必在呼叫端自己 +1 / -1。end_line 傳 None 表示讀到檔尾。
+
+    每一行都**去掉行尾換行**，但**空白行會保留**。保留空白行是必要的：這支函式
+    的意義建立在「第幾行」上，一旦略過空白行，回傳的內容就對不上原始行號，而
+    那種錯位在拿去比對編譯錯誤訊息時特別難查。要「略過空白行的清單」請用
+    read_lines()。
+
+    區間超出檔尾時取到檔尾為止，不視為錯誤；start_line 已經超過總行數時回傳
+    空清單。讀取時逐行串流並在 end_line 就停，不把整個檔案拉進記憶體。
+
+    檔案不存在拋 FileNotFoundError，非 UTF-8 拋 UnicodeDecodeError，與
+    read_file() 一致。
+    """
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError("檔案路徑必須是非空字串：%r" % (file_path,))
+
+    # bool 是 int 的子類別，True 會被當成 1 —— 明著擋掉，那一定是呼叫端寫錯了。
+    if isinstance(start_line, bool) or not isinstance(start_line, int):
+        raise ValueError("start_line 必須是整數：%r" % (start_line,))
+    if start_line < 1:
+        raise ValueError("start_line 自 1 起算，收到 %d" % start_line)
+
+    if end_line is not None:
+        if isinstance(end_line, bool) or not isinstance(end_line, int):
+            raise ValueError("end_line 必須是整數或 None：%r" % (end_line,))
+        if end_line < start_line:
+            raise ValueError("end_line (%d) 不可小於 start_line (%d)"
+                             % (end_line, start_line))
+
+    lines = []
+    with open(file_path, "r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            if number < start_line:
+                continue
+            if end_line is not None and number > end_line:
+                break          # 不讀完整個檔案，大檔時差很多
+            lines.append(line.rstrip("\n").rstrip("\r"))
+
+    logger.debug("自 %s 讀出第 %s~%s 行，共 %d 行",
+                 file_path, start_line,
+                 end_line if end_line is not None else "EOF", len(lines))
+    return lines
+
+
+def move_file(source_path, target_path):
+    """搬移（或改名）檔案，回傳搬移後的絕對路徑。
+
+    target_path 是目的檔案的路徑；若它是一個已存在的目錄，則搬進該目錄並沿用
+    來源檔名。
+
+    目的檔案已存在時**先刪掉再搬**，這一步是跨平台的關鍵：shutil.move 內部走
+    os.rename，而 os.rename 在 POSIX 上會直接覆蓋、在 Windows 上卻會丟
+    FileExistsError。不先刪的話，同一段程式在開發用的 Linux 上跑得好好的，
+    部署到 Windows 就失敗 —— 而本專案的正式平台正是 Windows。
+
+    覆蓋而非報錯的理由與 copy_file() 相同：腳本要可重入，重跑不能因為「上一次
+    已經搬過」而失敗。
+
+    來源不存在、目的目錄不存在都以例外拋出，由入口腳本決定怎麼回報。
+    """
+    for name, value in (("來源路徑", source_path), ("目的路徑", target_path)):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("%s必須是非空字串：%r" % (name, value))
+
+    if not os.path.isfile(source_path):
+        raise FileNotFoundError("來源檔案不存在：%s" % source_path)
+
+    # 目的是既有目錄時，實際落點是該目錄下的同名檔案。要先算出來，
+    # 底下「已存在就先刪」才知道該檢查哪一個路徑。
+    destination = target_path
+    if os.path.isdir(target_path):
+        destination = os.path.join(target_path, os.path.basename(source_path))
+
+    if os.path.isfile(destination) and not os.path.samefile(source_path,
+                                                            destination):
+        logger.debug("目的檔案已存在，先移除：%s", destination)
+        os.remove(destination)
+
+    shutil.move(source_path, destination)
+    absolute = os.path.abspath(destination)
+
+    logger.debug("搬移 %s -> %s", source_path, absolute)
+    return absolute
+
+
+def delete_file(file_path):
+    """刪除檔案。回傳 True 表示真的刪掉了，False 表示它本來就不在。
+
+    **檔案不存在不是錯誤** —— 與 system_utils.create_folder() 對「已經存在」的
+    處理是同一個原則：腳本必須可重入，重跑一次「刪掉暫存檔」不該因為上一次已經
+    刪過而失敗。回傳布林而不是一律回 True，是為了在「本來就不在」有意義的場合
+    （例如統計真正清掉幾個）仍然分得出來。
+
+    路徑是目錄時**拋出 ValueError**，不刪。這支函式叫 delete_file，讓它順手刪掉
+    整棵目錄樹是災難等級的意外 —— 要刪目錄請明著用別的方式。
+
+    權限不足等作業系統層級的失敗以 OSError 原樣拋出。
+    """
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError("檔案路徑必須是非空字串：%r" % (file_path,))
+
+    if os.path.isdir(file_path):
+        raise ValueError("路徑是目錄，delete_file 只刪檔案：%s" % file_path)
+
+    if not os.path.exists(file_path):
+        logger.debug("檔案本來就不存在：%s", file_path)
+        return False
+
+    os.remove(file_path)
+    logger.debug("已刪除 %s", file_path)
+    return True
