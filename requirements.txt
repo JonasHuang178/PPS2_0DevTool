@@ -1,0 +1,12 @@
+# 本專案 Python 腳本的第三方相依。
+#
+# 裝在哪個直譯器裡是重點：Qt 端是用設定檔 Function/<功能>/Program 指定的那個
+# 直譯器去啟動腳本的，所以套件必須裝進**那一個**，而不是開發機上隨便一個
+# Python。裝錯地方的症狀是命令列跑得好好的、從工具裡跑卻失敗。
+#
+#     <那個 python> -m pip install -r requirements.txt
+#
+# 沒裝也不會在匯入階段爆掉：gitlab_utils 會延到真正呼叫時才拋出一則說得清楚
+# 的錯誤，使用者在訊息框上看得到「請執行 pip install requests」。
+
+requests>=2.20

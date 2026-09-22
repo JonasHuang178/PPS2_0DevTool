@@ -96,6 +96,7 @@ PPS2_0DevTool/
 │
 ├── PPS2_0DevTool.json        設定檔
 ├── PPS2_0DevTool.pro         qmake 專案檔
+├── requirements.txt          Python 第三方相依（requests）
 │
 ├── resources.qrc             Qt 資源清單（應用程式圖示）
 ├── resources/icons/
@@ -122,7 +123,8 @@ PPS2_0DevTool/
 │       ├── system_utils.py   系統層面：建立資料夾、依副檔名列檔案、
 │       │                     行式文字檔讀寫、暫存目錄、環境變數、
 │       │                     路徑轉 Windows 表示法
-│       └── gitlab_utils.py   GitLab REST（尚無內容）
+│       └── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
+│                             檔案內容、merge request
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
@@ -166,6 +168,17 @@ qmake PPS2_0DevTool.pro && make
 執行 Python 的指令，帶著空設定啟動只會讓使用者在每個 tab 都撞牆。
 
 執行環境還需要系統上有可用的 **Python 3**（啟動時會檢查）。
+
+用到 GitLab 的功能還需要 **requests**（本專案唯一的第三方相依）：
+
+```bash
+<設定檔 Program 指定的那個 python> -m pip install -r requirements.txt
+```
+
+裝在哪個直譯器裡是重點 —— Qt 是用設定檔 `Function/<功能>/Program` 指定的直譯器去
+啟動腳本的。裝錯地方的症狀是命令列跑得好好的、從工具裡跑卻失敗。沒裝時不會在匯入
+階段爆掉，`gitlab_utils` 會延到真正呼叫時才拋出一則說得清楚的錯誤（若在匯入階段拋，
+結果信封根本來不及產生，Qt 端只會顯示「腳本沒有回傳結果」）。
 
 圖示不在這個清單裡 —— 它內嵌在執行檔內，不需要也不會去讀外部圖檔。
 
