@@ -54,7 +54,7 @@ __all__ = [
     "list_branches",
     "get_file_content",
     "get_all_mr",
-    "get_merge_request",
+    "get_mr_info",
 ]
 
 
@@ -377,11 +377,15 @@ def get_paged(server_url, token, path, params=None, timeout=DEFAULT_TIMEOUT,
 
 # --- 專案與檔案 ------------------------------------------------------------
 
-def get_project(server_url, token, repo, timeout=DEFAULT_TIMEOUT,
+def get_project(server_url, token, project_id, timeout=DEFAULT_TIMEOUT,
                 verify_ssl=True):
-    """取得專案資訊。repo 為 "group/project" 或數字專案 ID。"""
+    """取得專案資訊。
+
+    project_id 收數字專案 ID，也收 "group/project" 完整路徑 —— GitLab 兩種都認，
+    路徑中的斜線由這裡編碼成 %2F。模組內所有函式的這個參數都是同一個語意。
+    """
     return request(server_url, token, "GET",
-                   "/projects/%s" % _encode_path(repo),
+                   "/projects/%s" % _encode_path(project_id),
                    timeout=timeout, verify_ssl=verify_ssl)
 
 
@@ -404,7 +408,7 @@ def get_repo_id(server_url, token, repo_name, timeout=DEFAULT_TIMEOUT,
     return (project or {}).get("id")
 
 
-def list_branches(server_url, token, repo, search=None,
+def list_branches(server_url, token, project_id, search=None,
                   timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """列出專案的分支。search 有值時只回傳名稱含該字串的分支。"""
     params = {}
@@ -412,11 +416,11 @@ def list_branches(server_url, token, repo, search=None,
         params["search"] = search
 
     return get_paged(server_url, token,
-                     "/projects/%s/repository/branches" % _encode_path(repo),
+                     "/projects/%s/repository/branches" % _encode_path(project_id),
                      params=params, timeout=timeout, verify_ssl=verify_ssl)
 
 
-def get_file_content(server_url, token, repo, file_path, ref,
+def get_file_content(server_url, token, project_id, file_path, ref,
                      timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """讀出 repo 中某個檔案的內容，回傳字串。
 
@@ -431,7 +435,7 @@ def get_file_content(server_url, token, repo, file_path, ref,
     """
     body = request(server_url, token, "GET",
                    "/projects/%s/repository/files/%s"
-                   % (_encode_path(repo), _encode_path(file_path)),
+                   % (_encode_path(project_id), _encode_path(file_path)),
                    params={"ref": ref}, timeout=timeout, verify_ssl=verify_ssl)
 
     encoded = (body or {}).get("content", "")
@@ -443,12 +447,12 @@ def get_file_content(server_url, token, repo, file_path, ref,
 
 # --- Merge request ---------------------------------------------------------
 
-def get_all_mr(server_url, token, repo, created_after, status=("opened",),
+def get_all_mr(server_url, token, project_id, created_after, status=("opened",),
                target_branch=None, source_branch=None, max_items=None,
                timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """列出專案的 merge request。
 
-    repo 為 "group/project" 完整路徑或數字專案 ID。
+    project_id 收數字專案 ID 或 "group/project" 完整路徑。
 
     created_after 收 ISO 8601 字串或 date / datetime 物件；None 表示不限時間。
 
@@ -476,7 +480,7 @@ def get_all_mr(server_url, token, repo, created_after, status=("opened",),
     if source_branch:
         base_params["source_branch"] = source_branch
 
-    path = "/projects/%s/merge_requests" % _encode_path(repo)
+    path = "/projects/%s/merge_requests" % _encode_path(project_id)
 
     merged = []
     seen_ids = set()
@@ -496,21 +500,30 @@ def get_all_mr(server_url, token, repo, created_after, status=("opened",),
     # 新到舊。缺 created_at 的排最後，不讓一筆異常資料把整串的次序弄亂。
     merged.sort(key=lambda item: item.get("created_at") or "", reverse=True)
 
-    logger.debug("MR 查詢 %s 狀態 %s，共 %d 筆", repo, states, len(merged))
+    logger.debug("MR 查詢 %s 狀態 %s，共 %d 筆", project_id, states, len(merged))
 
     if max_items is not None:
         return merged[:max_items]
     return merged
 
 
-def get_merge_request(server_url, token, repo, mr_iid,
-                      timeout=DEFAULT_TIMEOUT, verify_ssl=True):
-    """取得單一 merge request。
+def get_mr_info(server_url, token, project_id, mr_iid,
+                timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """取得單一 merge request 的完整資訊。
 
-    mr_iid 是專案內的編號（GitLab 畫面上的 !123），不是跨專案的全域 id ——
-    兩者都存在且不相等，傳錯會拿到別的 MR 或 404。
+    ⚠️ mr_iid 是**專案內編號**（畫面上的 !7），不是全實例唯一的 id。GitLab 的
+    MR 物件同時有這兩個欄位：
+
+        mr["id"]    12345   全實例唯一
+        mr["iid"]   7       專案內編號  <- 端點吃的是這個
+
+    傳錯的後果不只是 404：同一個專案裡剛好有一支 MR 的 iid 等於你傳的那個 id
+    時，你會拿到**另一支 MR 的資料**，而且不會有任何錯誤。參數因此命名為
+    mr_iid 而不是 mr_id —— 名字對了，呼叫端才不會順手把 m["id"] 填進來。
+
+    回傳 GitLab 原樣的 MR 物件。
     """
     return request(server_url, token, "GET",
                    "/projects/%s/merge_requests/%s"
-                   % (_encode_path(repo), _encode_path(mr_iid)),
+                   % (_encode_path(project_id), _encode_path(mr_iid)),
                    timeout=timeout, verify_ssl=verify_ssl)
