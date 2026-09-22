@@ -469,6 +469,13 @@ runFunctionFlow("Log_Report",
 
 ```python
 #!/usr/bin/env python3
+import os
+import sys
+
+# 入口腳本在 scripts/<功能>/ 底下，這一行要在匯入 script_io / script_utils
+# 之前執行。範本裡就有，不要刪（理由見底下）。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import script_io
 from script_utils import logger
 from script_utils import gitlab_utils      # 業務邏輯模組
@@ -510,9 +517,12 @@ if __name__ == "__main__":
     script_io.run(main)
 ```
 
-**入口腳本必須放在 `scripts/` 這一層，不能放子目錄** —— Python 只會把入口腳本
-所在目錄放進 `sys.path`，放子目錄的話 `from script_utils import ...` 在沒設
-`PYTHONPATH` 時會失敗，別人直接執行就壞掉。
+**入口腳本放在 `scripts/<功能>/` 底下**，同一個功能的腳本收在一起（見上面的
+「兩種分組軸」）。因為進了子目錄，每支頂部那行 `sys.path.insert(...)` **不能刪** ——
+Python 只把「腳本所在目錄」放進 `sys.path`，少了它，`from script_utils import ...`
+在沒設 `PYTHONPATH` 時會失敗，別人直接執行就壞掉。Qt 雖然會注入指向 `scripts/` 的
+`PYTHONPATH`，但命令列與 CI 沒有那個環境，而那正是本專案明確支援的用法 ——
+所以可匯入性是入口腳本自己的責任。
 
 ### 參數與設定只宣告一次
 
