@@ -34,10 +34,6 @@ ACTION           = "list_merge_requests"
 DESCRIPTION      = "列出指定 GitLab 專案的 Merge Request"
 
 
-def _truthy(text):
-    return str(text).strip().lower() in ("true", "1", "yes")
-
-
 def _row(raw):
     """把 GitLab 原樣的 MR 物件收斂成畫面需要的六個欄位。
 
@@ -89,30 +85,13 @@ def main():
     repo = params["repo"]
     debug_dir = params["debug_dir"]
 
-    # 憑證只從環境變數讀，不從 config 讀 —— 腳本端因此只有一條取值路徑，
-    # Qt 與 CI 對它來說長得一模一樣。
-    #
-    # 也別把整包 config log 出來：合併後的 config 含有權杖。
-    server_url = os.environ.get("GITLAB_SERVER_URL", "").strip()
-    token      = os.environ.get("GITLAB_ACCESS_TOKEN", "").strip()
-
-    # 未設定視為不驗證（見 design.md 決策二十三）。這個預設是明確的取捨：
-    # 目標環境是否使用自簽憑證尚不確定，而驗證失敗會讓功能完全無法使用。
-    verify_ssl = _truthy(os.environ.get("GITLAB_VERIFY_SSL", "false"))
-
-    if not server_url:
-        script_io.reply_fail(
-            "未設定環境變數 GITLAB_SERVER_URL",
-            detail="設定檔的 Service.Gitlab_Server_URL 會由工具注入為這個環境"
-                   "變數；以命令列執行時請自行設定。",
-            code="GITLAB_SERVER_URL_MISSING")
-
-    if not token:
-        script_io.reply_fail(
-            "未設定環境變數 GITLAB_ACCESS_TOKEN",
-            detail="設定檔的 Service.Gitlab_Access_Token 會由工具注入為這個"
-                   "環境變數；以命令列執行時請自行設定。",
-            code="GITLAB_ACCESS_TOKEN_MISSING")
+    # 憑證與錯誤訊息都走功能套件的共用實作 —— 本功能有兩支腳本要連 GitLab，
+    # 各自寫一份的話兩份會慢慢長歪，而使用者看到的差異（同樣是 401，一支說
+    # 「請檢查權杖」、另一支說「查詢失敗」）完全沒有道理。
+    try:
+        server_url, token, verify_ssl = ai_analysis_gitlab_mr.gitlab_credentials()
+    except ai_analysis_gitlab_mr.CredentialError as exc:
+        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
 
     days = params["created_after_days"] if params["created_after_enabled"] else None
 
@@ -148,44 +127,9 @@ def main():
             verify_ssl=verify_ssl,
         )
     except gitlab_utils.GitLabError as exc:
-        # 共用模組只拋一種例外，型別由 status_code 分流。訊息刻意分開寫：
-        # 使用者的下一步完全不一樣 —— 一個去換權杖，一個去改設定檔的拼字。
-        status = exc.status_code
-
-        if status in (401, 403):
-            script_io.reply_fail(
-                "GitLab 拒絕了這次請求，請檢查存取權杖",
-                detail="%s\n\n權杖來自環境變數 GITLAB_ACCESS_TOKEN"
-                       "（設定檔的 Service.Gitlab_Access_Token）。\n"
-                       "請確認它未過期、且對專案 %s 有讀取權限。" % (exc, repo),
-                code="GITLAB_AUTH_FAILED")
-
-        if status == 404:
-            script_io.reply_fail(
-                "找不到專案 %s" % repo,
-                detail="%s\n\n請檢查設定檔 Repo_List 中的專案名稱是否拼寫正確"
-                       "（namespace/project 形式）。\n"
-                       "注意：權杖若對該專案沒有權限，GitLab 也會回 404。"
-                       % exc,
-                code="GITLAB_PROJECT_NOT_FOUND")
-
-        # TLS 失敗沒有 HTTP 狀態碼（連線根本沒建立起來），只能看訊息內容。
-        # requests 把憑證問題包成 SSLError，訊息裡一定帶得到這些字樣。
-        lowered = str(exc).lower()
-        if status is None and ("ssl" in lowered or "certificate" in lowered):
-            script_io.reply_fail(
-                "TLS 憑證驗證失敗",
-                detail="%s\n\n兩種解法：\n"
-                       "  1. 把受信任的 CA 憑證指給環境變數 REQUESTS_CA_BUNDLE\n"
-                       "  2. 把設定檔的 Service.Gitlab_Verify_SSL 設為 \"false\"\n"
-                       "第一種較安全 —— 關閉驗證時，存取權杖會暴露給連線中間人。\n"
-                       "注意是 REQUESTS_CA_BUNDLE 而不是 SSL_CERT_FILE："
-                       "底層改用 requests 之後，只有前者會被讀取。"
-                       % exc,
-                code="GITLAB_TLS_FAILED")
-
-        script_io.reply_fail("GitLab 查詢失敗：%s" % exc,
-                             code="GITLAB_REQUEST_FAILED")
+        message, detail, code = ai_analysis_gitlab_mr.describe_gitlab_error(
+            exc, repo)
+        script_io.reply_fail(message, detail=detail, code=code)
 
     truncated = len(raw) >= limit
     items = [_row(one) for one in raw]

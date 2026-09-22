@@ -21,6 +21,9 @@ from script_utils import logger
 
 __all__ = [
     "MERGE_REQUEST_LIMIT",
+    "CredentialError",
+    "gitlab_credentials",
+    "describe_gitlab_error",
     "DEBUG_LOG_NAME",
     "write_artifact",
     "write_debug_log",
@@ -118,3 +121,102 @@ def resolve_json_input(params, key):
         return json.loads(_read_file(path))
 
     return {}
+
+
+# --- GitLab 憑證與錯誤分流 --------------------------------------------------
+#
+# 本功能有兩支腳本要連 GitLab，兩邊的憑證來源與錯誤訊息必須一致。各自寫一份的話
+# 兩份會慢慢長歪，而使用者看到的差異（同樣是 401，一支說「請檢查權杖」、另一支說
+# 「查詢失敗」）完全沒有道理。
+
+class CredentialError(Exception):
+    """憑證缺漏。
+
+    帶著入口腳本回報時需要的三樣東西，讓它一行就能轉成 FAIL：
+
+        except ai_analysis_gitlab_mr.CredentialError as exc:
+            script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+
+    這個模組**不自己呼叫 reply_fail** —— 那會讓一支看起來只是取值的函式把行程
+    結束掉，而呼叫端從簽章上看不出來。
+    """
+
+    def __init__(self, message, detail, code):
+        super(CredentialError, self).__init__(message)
+        self.detail = detail
+        self.code = code
+
+
+def _truthy(text):
+    return str(text).strip().lower() in ("true", "1", "yes")
+
+
+def gitlab_credentials():
+    """自環境變數取出 GitLab 的連線資訊，回傳 (server_url, token, verify_ssl)。
+
+    憑證只從環境變數讀，不從 config 讀 —— 腳本端因此只有一條取值路徑，Qt 與 CI
+    對它來說長得一模一樣。Qt 會把設定檔 Service 區塊的鍵以全大寫注入。
+
+    GITLAB_VERIFY_SSL 未設定時視為**不驗證**（見 design.md 決策二十三）。這個預設
+    是明確的取捨：目標環境是否使用自簽憑證尚不確定，而驗證失敗會讓功能完全無法
+    使用。
+
+    缺漏時拋出 CredentialError，由入口腳本轉成 FAIL。
+    """
+    server_url = os.environ.get("GITLAB_SERVER_URL", "").strip()
+    token = os.environ.get("GITLAB_ACCESS_TOKEN", "").strip()
+    verify_ssl = _truthy(os.environ.get("GITLAB_VERIFY_SSL", "false"))
+
+    if not server_url:
+        raise CredentialError(
+            "未設定環境變數 GITLAB_SERVER_URL",
+            "設定檔的 Service.Gitlab_Server_URL 會由工具注入為這個環境變數；"
+            "以命令列執行時請自行設定。",
+            "GITLAB_SERVER_URL_MISSING")
+
+    if not token:
+        raise CredentialError(
+            "未設定環境變數 GITLAB_ACCESS_TOKEN",
+            "設定檔的 Service.Gitlab_Access_Token 會由工具注入為這個環境變數；"
+            "以命令列執行時請自行設定。",
+            "GITLAB_ACCESS_TOKEN_MISSING")
+
+    return server_url, token, verify_ssl
+
+
+def describe_gitlab_error(exc, repo):
+    """把 GitLabError 轉成 (message, detail, code)，供入口腳本回報。
+
+    共用模組只拋一種例外，型別由 status_code 分流。訊息刻意分開寫：使用者的下一步
+    完全不一樣 —— 一個去換權杖，一個去改設定檔的拼字，一個去處理憑證。
+    """
+    status = getattr(exc, "status_code", None)
+
+    if status in (401, 403):
+        return ("GitLab 拒絕了這次請求，請檢查存取權杖",
+                "%s\n\n權杖來自環境變數 GITLAB_ACCESS_TOKEN"
+                "（設定檔的 Service.Gitlab_Access_Token）。\n"
+                "請確認它未過期、且對專案 %s 有讀取權限。" % (exc, repo),
+                "GITLAB_AUTH_FAILED")
+
+    if status == 404:
+        return ("找不到專案 %s" % repo,
+                "%s\n\n請檢查設定檔 Repo_List 中的專案名稱是否拼寫正確"
+                "（namespace/project 形式）。\n"
+                "注意：權杖若對該專案沒有權限，GitLab 也會回 404。" % exc,
+                "GITLAB_PROJECT_NOT_FOUND")
+
+    # TLS 失敗沒有 HTTP 狀態碼（連線根本沒建立起來），只能看訊息內容。
+    # requests 把憑證問題包成 SSLError，訊息裡一定帶得到這些字樣。
+    lowered = str(exc).lower()
+    if status is None and ("ssl" in lowered or "certificate" in lowered):
+        return ("TLS 憑證驗證失敗",
+                "%s\n\n兩種解法：\n"
+                "  1. 把受信任的 CA 憑證指給環境變數 REQUESTS_CA_BUNDLE\n"
+                "  2. 把設定檔的 Service.Gitlab_Verify_SSL 設為 \"false\"\n"
+                "第一種較安全 —— 關閉驗證時，存取權杖會暴露給連線中間人。\n"
+                "注意是 REQUESTS_CA_BUNDLE 而不是 SSL_CERT_FILE：底層用的是 "
+                "requests，只有前者會被讀取。" % exc,
+                "GITLAB_TLS_FAILED")
+
+    return ("GitLab 查詢失敗：%s" % exc, "", "GITLAB_REQUEST_FAILED")
