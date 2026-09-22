@@ -4,7 +4,7 @@
 分組依**技術領域**，不依應用功能：
 
     logger.py       所有共用模組與入口腳本共用的 log（唯一設定 logging 的地方）
-    system_utils/   系統層面：檔案系統、暫存目錄
+    system_utils.py 系統層面：檔案系統、暫存目錄、環境變數、路徑表示法
     gitlab_utils/   GitLab REST
 
 依功能分組會讓第二個功能需要同一個能力時無處可放。只服務單一功能的邏輯不
