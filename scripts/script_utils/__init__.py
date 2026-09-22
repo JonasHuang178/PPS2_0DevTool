@@ -6,7 +6,8 @@
     logger.py        所有共用模組與入口腳本共用的 log（唯一設定 logging 的地方）
     system_utils.py  向作業系統要東西：環境變數、建目錄、列目錄、暫存目錄、路徑格式
     file_utils.py    檔案內容的讀寫
-    gitlab_utils.py  GitLab REST（尚無內容）
+    gitlab_utils.py  GitLab REST
+    jira_utils.py    Jira REST（尚無內容）（尚無內容）
 
 依功能分組會讓第二個功能需要同一個能力時無處可放。只服務單一功能的邏輯不
 屬於這裡，應該留在 scripts/<功能>/ 之下。

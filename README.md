@@ -124,8 +124,9 @@ PPS2_0DevTool/
 │       │                     依副檔名列檔案、暫存目錄、路徑轉 Windows 表示法
 │       ├── file_utils.py     檔案內容：整檔讀寫、行號區間讀取與置換、
 │       │                     尋找、複製、搬移、刪除、行式文字檔讀寫
-│       └── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
-│                             檔案內容、merge request
+│       ├── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
+│       │                     檔案內容、merge request
+│       └── jira_utils.py     Jira REST（尚無內容）
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
