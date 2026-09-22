@@ -42,6 +42,8 @@ ADF（Atlassian Document Format）的巢狀 JSON，v2 則是單純的字串。�
 沒有回傳結果 (exit code 1)」，完全看不出是少裝了套件。
 """
 
+import json
+
 from script_utils import http_utils
 from script_utils import logger
 
@@ -49,6 +51,9 @@ __all__ = [
     "JiraError",
     "request",
     "get_paged",
+    "get_issue_info",
+    "get_issue_description",
+    "create_issue",
 ]
 
 
@@ -267,3 +272,111 @@ def get_paged(base_url, token, path, params=None, items_key="values",
 
     logger.debug("Jira %s 取得 %d 筆", path, len(items))
     return items
+
+
+# --- Issue ------------------------------------------------------------------
+
+def get_issue_info(base_url, token, key, fields=None,
+                   timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """取得一張 issue 的完整資訊。key 形如 "PROJ-123"。
+
+    fields 可指定只取某些欄位（字串或字串序列），None 表示全部。一張 issue 的
+    完整 JSON 動輒數十 KB，多數呼叫端只用得到幾個欄位，而結果最終要經 stdout
+    送回 Qt —— 只要能列舉就列舉。
+
+    回傳 Jira 原樣的 issue 物件，不挑欄位也不攤平巢狀結構 —— 挑欄位是呼叫端的
+    決定，共用模組先砍的話下一個呼叫端就得回來改這裡。
+    """
+    if not isinstance(key, str) or not key.strip():
+        raise JiraError("issue key 不可為空")
+
+    params = {}
+    if fields:
+        params["fields"] = fields if isinstance(fields, str) else ",".join(fields)
+
+    return request(base_url, token, "GET", "/issue/%s" % key.strip(),
+                   params=params or None, timeout=timeout, verify_ssl=verify_ssl)
+
+
+def get_issue_description(base_url, token, key,
+                          timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """取得一張 issue 的描述文字，回傳字串。
+
+    只向伺服器要 description 一個欄位，不把整張 issue 拉回來。
+
+    **沒有描述時回傳空字串**，不是 None 也不是錯誤 —— 「這張單沒寫描述」是正常
+    狀態，讓呼叫端每次都要先判斷 None 只是把同一段 if 複製到每個呼叫點。
+
+    若伺服器其實是 Jira Cloud（/rest/api/3），description 會是 ADF 的巢狀 JSON
+    而不是字串。那種情況這裡**明確拋出 JiraError**，而不是回傳一包 dict ——
+    回 dict 的話，錯誤會在呼叫端拿它去做字串處理時才爆，訊息還完全指不出成因。
+    """
+    issue = get_issue_info(base_url, token, key, fields="description",
+                           timeout=timeout, verify_ssl=verify_ssl)
+
+    description = (issue or {}).get("fields", {}).get("description")
+
+    if description is None:
+        return ""
+    if isinstance(description, str):
+        return description
+
+    raise JiraError(
+        "description 不是字串（收到 %s），這台伺服器看起來是 Jira Cloud："
+        "Cloud 的 /rest/api/3 以 ADF 巢狀 JSON 表示文字欄位，而本模組打的是 "
+        "Server / DC 的 /rest/api/2" % type(description).__name__)
+
+
+def create_issue(base_url, token, project, result_json,
+                 timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """建立一張 issue，回傳 Jira 的回應（含 id、key、self）。
+
+    project 是專案的 key（例如 "PROJ"），會被填進欄位中；result_json 裡若已經
+    有 project，以這個參數為準 —— 參數是呼叫端當下明講的，比資料裡帶的舊值可信。
+
+    result_json 收 dict 或 JSON 字串，兩種形狀都認：
+
+        {"summary": "標題", "issuetype": {"name": "Bug"}}
+        {"fields": {"summary": "標題", "issuetype": {"name": "Bug"}}}
+
+    沒有 fields 外層時自動包一層。兩種都收是因為呼叫端可能直接沿用上一支腳本
+    回傳的 data，而那份資料是哪一種形狀取決於它怎麼產生的；認錯了只會換來一個
+    看不懂的 400。
+
+    必填欄位（summary、issuetype，以及各專案自訂的必填項）不在這裡檢查 ——
+    每個 Jira 專案的必填欄位都不一樣，寫死一份只會在別的專案上擋住合法的呼叫。
+    缺漏時 Jira 會回 400 並指出是哪個欄位，那份訊息會被挖進 JiraError。
+
+    ⚠️ **這支不是可重入的。** 重跑一次會多建一張 issue，而規格要求參與流程的
+    腳本可重入（見 openspec/specs/script-execution）。呼叫端若會出現在多步驟
+    流程裡，要自己先查有沒有既有的那張單再決定建不建 —— 共用模組不代為判斷，
+    因為「算不算同一張單」是各功能自己的定義（同標題？同 label？同自訂欄位？）。
+    """
+    if not isinstance(project, str) or not project.strip():
+        raise JiraError("專案 key 不可為空")
+
+    if isinstance(result_json, str):
+        try:
+            payload = json.loads(result_json)
+        except ValueError as exc:
+            raise JiraError("result_json 不是合法的 JSON：%s" % exc)
+    elif isinstance(result_json, dict):
+        payload = dict(result_json)
+    else:
+        raise JiraError("result_json 必須是 dict 或 JSON 字串，收到 %s"
+                        % type(result_json).__name__)
+
+    if "fields" in payload and isinstance(payload["fields"], dict):
+        fields = dict(payload["fields"])
+    else:
+        fields = payload
+
+    fields["project"] = {"key": project.strip()}
+
+    logger.info("在 %s 建立 issue", project)
+    response = request(base_url, token, "POST", "/issue",
+                       json_body={"fields": fields},
+                       timeout=timeout, verify_ssl=verify_ssl)
+
+    logger.info("已建立 %s", (response or {}).get("key", "(未回傳 key)"))
+    return response
