@@ -24,6 +24,10 @@ __all__ = ["read_data", "load_data", "write_file", "dump"]
 # 縮排 2 格：與 script_io 傾印的請求模板一致，也是多數人讀 JSON 時的預期。
 DEFAULT_INDENT = 2
 
+# load_data 的「沒有給預設值」哨兵。不能用 None 當哨兵 —— None 本身是合法的
+# 預設值（呼叫端可能就是想在解析失敗時拿到 None）。
+_NO_DEFAULT = object()
+
 
 def read_data(file_path):
     """讀出 JSON 檔案，回傳對應的 Python 資料結構（dict / list / 純量）。
@@ -55,7 +59,7 @@ def read_data(file_path):
     return data
 
 
-def load_data(json_string):
+def load_data(json_string, default=_NO_DEFAULT):
     """把 JSON 字串解析成 Python 資料結構。
 
     與 dump() 成對：dump 把資料變成字串，load_data 把字串變回資料。讀檔請用
@@ -66,29 +70,56 @@ def load_data(json_string):
     收字串也收 bytes（bytes 以 UTF-8 解碼）—— HTTP 回應與子行程的輸出拿到的都是
     bytes，讓呼叫端每次自己 decode 一次只是把同一行複製到每個呼叫點。
 
-    空字串或只有空白視為格式錯誤，訊息明講「內容是空的」。當成 {} 是猜測，而猜錯
-    的那次會讓呼叫端拿著空資料一路跑下去，直到很後面才發現什麼都沒讀到。
+    ## default
 
-    格式錯誤時拋出 ValueError，訊息帶 json 給的行列位置，但**不附上內容片段** ——
-    這個字串常常是 API 回應或設定，裡面可能有權杖，而錯誤訊息會被入口腳本放進
-    結果信封、寫進 CI 日誌。位置足以定位問題，內容不值得那個風險。
+    不傳 default 時，內容有問題一律拋出 ValueError。
+
+    明著傳了 default，則**內容問題**改為回傳該值而不拋：空字串、格式錯誤、
+    非 UTF-8 的 bytes。適合「資料本來就可能是垃圾」的場合 —— 例如把 AI 的回覆
+    餵進來，它有時會多包一層 markdown 圍欄或前後加幾句話。
+
+    **型別錯誤不受 default 影響**，仍然拋出：把 None、數字、list 傳進來不是
+    「資料是垃圾」，是呼叫端的程式缺陷，給它一個預設值只會把那個缺陷藏起來，
+    而藏起來的缺陷會在更下游以更難懂的方式出現。
+
+    哨兵用的是一個私有物件而不是 None —— None 本身是合法的預設值，呼叫端可能
+    就是想在解析失敗時拿到 None。
+
+    ## 錯誤訊息
+
+    格式錯誤時訊息帶 json 給的行列位置，但**不附上內容片段** —— 這個字串常常是
+    API 回應或設定，裡面可能有權杖，而錯誤訊息會被入口腳本放進結果信封、寫進
+    CI 日誌。位置足以定位問題，內容不值得那個風險。
     """
+    give_default = default is not _NO_DEFAULT
+
     if isinstance(json_string, bytes):
         try:
             json_string = json_string.decode("utf-8")
         except UnicodeDecodeError as exc:
+            if give_default:
+                logger.debug("JSON 內容不是合法的 UTF-8，改用預設值")
+                return default
             raise ValueError("JSON 內容不是合法的 UTF-8：%s" % exc)
 
     if not isinstance(json_string, str):
+        # 型別錯誤不吃 default：那是程式缺陷，不是資料問題。
         raise ValueError("JSON 內容必須是字串或 bytes，收到 %s"
                          % type(json_string).__name__)
 
     if not json_string.strip():
+        if give_default:
+            logger.debug("JSON 內容是空的，改用預設值")
+            return default
         raise ValueError("JSON 內容是空的")
 
     try:
         data = json.loads(json_string)
     except ValueError as exc:
+        if give_default:
+            # 只記位置不記內容，理由同上。
+            logger.debug("JSON 格式錯誤（%s），改用預設值", exc)
+            return default
         raise ValueError("JSON 格式錯誤：%s" % exc)
 
     logger.debug("解析 JSON 字串（%d 字元）-> %s",
