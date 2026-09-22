@@ -227,8 +227,12 @@ scripts/
   script_io.py                   信封處理層
   script_utils/                  共用模組，依技術領域分組
     logger.py
-    system_utils/
-    gitlab_utils/
+    system_utils.py
+    file_utils.py
+    json_utils.py
+    http_utils.py
+    gitlab_utils.py
+    jira_utils.py
   <功能>/                        入口腳本依功能分組
     __init__.py                  這個功能自己的共用定義
     <功能>_<動作>.py
@@ -253,13 +257,16 @@ scripts/
 | `requests` | **可用** |
 | 其他第三方套件 | 停下來問使用者，不要自己決定 |
 
-本專案沒有相依清單檔（`requirements.txt` 之類），Windows 端的建置流程是「拿到專案用
-Qt Creator 開啟即可」。因此每多一個套件，就是替部署與 CI 各多一個安裝步驟 —— 這不是
-禁止，是要有人**知道**它發生了。用了 `requests` 以外的套件，在轉換報告裡明著列出來。
+本專案的相依列在根目錄的 `requirements.txt`，目前只有一個：**`requests`**。所有走
+REST 的共用模組（`gitlab_utils`、`jira_utils`）都建立在它與 `http_utils` 之上。
 
-**不要把既有模組改成 `requests`。** `script_utils/gitlab_utils/` 刻意用 `urllib` 寫成，
-因為它只需要一個帶標頭的 GET，沒有理由讓那條路徑也長出相依。看到專案裡兩種寫法並存
-是正常的，不要「統一」它們。
+**要打 REST 就用它們，不要自己用 `urllib` 再寫一份。** 認證、逾時、重試、錯誤轉例外
+在 `http_utils` 已經處理好了，各寫一份的結果是兩份錯誤處理慢慢長歪，而改了一邊忘了
+另一邊時，症狀只在其中一個服務出現。
+
+再多加套件是可以的，但要有人**知道**它發生了：加進 `requirements.txt`，並在轉換報告裡
+明著列出來。注意套件必須裝進設定檔 `Program` 指定的那個直譯器 —— 裝錯地方的症狀是
+命令列跑得好好的、從工具裡跑卻失敗。
 
 ---
 
@@ -368,7 +375,7 @@ if not token:
 假設要新增一個叫 `MR Report` 的功能，第一支腳本是「統計某個專案的 Merge Request，
 依作者分組」。
 
-> 底下的程式碼**實際跑過**，不是虛擬碼。它呼叫的 `gitlab_utils.list_merge_requests()`
+> 底下的程式碼**實際跑過**，不是虛擬碼。它呼叫的 `gitlab_utils.get_all_mr()`
 > 是這個專案裡真實存在的函式。
 
 ### 5.1 先看 `script_utils/` 裡有什麼
@@ -378,19 +385,28 @@ if not token:
 
 ```
 script_utils/
-  system_utils/     列目錄、行式文字檔的讀寫、暫存檔路徑
-  gitlab_utils/     GitLab REST
-    list_merge_requests(server_url, token, project,
-                        only_open=True, created_after_days=None,
-                        verify_ssl=True, limit=PER_PAGE_LIMIT)
-        -> {"merge_requests": [...], "truncated": bool}
-        每一筆：iid / title / author / created_at / state / web_url
-        失敗時拋出 GitLabAuthError / GitLabNotFoundError / GitLabTlsError /
-                   GitLabHttpError / GitLabConnectionError
-                   （都繼承自 GitLabError）
+  system_utils.py   環境變數、建目錄、列目錄、暫存檔路徑、路徑轉 Windows 表示法
+  file_utils.py     整檔讀寫、行號區間讀取與置換、尋找、複製、搬移、刪除
+  json_utils.py     JSON 讀檔、寫檔、序列化
+  http_utils.py     REST 共用底層：session、逾時、重試、HttpError 基底
+  gitlab_utils.py   GitLab REST
+    get_all_mr(server_url, token, project_id, created_after,
+               status=("opened",), target_branch=None, source_branch=None,
+               max_items=None, timeout=30, verify_ssl=True)
+        -> [GitLab 原樣的 MR 物件, ...]
+        created_after 收 ISO 8601 字串或 date/datetime，None 表示不限
+        失敗時拋出 GitLabError（.status_code 有 HTTP 狀態碼，
+                                .code 形如 "GITLAB_401"）
+    另有 request / get_paged / get_project / get_repo_id / list_branches /
+         get_file_content / get_mr_info / get_mr_plain_diff
+  jira_utils.py     Jira REST（Server/DC）
 ```
 
 這次要的東西已經有了，所以這支腳本只做轉接：收信封 → 呼叫它 → 整理 → 回信封。
+
+注意 `get_all_mr()` 回的是 **GitLab 原樣的物件**（一筆約 2～4 KB、四十幾個欄位）。
+共用模組不挑欄位 —— 挑哪些是呼叫端的決定，先砍的話下一個呼叫端就得回來改共用模組。
+因此「收斂成畫面要的幾個欄位」這一步寫在入口腳本裡，見下。
 
 ### 5.2 建立目錄與功能專屬定義
 
@@ -409,7 +425,11 @@ scripts/mr_report/
 import json
 import os
 
-__all__ = ["write_artifact"]
+__all__ = ["MERGE_REQUEST_LIMIT", "write_artifact"]
+
+# 單次查詢願意取回的上限。放在功能這一層而不是 gitlab_utils：這是「一次要看
+# 多少筆」的產品決定，不是 GitLab 的技術限制。
+MERGE_REQUEST_LIMIT = 100
 
 
 def write_artifact(out_path, content):
@@ -465,6 +485,7 @@ DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
     GITLAB_VERIFY_SSL    true / false（未設定視為 false，即不驗證）
 """
 
+import datetime
 import os
 import sys
 
@@ -542,41 +563,59 @@ def main():
     #
     # 權杖與 verify_ssl 都由這裡明著傳進去 —— 共用模組不自行讀環境變數，
     # 所以同一個函式在任何機器上以相同參數呼叫，行為都一樣。
+    # 「N 天內」是這個功能的說法，gitlab_utils 收的是 ISO 8601 或 date/datetime
+    # —— 同一個參數有時是日期有時是天數，呼叫端讀簽章讀不出來該傳什麼，所以
+    # 換算寫在入口腳本這一側。
+    created_after = (datetime.datetime.now(datetime.timezone.utc)
+                     - datetime.timedelta(days=params["created_after_days"]))
+
     try:
-        result = gitlab_utils.list_merge_requests(
-            server_url=server_url,
-            token=token,
-            project=repo,
-            only_open=params["only_open"],
-            created_after_days=params["created_after_days"],
+        # 多要一筆才判斷得出「還有更多」：拿到 max_items 就停，剛好取滿時
+        # 無法分辨是「正好這麼多」還是「被截斷了」。
+        raw = gitlab_utils.get_all_mr(
+            server_url, token, repo,
+            created_after=created_after,
+            status=("opened",) if params["only_open"] else ("all",),
+            max_items=mr_report.MERGE_REQUEST_LIMIT + 1,
             verify_ssl=verify_ssl,
         )
-    except gitlab_utils.GitLabAuthError as exc:
+    except gitlab_utils.GitLabError as exc:
+        # 共用模組只拋一種例外，型別由 status_code 分流。
+        # 不要 except Exception —— 那會蓋掉 script_io.run() 的統一處理。
+        #
         # 權杖與專案的失敗訊息刻意不同：使用者的下一步完全不一樣，
         # 一個去換權杖，一個去改設定檔的拼字。
-        script_io.reply_fail(
-            "GitLab 拒絕了這次請求，請檢查存取權杖",
-            detail="%s\n\n權杖來自環境變數 GITLAB_ACCESS_TOKEN。" % exc,
-            code="GITLAB_AUTH_FAILED")
-    except gitlab_utils.GitLabNotFoundError as exc:
-        script_io.reply_fail(
-            "找不到專案 %s" % repo,
-            detail="%s\n\n請檢查專案名稱是否為正確的 namespace/project 形式。"
-                   "\n注意：權杖若對該專案沒有權限，GitLab 也會回 404。" % exc,
-            code="GITLAB_PROJECT_NOT_FOUND")
-    except gitlab_utils.GitLabTlsError as exc:
-        script_io.reply_fail(
-            "TLS 憑證驗證失敗",
-            detail="%s\n\n把受信任的 CA 憑證指給 SSL_CERT_FILE，或把設定檔的"
-                   "Service.Gitlab_Verify_SSL 設為 \"false\"。" % exc,
-            code="GITLAB_TLS_FAILED")
-    except gitlab_utils.GitLabError as exc:
-        # 其餘的 GitLab 錯誤（HTTP、連線）收在這裡。
-        # 不要 except Exception —— 那會蓋掉 script_io.run() 的統一處理。
+        if exc.status_code in (401, 403):
+            script_io.reply_fail(
+                "GitLab 拒絕了這次請求，請檢查存取權杖",
+                detail="%s\n\n權杖來自環境變數 GITLAB_ACCESS_TOKEN。" % exc,
+                code="GITLAB_AUTH_FAILED")
+
+        if exc.status_code == 404:
+            script_io.reply_fail(
+                "找不到專案 %s" % repo,
+                detail="%s\n\n請檢查專案名稱是否為正確的 namespace/project 形式。"
+                       "\n注意：權杖若對該專案沒有權限，GitLab 也會回 404。" % exc,
+                code="GITLAB_PROJECT_NOT_FOUND")
+
+        # TLS 失敗沒有狀態碼（連線根本沒建立），只能看訊息內容。
+        lowered = str(exc).lower()
+        if exc.status_code is None and ("ssl" in lowered
+                                        or "certificate" in lowered):
+            script_io.reply_fail(
+                "TLS 憑證驗證失敗",
+                detail="%s\n\n把受信任的 CA 憑證指給 SSL_CERT_FILE，或把設定檔的"
+                       "Service.Gitlab_Verify_SSL 設為 \"false\"。" % exc,
+                code="GITLAB_TLS_FAILED")
+
         script_io.reply_fail("GitLab 查詢失敗：%s" % exc,
                              code="GITLAB_REQUEST_FAILED")
 
-    items = result["merge_requests"]
+    # 挑欄位是入口腳本的職責：共用模組回的是 GitLab 原樣的物件，整包塞進信封
+    # 的話一百筆就有幾百 KB 要經 stdout 送回 Qt，而這裡只用得到作者。
+    truncated = len(raw) > mr_report.MERGE_REQUEST_LIMIT
+    items = [{"author": (one.get("author") or {}).get("name") or ""}
+             for one in raw[:mr_report.MERGE_REQUEST_LIMIT]]
 
     # --- 業務邏輯：依作者分組 ---
     script_io.progress("整理統計…")
@@ -590,7 +629,7 @@ def main():
         "repo": repo,
         "total": len(items),
         "by_author": by_author,
-        "truncated": result["truncated"],
+        "truncated": truncated,
     }
 
     logger.info("共 %d 筆，%d 位作者", len(items), len(by_author))
@@ -599,9 +638,9 @@ def main():
     mr_report.write_artifact(params["out_path"], summary)
 
     message = "共 %d 筆 Merge Request，%d 位作者" % (len(items), len(by_author))
-    if result["truncated"]:
+    if truncated:
         message += "（已達單次取回上限 %d，結果可能未完整）" \
-                   % gitlab_utils.PER_PAGE_LIMIT
+                   % mr_report.MERGE_REQUEST_LIMIT
 
     # 取回 0 筆是成功而非失敗 —— 條件太緊是正常結果。
     script_io.reply(
