@@ -27,22 +27,25 @@ issue、pipeline…），以資料結構回傳，不做 UI、不讀設定檔、�
 
 這個模組需要 **requests**（本專案唯一的第三方相依，見 requirements.txt）。
 
-匯入失敗時不在 import 階段爆掉，而是延到真正呼叫時才拋出 GitLabError。理由：
-入口腳本的 `from script_utils import gitlab_utils` 發生在 `script_io.run()`
-之前，那個階段拋例外的話不會有結果信封，Qt 端只會顯示「腳本沒有回傳結果
-(exit code 1)」—— 使用者完全看不出是少裝了套件。延到呼叫時，錯誤就會走
-script_io 的統一處理變成一則說得清楚的 FAIL。
+匯入失敗時不在 import 階段爆掉（那個 try/except 在 http_utils），而是延到真正
+呼叫時由 http_utils.require_requests() 拋出 GitLabError。理由：入口腳本的
+`from script_utils import gitlab_utils` 發生在 `script_io.run()` 之前，那個階段
+拋例外的話不會有結果信封，Qt 端只會顯示「腳本沒有回傳結果 (exit code 1)」——
+使用者完全看不出是少裝了套件。延到呼叫時，錯誤就會走 script_io 的統一處理變成
+一則說得清楚的 FAIL。
+
+## 共用的底層
+
+建立 session、逾時、重試、JSON 解析與例外基底在 http_utils，與 jira_utils 共用。
+留在這裡的是 GitLab 自己的部分：認證標頭、API 根路徑、錯誤訊息怎麼挖、以及
+依 X-Next-Page 標頭的分頁。
 """
 
 import base64
 import datetime
 import time
 
-try:
-    import requests
-except ImportError:      # 見上面「相依」段落，這裡刻意不讓它在 import 階段爆掉
-    requests = None
-
+from script_utils import http_utils
 from script_utils import logger
 
 __all__ = [
@@ -59,14 +62,8 @@ __all__ = [
 ]
 
 
-# 逾時一律要有：沒有逾時的請求會讓整個 Qt 流程卡死，而使用者只能按取消。
-DEFAULT_TIMEOUT = 30
-
-# 這些狀態碼重試有意義：429 是被限流，5xx 多半是伺服器端的暫時狀況。
-# 4xx 的其餘成員（401 權杖錯、404 找不到）重試幾次結果都一樣，只是拖長失敗。
-_RETRY_STATUS = (429, 500, 502, 503, 504)
-_MAX_RETRIES = 2
-_RETRY_BACKOFF_SECONDS = 1.0
+# 逾時、重試策略與連線建立都在 http_utils，與 Jira 共用一份。
+DEFAULT_TIMEOUT = http_utils.DEFAULT_TIMEOUT
 
 # GitLab 每頁上限 100。取小了只是讓同樣的資料多跑幾趟。
 _PER_PAGE = 100
@@ -78,36 +75,25 @@ _MAX_PAGES = 1000
 _MR_STATES = ("opened", "closed", "merged", "locked", "all")
 
 
-class GitLabError(Exception):
+class GitLabError(http_utils.HttpError):
     """GitLab 呼叫失敗。
 
     共用模組不結束行程也不自己印訊息，一律以例外拋出，由入口腳本決定怎麼回報。
 
-    `code` 是給結果信封的 `error.code` 用的，形如 `GITLAB_401`；沒有 HTTP 狀態
-    碼時（連線失敗、逾時、少裝套件）為 `GITLAB_ERROR`。入口腳本可以直接：
+    `code` 由基底依 CODE_PREFIX 產生，形如 `GITLAB_401`；沒有 HTTP 狀態碼時
+    （連線失敗、逾時、少裝套件）為 `GITLAB_ERROR`。入口腳本可以直接：
 
         except gitlab_utils.GitLabError as exc:
             script_io.reply_fail(str(exc), code=exc.code)
     """
 
-    def __init__(self, message, status_code=None, url=""):
-        super(GitLabError, self).__init__(message)
-        self.status_code = status_code
-        self.url = url
-
-    @property
-    def code(self):
-        if self.status_code is None:
-            return "GITLAB_ERROR"
-        return "GITLAB_%d" % self.status_code
+    CODE_PREFIX = "GITLAB"
 
 
 # --- 內部 ------------------------------------------------------------------
 
 def _require_requests():
-    if requests is None:
-        raise GitLabError(
-            "缺少 requests 套件，無法呼叫 GitLab。請執行 pip install requests")
+    http_utils.require_requests(GitLabError)
 
 
 def _api_root(server_url):
@@ -185,7 +171,7 @@ def _normalize_states(status):
 
 
 def _new_session(token):
-    """建立帶認證標頭的 session。
+    """建立帶 GitLab 認證標頭的 session。
 
     權杖只放進標頭，絕不進 log、也不放進 URL query —— query 會被伺服器與代理
     記進存取紀錄。
@@ -193,12 +179,7 @@ def _new_session(token):
     if not isinstance(token, str) or not token.strip():
         raise GitLabError("GitLab 存取權杖不可為空")
 
-    session = requests.Session()
-    session.headers.update({
-        "PRIVATE-TOKEN": token,
-        "Accept": "application/json",
-    })
-    return session
+    return http_utils.new_session({"PRIVATE-TOKEN": token})
 
 
 def _parse_error_message(response):
@@ -244,55 +225,6 @@ def _check_response(response, url):
     raise GitLabError(message, status_code=response.status_code, url=url)
 
 
-def _send(session, method, url, params, json_body, timeout, verify_ssl):
-    """送出一次請求，必要時重試，回傳 requests 的 response。
-
-    重試只針對限流與伺服器端暫時狀況（見 _RETRY_STATUS）。連線錯誤與逾時也
-    重試 —— 那多半是網路抖動。
-    """
-    last_error = None
-
-    for attempt in range(_MAX_RETRIES + 1):
-        if attempt:
-            wait = _RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
-            logger.warn("GitLab 呼叫失敗，%.1f 秒後重試（第 %d 次）", wait, attempt)
-            time.sleep(wait)
-
-        try:
-            response = session.request(method, url, params=params,
-                                       json=json_body, timeout=timeout,
-                                       verify=verify_ssl)
-        except requests.exceptions.RequestException as exc:
-            last_error = GitLabError("無法連線 GitLab：%s" % exc, url=url)
-            continue
-
-        if response.status_code in _RETRY_STATUS and attempt < _MAX_RETRIES:
-            last_error = GitLabError(
-                "GitLab 回應 %d" % response.status_code,
-                status_code=response.status_code, url=url)
-            continue
-
-        return response
-
-    raise last_error
-
-
-def _json_body(response, url):
-    """回應轉成 Python 資料結構。
-
-    204 之類沒有內容的回應回傳 None —— 那是正常結果，不是錯誤。
-    """
-    if response.status_code == 204 or not response.content:
-        return None
-
-    try:
-        return response.json()
-    except ValueError:
-        raise GitLabError("GitLab 回應不是合法的 JSON（HTTP %d）"
-                          % response.status_code,
-                          status_code=response.status_code, url=url)
-
-
 # --- 通用呼叫 --------------------------------------------------------------
 
 def request(server_url, token, method, path, params=None, json_body=None,
@@ -314,10 +246,10 @@ def request(server_url, token, method, path, params=None, json_body=None,
     session = _new_session(token)
     try:
         logger.debug("GitLab %s %s", method, url)
-        response = _send(session, method, url, params, json_body,
-                         timeout, verify_ssl)
+        response = http_utils.send(session, method, url, params, json_body,
+                                   timeout, verify_ssl, GitLabError)
         _check_response(response, url)
-        return _json_body(response, url)
+        return http_utils.parse_json(response, url, GitLabError)
     finally:
         session.close()
 
@@ -348,11 +280,11 @@ def get_paged(server_url, token, path, params=None, timeout=DEFAULT_TIMEOUT,
             query["page"] = page
             logger.debug("GitLab GET %s（第 %d 頁）", url, page)
 
-            response = _send(session, "GET", url, query, None,
-                             timeout, verify_ssl)
+            response = http_utils.send(session, "GET", url, query, None,
+                                       timeout, verify_ssl, GitLabError)
             _check_response(response, url)
 
-            body = _json_body(response, url)
+            body = http_utils.parse_json(response, url, GitLabError)
             if body is None:
                 break
             if not isinstance(body, list):
@@ -576,7 +508,8 @@ def get_mr_plain_diff(server_url, token, project_id, mr_iid, max_bytes=None,
 
     try:
         logger.debug("GitLab GET %s", url)
-        response = _send(session, "GET", url, None, None, timeout, verify_ssl)
+        response = http_utils.send(session, "GET", url, None, None,
+                                   timeout, verify_ssl, GitLabError)
         _check_response(response, url)
 
         content_type = response.headers.get("Content-Type", "")

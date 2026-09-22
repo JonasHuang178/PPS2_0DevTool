@@ -6,6 +6,7 @@
     logger.py        所有共用模組與入口腳本共用的 log（唯一設定 logging 的地方）
     system_utils.py  向作業系統要東西：環境變數、建目錄、列目錄、暫存目錄、路徑格式
     file_utils.py    檔案內容的讀寫
+    http_utils.py    REST 呼叫的共用底層（session、逾時、重試、例外基底）
     gitlab_utils.py  GitLab REST
     jira_utils.py    Jira REST（尚無內容）（尚無內容）
 
