@@ -54,6 +54,8 @@ __all__ = [
     "get_issue_info",
     "get_issue_description",
     "create_issue",
+    "ensure_issue",
+    "search_issues",
 ]
 
 
@@ -380,3 +382,132 @@ def create_issue(base_url, token, project, result_json,
 
     logger.info("已建立 %s", (response or {}).get("key", "(未回傳 key)"))
     return response
+
+
+def _quote_jql(value):
+    """把值包成 JQL 的字串常量，並跳脫其中的反斜線與雙引號。
+
+    不跳脫的話，標題裡一個雙引號就會讓整段 JQL 語法錯誤（Jira 回 400，而訊息
+    指向一段呼叫端從沒寫過的查詢字串），刻意構造的標題更可以改寫查詢條件。
+    """
+    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return '"%s"' % text
+
+
+def search_issues(base_url, token, jql, fields=None, max_items=None,
+                  timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """以 JQL 搜尋 issue，回傳 issue 物件清單。
+
+    fields 可指定只取某些欄位（字串或序列），None 表示 Jira 的預設欄位集。
+    max_items 為可能很大的查詢設上限。
+
+    分頁由 get_paged 處理；搜尋端點的清單欄位是 "issues"。
+    """
+    if not isinstance(jql, str) or not jql.strip():
+        raise JiraError("JQL 不可為空")
+
+    params = {"jql": jql}
+    if fields:
+        params["fields"] = fields if isinstance(fields, str) else ",".join(fields)
+
+    return get_paged(base_url, token, "/search", params=params,
+                     items_key="issues", max_items=max_items,
+                     timeout=timeout, verify_ssl=verify_ssl)
+
+
+def ensure_issue(base_url, token, project, result_json, match_jql=None,
+                 timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """建立 issue，但**已經有一張同樣的就沿用既有的**，回傳 (issue, created)。
+
+    這是 create_issue() 的可重入版本。規格要求參與流程的腳本可重入（見
+    openspec/specs/script-execution）：一條三步流程的第三步失敗、使用者重跑時，
+    第一步的建單會再跑一次，用 create_issue 就會累積出一堆重複的單。
+
+    created 為 True 表示這次真的建了一張，False 表示沿用既有的。回傳這個布林
+    而不是讓呼叫端自己比對，是因為「新建」與「已存在」往往要給使用者不同的訊息。
+
+    ## 怎麼算「同一張單」
+
+    預設是**同專案 + 標題完全相同**。要換別的判準就自己傳 match_jql：
+
+        ensure_issue(url, token, "PROJ", fields,
+                     match_jql='project = "PROJ" AND labels = "auto" '
+                               'AND status != Closed')
+
+    預設判準用 JQL 的 summary ~ 做初篩，**但 ~ 是模糊比對**（依詞彙斷字，
+    "修正 A" 可能撈到 "修正 A 與 B"），所以撈回來之後還會在本地做一次標題的
+    完全相等比對。少了那一步，ensure 會把一張只是標題相似的單誤認成同一張，
+    然後該建的單永遠不會被建 —— 而那個錯誤沒有任何訊息，只有「怎麼沒有新單」。
+
+    自訂 match_jql 時**不做本地複驗**：那段查詢是呼叫端寫的，它自己定義了什麼
+    叫同一張。
+
+    比對到多張時沿用**最早建立**的那張並記一筆警告 —— 重跑時每次都挑同一張，
+    行為才穩定。
+
+    ## 回傳形狀
+
+    兩條路徑回傳的 issue 物件結構相同：新建之後會再讀一次那張單，而不是直接回
+    Jira 建立 API 那份只有 id / key / self 的精簡回應。不這麼做的話，呼叫端拿到
+    的欄位會依「這次有沒有建」而不同，那種依路徑而異的回傳值遲早會在某個分支
+    上爆掉。代價是新建路徑多一次請求。
+    """
+    if not isinstance(project, str) or not project.strip():
+        raise JiraError("專案 key 不可為空")
+
+    # 先把 result_json 正規化成 fields，這樣預設判準才拿得到 summary。
+    if isinstance(result_json, str):
+        try:
+            payload = json.loads(result_json)
+        except ValueError as exc:
+            raise JiraError("result_json 不是合法的 JSON：%s" % exc)
+    elif isinstance(result_json, dict):
+        payload = dict(result_json)
+    else:
+        raise JiraError("result_json 必須是 dict 或 JSON 字串，收到 %s"
+                        % type(result_json).__name__)
+
+    fields = dict(payload["fields"]) if (
+        "fields" in payload and isinstance(payload["fields"], dict)) else payload
+
+    summary = fields.get("summary")
+    jql = match_jql
+    verify_summary = False
+
+    if not jql:
+        if not isinstance(summary, str) or not summary.strip():
+            raise JiraError(
+                "預設是以標題判斷是否為同一張單，因此 result_json 必須有 "
+                "summary；要用別的判準請傳 match_jql")
+        jql = ("project = %s AND summary ~ %s ORDER BY created ASC"
+               % (_quote_jql(project.strip()), _quote_jql(summary)))
+        verify_summary = True
+
+    logger.debug("ensure_issue 以 JQL 尋找既有單：%s", jql)
+    candidates = search_issues(base_url, token, jql, fields="summary",
+                               max_items=50, timeout=timeout,
+                               verify_ssl=verify_ssl)
+
+    if verify_summary:
+        # ~ 是模糊比對，這裡做完全相等的複驗（見 docstring）。
+        candidates = [one for one in candidates
+                      if (one.get("fields") or {}).get("summary") == summary]
+
+    if candidates:
+        if len(candidates) > 1:
+            logger.warn("找到 %d 張符合的既有單，沿用最早建立的 %s",
+                        len(candidates), candidates[0].get("key"))
+        key = candidates[0].get("key")
+        logger.info("沿用既有的 %s，不建立新單", key)
+        return (get_issue_info(base_url, token, key, timeout=timeout,
+                               verify_ssl=verify_ssl), False)
+
+    created = create_issue(base_url, token, project, fields,
+                           timeout=timeout, verify_ssl=verify_ssl)
+    key = (created or {}).get("key")
+    if not key:
+        raise JiraError("建立 issue 的回應沒有 key，無法回讀該單")
+
+    # 回讀，讓兩條路徑的回傳結構一致（見 docstring）。
+    return (get_issue_info(base_url, token, key, timeout=timeout,
+                           verify_ssl=verify_ssl), True)

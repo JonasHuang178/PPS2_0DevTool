@@ -127,8 +127,8 @@ PPS2_0DevTool/
 │       ├── http_utils.py     REST 共用底層：session、逾時、重試、例外基底
 │       ├── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
 │       │                     檔案內容、merge request
-│       └── jira_utils.py     Jira REST（Server/DC）：通用呼叫、分頁、
-│                             issue 查詢與建立
+│       └── jira_utils.py     Jira REST（Server/DC）：通用呼叫、分頁、JQL 搜尋、
+│                             issue 查詢、建立與可重入的 ensure
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
