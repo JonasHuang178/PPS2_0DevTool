@@ -43,6 +43,9 @@ ADF（Atlassian Document Format）的巢狀 JSON，v2 則是單純的字串。�
 """
 
 import json
+import os
+
+from urllib.parse import unquote
 
 from script_utils import http_utils
 from script_utils import logger
@@ -56,6 +59,10 @@ __all__ = [
     "create_issue",
     "ensure_issue",
     "search_issues",
+    "add_issue_comment",
+    "update_issue_description",
+    "get_issue_attachments",
+    "download_issue_attachment",
 ]
 
 
@@ -511,3 +518,192 @@ def ensure_issue(base_url, token, project, result_json, match_jql=None,
     # 回讀，讓兩條路徑的回傳結構一致（見 docstring）。
     return (get_issue_info(base_url, token, key, timeout=timeout,
                            verify_ssl=verify_ssl), True)
+
+
+# --- 留言與描述 -------------------------------------------------------------
+
+def add_issue_comment(base_url, token, key, comment,
+                      timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """在 issue 底下新增一則留言，回傳 Jira 建立的留言物件。
+
+    comment 是純文字（Jira Server 的 wiki markup 也可以）。v2 的留言 body 就是
+    字串；Cloud 的 v3 是 ADF 巢狀 JSON，傳字串過去會被拒絕 —— 本模組打的是 v2。
+
+    空白留言在這裡就擋掉，不送出去換一個 Jira 的 400：空留言一定是呼叫端上游
+    算出了空字串，訊息說清楚比轉述伺服器的抱怨有用。
+
+    ⚠️ **這支不可重入。** 重跑會多留一則一樣的言。會出現在多步驟流程裡的呼叫端，
+    要自己先讀既有留言判斷該不該留 —— 「算不算重複」是各功能自己的定義。
+    """
+    if not isinstance(key, str) or not key.strip():
+        raise JiraError("issue key 不可為空")
+    if not isinstance(comment, str) or not comment.strip():
+        raise JiraError("留言內容不可為空")
+
+    logger.info("在 %s 新增留言", key)
+    return request(base_url, token, "POST", "/issue/%s/comment" % key.strip(),
+                   json_body={"body": comment},
+                   timeout=timeout, verify_ssl=verify_ssl)
+
+
+def update_issue_description(base_url, token, key, content,
+                             timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """更新 issue 的描述，成功時回傳 None。
+
+    content 必須是字串（v2 的描述就是字串）。傳 dict 進來會被擋下並指出那是
+    Cloud 的 ADF 格式 —— 與 get_issue_description() 的守衛是同一件事的兩面：
+    讀的時候不讓 ADF 偽裝成字串，寫的時候不讓 ADF 被送進 v2 端點。
+
+    空字串是合法的，意思是把描述清空。
+
+    這支**是可重入的**：把描述設成同一個值兩次，結果與設一次相同，因此放進
+    多步驟流程裡重跑是安全的（與 add_issue_comment 相反）。
+
+    Jira 更新成功時回 204 沒有內容，所以這裡回傳 None；失敗一律以 JiraError
+    表示，不需要檢查回傳值。
+    """
+    if not isinstance(key, str) or not key.strip():
+        raise JiraError("issue key 不可為空")
+    if not isinstance(content, str):
+        raise JiraError(
+            "描述必須是字串（收到 %s）。巢狀物件是 Jira Cloud 的 ADF 格式，"
+            "本模組打的是 Server / DC 的 /rest/api/2" % type(content).__name__)
+
+    logger.info("更新 %s 的描述", key)
+    return request(base_url, token, "PUT", "/issue/%s" % key.strip(),
+                   json_body={"fields": {"description": content}},
+                   timeout=timeout, verify_ssl=verify_ssl)
+
+
+# --- 附件 -------------------------------------------------------------------
+
+def get_issue_attachments(base_url, token, key,
+                          timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """列出 issue 的附件，回傳附件物件清單。
+
+    每一筆含 Jira 原樣的欄位，其中 `content` 是該附件的下載網址，正是
+    download_issue_attachment() 的第一個參數：
+
+        for item in get_issue_attachments(url, token, "PROJ-1"):
+            download_issue_attachment(item["content"], token,
+                                      os.path.join(folder, item["filename"]))
+
+    沒有附件時回傳空清單，不是錯誤 —— 多數 issue 本來就沒有附件。
+    """
+    issue = get_issue_info(base_url, token, key, fields="attachment",
+                           timeout=timeout, verify_ssl=verify_ssl)
+
+    attachments = (issue or {}).get("fields", {}).get("attachment")
+    if not attachments:
+        return []
+    if not isinstance(attachments, list):
+        raise JiraError("attachment 欄位不是清單，收到 %s"
+                        % type(attachments).__name__)
+
+    logger.debug("%s 有 %d 個附件", key, len(attachments))
+    return attachments
+
+
+def _filename_from_response(response, download_url):
+    """決定存檔用的檔名：優先用伺服器給的，其次用網址尾巴。
+
+    Jira 的附件下載網址結尾常常是附件 ID 而不是檔名，所以先看
+    Content-Disposition。兩者都沒有時給一個明確的預設，總比寫出一個叫
+    "content" 的檔案好。
+
+    非 ASCII 檔名要先看 `filename*=`：HTTP 標頭只能承載 latin-1，因此中文等
+    檔名一律以 RFC 5987 的 `filename*=UTF-8''%E5%A0%B1...` 形式傳送，而同一個
+    標頭裡的 `filename=` 往往是伺服器退而求其次的 ASCII 版本（常常只剩底線或
+    問號）。只解析 `filename=` 的話，中文附件會被存成一個名字面目全非的檔案。
+    """
+    disposition = response.headers.get("Content-Disposition", "")
+
+    # RFC 5987：filename*=<charset>'<language>'<percent-encoded>
+    if "filename*=" in disposition:
+        raw = disposition.split("filename*=", 1)[1].split(";", 1)[0].strip()
+        parts = raw.split("'", 2)
+        if len(parts) == 3:
+            charset, _language, encoded = parts
+            try:
+                name = os.path.basename(
+                    unquote(encoded, encoding=charset or "utf-8"))
+                if name:
+                    return name
+            except (LookupError, ValueError):
+                pass      # 編碼名稱怪異時退回底下的 filename=
+
+    marker = "filename="
+    if marker in disposition:
+        name = disposition.split(marker, 1)[1].strip()
+        if name.startswith('"'):
+            name = name[1:].split('"', 1)[0]
+        else:
+            name = name.split(";", 1)[0].strip()
+        name = os.path.basename(name.strip())
+        if name:
+            return name
+
+    tail = os.path.basename(unquote(download_url.split("?", 1)[0].rstrip("/")))
+    return tail or "attachment.bin"
+
+
+def download_issue_attachment(download_url, token, save_path,
+                              timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """下載一個附件，回傳寫出的絕對路徑。
+
+    第一個參數是**附件的下載網址**（get_issue_attachments() 每筆的 `content`），
+    不是伺服器根網址 —— 那個網址已經是完整的，不必再拼 /rest/api/2。
+
+    save_path 是目的檔案的路徑；若它是一個已存在的目錄，則存進該目錄，檔名取自
+    伺服器的 Content-Disposition，取不到才用網址尾巴。
+
+    內容以**串流**寫入，不先進記憶體：附件可能是幾百 MB 的 log 或 dump，而腳本
+    行程沒有多餘的空間可揮霍。
+
+    目的檔案已存在直接覆蓋（重跑同一條流程要得到同樣的結果）；上層目錄不存在
+    則拋出例外，不自動建立 —— 與 file_utils.write_file() 同一個理由：自動建立會
+    讓打錯的路徑靜默生出一棵沒人要的目錄樹。需要時先呼叫
+    system_utils.create_folder()。
+
+    收到 HTML 時明確報錯（多半是被導去登入頁），不把登入頁存成附件 —— 那種檔案
+    打開來才發現不對，而那時已經離成因很遠了。
+    """
+    http_utils.require_requests(JiraError)
+
+    if not isinstance(download_url, str) or not download_url.strip():
+        raise JiraError("附件下載網址不可為空")
+    if not isinstance(save_path, str) or not save_path.strip():
+        raise JiraError("存檔路徑不可為空")
+
+    session = _new_session(token)
+    # 這條路由回的是檔案內容，不是 JSON。
+    session.headers["Accept"] = "*/*"
+
+    response = None
+    try:
+        logger.debug("下載附件 %s", download_url)
+        response = http_utils.send(session, "GET", download_url.strip(),
+                                   None, None, timeout, verify_ssl, JiraError,
+                                   stream=True)
+        _check_response(response, download_url)
+        _guard_html(response, download_url)
+
+        destination = save_path
+        if os.path.isdir(save_path):
+            destination = os.path.join(
+                save_path, _filename_from_response(response, download_url))
+
+        written = 0
+        with open(destination, "wb") as handle:
+            for chunk in response.iter_content(chunk_size=65536):
+                if chunk:
+                    handle.write(chunk)
+                    written += len(chunk)
+    finally:
+        if response is not None:
+            response.close()
+        session.close()
+
+    absolute = os.path.abspath(destination)
+    logger.info("附件已下載：%s（%d bytes）", absolute, written)
+    return absolute

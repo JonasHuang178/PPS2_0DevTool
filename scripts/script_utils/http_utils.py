@@ -91,11 +91,16 @@ def new_session(headers=None):
 
 
 def send(session, method, url, params=None, json_body=None,
-         timeout=DEFAULT_TIMEOUT, verify_ssl=True, error_class=HttpError):
+         timeout=DEFAULT_TIMEOUT, verify_ssl=True, error_class=HttpError,
+         stream=False):
     """送出一次請求，必要時重試，回傳 requests 的 response。
 
     重試只針對限流與伺服器端暫時狀況（見 RETRY_STATUS）。連線錯誤與逾時也
     重試 —— 那多半是網路抖動。
+
+    stream=True 時內容不會先讀進記憶體，由呼叫端自行以 iter_content 取用並
+    負責關閉 response。下載附件那類「可能幾百 MB」的回應一定要走這條，否則
+    整個檔案會先進記憶體，而 Qt 端的腳本行程沒有多餘的空間可揮霍。
 
     狀態碼的檢查不在這裡：各服務的錯誤訊息藏在不同欄位，而且 4xx 要給的提示
     也不一樣，那些留給各自的 check_response()。
@@ -111,7 +116,7 @@ def send(session, method, url, params=None, json_body=None,
         try:
             response = session.request(method, url, params=params,
                                        json=json_body, timeout=timeout,
-                                       verify=verify_ssl)
+                                       verify=verify_ssl, stream=stream)
         except requests.exceptions.RequestException as exc:
             last_error = error_class("無法連線：%s" % exc, url=url)
             continue
