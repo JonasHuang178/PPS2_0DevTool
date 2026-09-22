@@ -19,8 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import script_io
 import single_building
+from script_utils import file_utils
 from script_utils import logger
-from script_utils import system_utils
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "modify_setting"
@@ -47,7 +47,7 @@ def main():
     logger.info("寫入 %d 筆設定", len(files))
     script_io.progress("寫入設定…")
 
-    written = system_utils.write_lines(path, files)
+    written = file_utils.write_lines(path, files)
 
     logger.info("寫入完成：%s", path)
 

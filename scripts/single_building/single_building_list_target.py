@@ -21,8 +21,8 @@ import os
 
 import script_io
 import single_building
+from script_utils import file_utils
 from script_utils import logger
-from script_utils import system_utils
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "list_target"
@@ -44,7 +44,7 @@ def main():
 
     # 設定檔存的是絕對路徑；畫面顯示的是檔名，因此兩者一起回傳。
     files = [{"name": os.path.basename(line), "path": line}
-             for line in system_utils.read_lines(path)]
+             for line in file_utils.read_lines(path)]
 
     logger.info("讀出 %d 筆", len(files))
 

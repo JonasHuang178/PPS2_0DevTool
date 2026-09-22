@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""系統層面的共用 API：檔案系統、暫存目錄、環境變數與路徑表示法。
+"""系統層面的共用 API：向作業系統要東西。
 
-放這裡的東西不認得任何一個應用功能 —— 它們是「作業系統提供什麼」的薄封裝，
-任何功能都能拿去用。只服務單一功能的邏輯不屬於這裡，應該留在該功能自己的
-目錄下。
+環境變數、建立目錄、列出目錄內容、暫存目錄在哪、路徑長什麼樣 —— 都是「作業
+系統提供什麼」的薄封裝，任何功能都能拿去用。只服務單一功能的邏輯不屬於這裡，
+應該留在該功能自己的目錄下。
+
+**讀寫檔案內容**不在這裡，在 file_utils.py。界線是：跟作業系統要東西的放這裡，
+跟檔案內容打交道的放那裡。
 
 這一個分組刻意是**單一檔案**而不是套件目錄。呼叫端一律以
 `from script_utils import system_utils` 取用，兩種形式在 import 端完全相同，
@@ -24,15 +27,13 @@ from script_utils import logger
 __all__ = [
     "create_folder",
     "list_files_by_suffix",
-    "read_lines",
-    "write_lines",
     "temp_file_path",
     "get_env_var",
     "to_windows_path_format",
 ]
 
 
-# --- 檔案系統 --------------------------------------------------------------
+# --- 目錄 --------------------------------------------------------------
 
 def create_folder(folder_path):
     """建立資料夾，路徑中缺少的上層目錄一併建立。
@@ -106,50 +107,6 @@ def list_files_by_suffix(directory, suffix, recursive=False):
     logger.debug("在 %s 找到 %d 個 %s（recursive=%s）",
                  directory, len(entries), suffix, recursive)
     return entries
-
-
-def read_lines(path):
-    """讀出行式文字檔的內容，去掉空白行。
-
-    檔案不存在時回傳空清單而不是拋出例外 —— 對呼叫端而言「還沒建立」與
-    「內容是空的」是同一件事。
-    """
-    if not os.path.isfile(path):
-        logger.debug("檔案尚不存在：%s", path)
-        return []
-
-    with open(path, "r", encoding="utf-8") as handle:
-        raw = handle.read().splitlines()
-
-    lines = []
-    for line in raw:
-        line = line.strip()
-        if line:
-            lines.append(line)
-
-    logger.debug("自 %s 讀出 %d 行", path, len(lines))
-    return lines
-
-
-def write_lines(path, lines):
-    """把每一行寫入檔案，覆蓋原有內容。空白行會被略過。
-
-    lines 為空時寫入空內容 —— 那是有效的結果，不是錯誤。
-
-    回傳實際寫入的行數。
-    """
-    cleaned = []
-    for line in lines:
-        line = str(line).strip()
-        if line:
-            cleaned.append(line)
-
-    with open(path, "w", encoding="utf-8") as handle:
-        for line in cleaned:
-            handle.write(line + "\n")
-
-    logger.debug("寫入 %s，共 %d 行", path, len(cleaned))
-    return len(cleaned)
 
 
 # --- 暫存目錄 --------------------------------------------------------------

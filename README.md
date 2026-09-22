@@ -61,7 +61,7 @@ Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ �
 | | 分組依據 | 例子 |
 |---|---|---|
 | **入口腳本** | 應用**功能** | `scripts/single_building/` |
-| **共用模組** | 技術**領域** | `script_utils/system_utils.py`、`script_utils/gitlab_utils.py` |
+| **共用模組** | 技術**領域** | `script_utils/system_utils.py`、`file_utils.py`、`gitlab_utils.py` |
 
 共用模組**不依功能分組** —— 那樣的話第二個功能需要同一個能力時就無處可放。
 只服務單一功能的東西留在 `scripts/<功能>/` 之下。
@@ -120,9 +120,9 @@ PPS2_0DevTool/
 │   │
 │   └── script_utils/         共用模組依「技術領域」分組
 │       ├── logger.py         log（唯一設定 logging 的地方）
-│       ├── system_utils.py   系統層面：建立資料夾、依副檔名列檔案、
-│       │                     行式文字檔讀寫、暫存目錄、環境變數、
-│       │                     路徑轉 Windows 表示法
+│       ├── system_utils.py   向作業系統要東西：環境變數、建立資料夾、
+│       │                     依副檔名列檔案、暫存目錄、路徑轉 Windows 表示法
+│       ├── file_utils.py     檔案內容：行式文字檔的讀寫
 │       └── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
 │                             檔案內容、merge request
 │
