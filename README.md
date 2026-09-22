@@ -61,10 +61,16 @@ Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ �
 | | 分組依據 | 例子 |
 |---|---|---|
 | **入口腳本** | 應用**功能** | `scripts/single_building/` |
-| **共用模組** | 技術**領域** | `script_utils/system_utils.py`、`script_utils/gitlab_utils/` |
+| **共用模組** | 技術**領域** | `script_utils/system_utils.py`、`script_utils/gitlab_utils.py` |
 
 共用模組**不依功能分組** —— 那樣的話第二個功能需要同一個能力時就無處可放。
 只服務單一功能的東西留在 `scripts/<功能>/` 之下。
+
+一個分組**預設是單一 `.py` 檔案**，超過約 500 行、或出現彼此不相依的獨立關切時
+才拆成目錄，由該目錄的 `__init__.py` 原樣 re-export。呼叫端一律寫
+`from script_utils import <分組>`，兩種形式在 import 端完全相同，拆與不拆都不必
+改任何一行呼叫 —— 所以這個決定晚做比早做便宜：先拆換到的只有一份要跟著維護的
+再匯出清單，漏掉一筆的症狀是「函式明明寫好了卻搆不到」。
 
 因為入口腳本放進了子目錄，每支頂部都有一行把 `scripts/` 插進 `sys.path` 的設定，
 **不能刪**：Python 只把「腳本所在目錄」放進 `sys.path`，少了它，命令列直接執行時
@@ -116,7 +122,7 @@ PPS2_0DevTool/
 │       ├── system_utils.py   系統層面：建立資料夾、依副檔名列檔案、
 │       │                     行式文字檔讀寫、暫存目錄、環境變數、
 │       │                     路徑轉 Windows 表示法
-│       └── gitlab_utils/     GitLab REST（尚無內容）
+│       └── gitlab_utils.py   GitLab REST（尚無內容）
 │
 └── openspec/                 規格與設計決策
     ├── specs/                現行行為契約（三個 capability）
