@@ -18,7 +18,7 @@ import tempfile
 
 from script_utils import logger
 
-__all__ = ["read_data", "write_file", "dump"]
+__all__ = ["read_data", "load_data", "write_file", "dump"]
 
 
 # 縮排 2 格：與 script_io 傾印的請求模板一致，也是多數人讀 JSON 時的預期。
@@ -52,6 +52,47 @@ def read_data(file_path):
         raise ValueError("JSON 格式錯誤（%s）：%s" % (file_path, exc))
 
     logger.debug("自 %s 讀出 JSON（%s）", file_path, type(data).__name__)
+    return data
+
+
+def load_data(json_string):
+    """把 JSON 字串解析成 Python 資料結構。
+
+    與 dump() 成對：dump 把資料變成字串，load_data 把字串變回資料。讀檔請用
+    read_data() —— 那一支收的是**路徑**，這一支收的是**內容**。分成兩支而不是
+    讓一支去猜，是因為 "{}" 這種字串既像內容、又可能是某人真的取的檔名，而猜錯
+    的那次錯誤會出現在離成因很遠的地方。
+
+    收字串也收 bytes（bytes 以 UTF-8 解碼）—— HTTP 回應與子行程的輸出拿到的都是
+    bytes，讓呼叫端每次自己 decode 一次只是把同一行複製到每個呼叫點。
+
+    空字串或只有空白視為格式錯誤，訊息明講「內容是空的」。當成 {} 是猜測，而猜錯
+    的那次會讓呼叫端拿著空資料一路跑下去，直到很後面才發現什麼都沒讀到。
+
+    格式錯誤時拋出 ValueError，訊息帶 json 給的行列位置，但**不附上內容片段** ——
+    這個字串常常是 API 回應或設定，裡面可能有權杖，而錯誤訊息會被入口腳本放進
+    結果信封、寫進 CI 日誌。位置足以定位問題，內容不值得那個風險。
+    """
+    if isinstance(json_string, bytes):
+        try:
+            json_string = json_string.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("JSON 內容不是合法的 UTF-8：%s" % exc)
+
+    if not isinstance(json_string, str):
+        raise ValueError("JSON 內容必須是字串或 bytes，收到 %s"
+                         % type(json_string).__name__)
+
+    if not json_string.strip():
+        raise ValueError("JSON 內容是空的")
+
+    try:
+        data = json.loads(json_string)
+    except ValueError as exc:
+        raise ValueError("JSON 格式錯誤：%s" % exc)
+
+    logger.debug("解析 JSON 字串（%d 字元）-> %s",
+                 len(json_string), type(data).__name__)
     return data
 
 
