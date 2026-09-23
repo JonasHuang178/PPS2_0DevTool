@@ -8,7 +8,9 @@
 #include <QList>
 #include <QMap>
 #include <QObject>
+#include <QSharedPointer>
 #include <QString>
+#include <QTemporaryDir>
 
 QT_BEGIN_NAMESPACE
 class QCheckBox;
@@ -126,7 +128,20 @@ private:
     {
         QString repo;
         QString mrIid;
-        QString debugDir;        // 空字串 = 未勾選除錯，腳本據此不寫任何檔案
+        QString debugDir;        // 空字串 = 未勾選除錯，不寫 debug.log
+
+        // 每一步的產物都寫進這裡，第 5 步再以路徑把它們讀回來合併。
+        //
+        // **一定有值** —— 勾了除錯就是 debugDir，沒勾就是一個暫存目錄。
+        // 中間產物落檔不再是「除錯才開啟」的選項，因為第 5 步的輸入就是檔案
+        // 路徑；沒勾除錯時改走暫存目錄，使用者看得到的結果完全一樣。
+        QString workDir;
+
+        // 沒勾除錯時持有上面那個暫存目錄。它的生命週期綁在這份 context 上，
+        // 而 context 由流程的決策函式持有 —— 流程一結束，決策函式連同這個
+        // QTemporaryDir 一起消滅，目錄也就被刪掉了。不必在任何地方寫清理。
+        QSharedPointer<QTemporaryDir> tempDir;
+
         QString aiModeName;
         QString aiApiUrl;
         QString aiApiKey;

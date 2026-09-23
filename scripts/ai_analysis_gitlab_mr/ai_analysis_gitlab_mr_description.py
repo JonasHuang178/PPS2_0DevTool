@@ -135,7 +135,7 @@ def main():
 
     description = _build_markdown(repo, mr_iid, mr or {})
 
-    # 勾了除錯才落檔。out_path 為空時一個檔案都不會產生。
+    # 給了 out_path 才落檔。為空時一個檔案都不會產生。
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], description)
     ai_analysis_gitlab_mr.write_debug_log(
         debug_dir, "description -> %d 字元" % len(description))

@@ -6,6 +6,7 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QItemSelectionModel>
@@ -20,6 +21,7 @@
 #include <QStandardItemModel>
 #include <QStyle>
 #include <QTableView>
+#include <QTemporaryDir>
 
 #include <QCoreApplication>
 
@@ -126,6 +128,22 @@ QString extractMergeRequestIid(const QString &text)
         last = current;
 
     return last;
+}
+
+// 把工作目錄下的某個產物當成參數送出 —— 檔案不存在就整個鍵不放。
+//
+// 合併那一步的契約是「路徑給了就必須存在」：指名一個不存在的檔案代表上一步
+// 沒寫成功，該當成錯誤停下來。而「這一段本來就沒有內容」（例如未要求程式碼
+// 審閱）要表達成**沒給**，不是給一個指向空氣的路徑。兩者的差別全靠這裡。
+void insertArtifactPath(QJsonObject &params,
+                        const QString &key,
+                        const QDir &workDir,
+                        const char *artifactName)
+{
+    const QString path =
+            workDir.absoluteFilePath(QString::fromLatin1(artifactName));
+    if (QFile::exists(path))
+        params.insert(key, path);
 }
 
 } // namespace
@@ -677,6 +695,25 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
 
         QTDebug(QString("[%1] 分析檔目錄：%2").arg(functionName(), dir));
         context.debugDir = dir;
+        context.workDir  = dir;
+    } else {
+        // 沒勾除錯也要有地方放中間產物 —— 第 5 步的輸入是檔案路徑，不是內容。
+        // 用暫存目錄，流程結束時連同 context 一起被刪，使用者的磁碟上不留東西。
+        QSharedPointer<QTemporaryDir> temp(new QTemporaryDir);
+        if (!temp->isValid()) {
+            m_shell->showUI_ErrorMessageBox(
+                        QString("無法建立暫存目錄：\n%1")
+                        .arg(temp->errorString()));
+            return;
+        }
+
+        // 預設會在解構時一併移除目錄；寫明只是讓這件事在讀 code 時看得見。
+        temp->setAutoRemove(true);
+
+        context.tempDir = temp;
+        context.workDir = temp->path();
+        QTDebug(QString("[%1] 暫存工作目錄：%2")
+                .arg(functionName(), context.workDir));
     }
 
     // 決策函式在步驟之間同步執行，裡面不得有任何使用者互動。
@@ -715,12 +752,13 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
     params.insert(QString("mr_iid"),  context.mrIid);
     params.insert(QString("debug_dir"), context.debugDir);
 
-    // 勾了除錯才給輸出路徑；沒給的話腳本不寫任何檔案。
-    if (!context.debugDir.isEmpty()) {
-        params.insert(QString("out_path"),
-                      QDir(context.debugDir).absoluteFilePath(
-                          QString::fromLatin1(kStepArtifactName[index])));
-    }
+    // 每一步都落檔。工作目錄一定有值（勾除錯就是使用者指定的目錄，否則是
+    // 暫存目錄），因此不再有「這一步沒有輸出檔」的情況 —— 第 5 步要靠這些
+    // 檔案才合併得出報告。
+    const QDir workDir(context.workDir);
+    params.insert(QString("out_path"),
+                  workDir.absoluteFilePath(
+                      QString::fromLatin1(kStepArtifactName[index])));
 
     // 前面步驟的結果原樣轉送 —— 只挑欄位、改名、轉送，不解讀、不分支。
     const QJsonObject scriptInfo = (done.size() > 1)
@@ -778,13 +816,15 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         step.label      = QString("步驟 5/5：合併為 markdown");
         step.scriptPath = QString(kMergeToMdScript);
         step.action     = QString("merge_to_md");
-        params.insert(QString("description"),
-                      done.at(0).data.value(QString("description")).toString());
-        params.insert(QString("script_info"), scriptInfo);
-        params.insert(QString("summary"),
-                      done.at(2).data.value(QString("summary")).toString());
-        params.insert(QString("code_review"),
-                      done.at(3).data.value(QString("code_review")).toString());
+        // 這一步收的是**檔案路徑**，不是內容。路徑給了就必須存在，所以只有
+        // 真的寫出來的那幾份才送過去 —— 例如未要求程式碼審閱時第 4 步不落檔，
+        // 那一段就整段略過。
+        insertArtifactPath(params, QString("ori_md_file_path"),
+                           workDir, kStepArtifactName[0]);
+        insertArtifactPath(params, QString("mr_summary_json_file_path"),
+                           workDir, kStepArtifactName[2]);
+        insertArtifactPath(params, QString("code_review_md_file_path"),
+                           workDir, kStepArtifactName[3]);
         break;
 
     default:
