@@ -32,6 +32,16 @@
 //
 // 3. 按下取消後對話框不關閉，改顯示「取消中…」直到行程真的結束。
 //    否則主視窗會在行程還在終止的那幾秒內被解除鎖定。
+//
+// 4. 固定尺寸，使用者不能以滑鼠改變大小。
+//
+//    這條是整個工具的規則，不是這個對話框的特例：每一個功能按下執行鈕都會看到
+//    它，尺寸會不會被拖動不該因功能而異。外殼統一提供，功能不需要做任何事。
+//
+//    固定尺寸同時解掉另一個毛病：QProgressDialog 會隨標籤內容重算大小，階段
+//    文字一長一短，視窗就在執行過程中自己縮放。代價是過長的階段文字放不下 ——
+//    因此顯示時截斷成「…」並把完整內容放進 tooltip（與 MR 表格的標題欄同一種
+//    處理）。直接讓它被裁掉的話，斷點取決於像素寬度，中文還可能斷在半個字上。
 
 class ProcessingDialog : public QProgressDialog
 {
@@ -58,6 +68,11 @@ protected:
 
     void keyPressEvent(QKeyEvent *event) Q_DECL_OVERRIDE;
     void closeEvent(QCloseEvent *event) Q_DECL_OVERRIDE;
+
+private:
+    // 套用標籤文字：放不下就截斷，完整內容進 tooltip。所有會動到標籤的路徑
+    // 都要走這裡，否則固定寬度之下長文字會被硬裁。
+    void applyLabelText(const QString &text);
 
 private slots:
     void onCanceled();
