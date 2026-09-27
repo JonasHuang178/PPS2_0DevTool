@@ -498,6 +498,43 @@ def analysis_payload(overview, model="", jira_url="", mr_diff=None):
 
 # --- 渲染（讀取側）----------------------------------------------------------
 
+def _schema_version(value):
+    """把版本值收斂成整數；認不出來回 None。
+
+    認得時寬鬆、寫出時正規 —— 與標題比對同一個原則。收整數、浮點數與純數字字串，
+    因為 2、"2"、"2.0" 寫的是同一個版本，而產生這個檔案的可能是 AI、可能是人手寫的
+    設定，三種寫法都會出現。擋在這裡的話，使用者看到的是「認不得的版本 '2'」，而
+    那個錯誤與真正的版本不合長得一模一樣，只差一對引號。
+
+    比對前一律轉成整數：版本要比大小，而字串比較會在 "10" 與 "9" 之間給出錯的答案。
+    非整數的版本（"2.5"）不接受 —— 那代表一個我們沒有定義過的東西，猜它等於 2 只是
+    把問題往下游丟。
+
+    bool 特別排除：Python 的 True 是 int 的子類別而且等於 1，不擋的話
+    schema_version 寫成 true 會被當成版本 1。
+    """
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, int):
+        return value
+
+    if isinstance(value, float):
+        return int(value) if value == int(value) else None
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+        return int(number) if number == int(number) else None
+
+    return None
+
+
 def _fence_for(code):
     """挑一個不會被內容提前關掉的圍籬。
 
@@ -600,13 +637,16 @@ def render_analysis(payload):
             "讀到的型別是 %s。" % type(payload).__name__,
             "ANALYSIS_BAD_TYPE")
 
-    version = payload.get("schema_version")
-    if version != ANALYSIS_SCHEMA_VERSION:
+    raw_version = payload.get("schema_version")
+    if _schema_version(raw_version) != ANALYSIS_SCHEMA_VERSION:
         raise AnalysisFormatError(
-            "認不得的 AI 分析結果版本：%r" % (version,),
-            "這份實作認得的是 schema_version %d。\n"
+            "認不得的 AI 分析結果版本：%r" % (raw_version,),
+            "這份實作認得的是 schema_version %d —— 數字與純數字字串都收"
+            "（%d、\"%d\"、\"%d.0\" 視為同一個版本）。\n"
             "版本不合時不做猜測 —— 猜錯的結果是一份看起來正常、實際上少了幾段的"
-            "報告，而它會回報成功。" % ANALYSIS_SCHEMA_VERSION,
+            "報告，而它會回報成功。"
+            % (ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION,
+               ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION),
             "ANALYSIS_SCHEMA_UNSUPPORTED")
 
     analysis = payload.get("analysis")
