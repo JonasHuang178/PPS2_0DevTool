@@ -143,6 +143,11 @@ def main():
             script_io.arg("mr_iid", default="",
                           help="Merge Request 編號；只用於診斷訊息"),
 
+            # 出處資訊用。使用者在畫面上選的那個 AI 模式名稱，原樣印在報告末尾，
+            # 讓讀的人知道這份分析是哪一種模式產生的。
+            script_io.arg("ai_mode", default="",
+                          help="AI 模式名稱；只用於報告末尾的出處資訊"),
+
             script_io.arg("debug_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
         ],
@@ -210,6 +215,10 @@ def main():
 
     if code_review.strip():
         sections.append(code_review.strip())
+
+    # 出處資訊永遠都在：報告被貼到 MR 討論串之後就脫離了產生它的環境，這一段是
+    # 「這份分析是哪一版腳本、在哪裡跑出來的」唯一的答案。
+    sections.append(ai_analysis_gitlab_mr.render_footer(params["ai_mode"]))
 
     markdown = "\n\n".join(sections) + "\n"
 

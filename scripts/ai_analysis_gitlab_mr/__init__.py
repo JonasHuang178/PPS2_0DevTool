@@ -30,6 +30,9 @@ __all__ = [
     "render_ai_section",
     "ANALYSIS_SCHEMA_VERSION",
     "AnalysisFormatError",
+    "SCRIPT_NAME",
+    "SCRIPT_VERSION",
+    "render_footer",
     "render_analysis",
     "MAX_FINDING_DIFF_BYTES",
     "finding",
@@ -722,3 +725,92 @@ def render_analysis(payload):
         blocks.extend(files)
 
     return "\n\n".join(blocks)
+
+
+
+# --- 報告末尾的出處資訊 ------------------------------------------------------
+#
+# 一份報告被貼到 MR 討論串之後就脫離了產生它的環境。半年後有人問「這段分析是哪來的、
+# 為什麼跟現在跑出來的不一樣」，footer 是唯一答得出來的東西。
+
+# 這支腳本的名稱與版本。**改了報告的產出方式就把版本往上加** —— 那是這一行存在的
+# 唯一理由，不加的話舊報告與新報告在外觀上分不出來。
+SCRIPT_NAME = "MR Summary Script"
+SCRIPT_VERSION = "1.0"
+
+
+def _link(text, url):
+    """有網址就做成連結，沒有就只留文字。
+
+    CI_PROJECT_URL 沒設時仍然把編號印出來 —— 知道是哪一個 pipeline，比因為做不成
+    連結就整段消失有用。
+    """
+    return "[%s](%s)" % (text, url) if url else text
+
+
+def _ci_origin():
+    """CI 環境的出處：pipeline 編號與 commit，各自連回 GitLab。
+
+    三個變數都是 GitLab Runner 自動注入的，不需要在設定檔裡宣告。不在 CI 裡跑時
+    它們不存在，回空字串，由呼叫端改用工具端的出處。
+    """
+    project = os.environ.get("CI_PROJECT_URL", "").strip().rstrip("/")
+    pipeline = os.environ.get("CI_PIPELINE_ID", "").strip()
+    sha = os.environ.get("CI_COMMIT_SHORT_SHA", "").strip()
+
+    parts = []
+    if pipeline:
+        parts.append("Gitlab Pipeline %s" % _link(
+            "#" + pipeline,
+            "%s/-/pipelines/%s" % (project, pipeline) if project else ""))
+    if sha:
+        parts.append("Commit %s" % _link(
+            sha, "%s/-/commit/%s" % (project, sha) if project else ""))
+
+    return " | ".join(parts)
+
+
+def _tool_origin():
+    """工具端的出處：工具名稱與版本。
+
+    TOOLNAME / TOOLVERSION 由 PythonRunner 對每一次執行注入，所以從工具跑的報告
+    一定有這兩個值；命令列直接執行時沒有，那時 footer 就只剩腳本版本那一行。
+    """
+    name = os.environ.get("TOOLNAME", "").strip()
+    version = os.environ.get("TOOLVERSION", "").strip()
+    if not name:
+        return ""
+    return ("%s %s" % (name, version)).strip()
+
+
+def render_footer(ai_mode=""):
+    """報告最後那一段出處資訊。
+
+    形狀：
+
+        ---
+
+        MR Summary Script v1.0(Open AI)
+        Gitlab Pipeline #1000 | Commit e456d23
+
+    第二行依環境而定：CI 裡是 pipeline 與 commit，從工具跑是工具名稱與版本，兩者都
+    沒有（命令列直接執行）就整行不出現。**腳本版本那一行永遠都在** —— 它是這整段
+    存在的理由。
+
+    CI 優先於工具：兩者同時存在時（例如在 CI 容器裡開工具，實務上不會發生）pipeline
+    與 commit 指得更精確。
+
+    分隔線之前必須空一行，否則 markdown 會把上一行文字當成 setext 標題，`---` 變成
+    底線而不是分隔線。
+    """
+    head = "%s v%s" % (SCRIPT_NAME, SCRIPT_VERSION)
+    mode = _plain(ai_mode)
+    if mode:
+        head += "(%s)" % mode
+
+    lines = [head]
+    origin = _ci_origin() or _tool_origin()
+    if origin:
+        lines.append(origin)
+
+    return "---\n\n" + "\n".join(lines)

@@ -825,6 +825,9 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
                            workDir, kStepArtifactName[2]);
         insertArtifactPath(params, QString("code_review_md_file_path"),
                            workDir, kStepArtifactName[3]);
+        // 報告末尾的出處資訊要印出使用者選的 AI 模式。這一步本身不做 AI 分析，
+        // 所以它只是被轉送過來、原樣印出，與 repo / mr_iid 同一類。
+        params.insert(QString("ai_mode"), context.aiModeName);
         break;
 
     default:
