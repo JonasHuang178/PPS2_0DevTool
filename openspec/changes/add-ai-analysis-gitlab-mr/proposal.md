@@ -30,7 +30,7 @@ GitLab REST 的呼叫沿用主線既有的 `scripts/script_utils/gitlab_utils.py
 
 > 本 change 原先要自己在 `scripts/script_utils/gitlab_utils/` 建立一份以標準函式庫實作的版本，理由是「本專案沒有任何 Python 相依清單」。該前提在本 change 進行期間失效 —— 主線獨立地把 `script_utils` 擴充成七個模組並加入 `requirements.txt`。本 change 因此在 rebase 時移除自帶的那份，改接主線的模組。原委見 design.md 決策二十一。
 
-**取得 Merge Request 清單那一支為真實實作**，其餘五支本次回傳寫死的假資料（見下）。
+**取得 Merge Request 清單與步驟 1 取得 Merge Request 描述兩支為真實實作**；步驟 5 合併為 markdown 是真實邏輯（它沒有外部依賴）；其餘三支本次回傳寫死的假資料（見下）。
 
 ### **BREAKING** 設定檔新增工具層級 `Service` 區塊
 
@@ -78,7 +78,19 @@ JIRA Key 的模式（`none` / `manual` / `auto`）、手動指定的 key、以�
 
 勾選 `Add Debug Analysis file` 時，Qt 在流程啟動前建立一個帶時間戳記的目錄並把路徑傳入每一步；未勾選時傳空字串，整條流程不產生任何檔案 —— 報告內容一律經由回應的 `data` 送回，Qt 從不開檔。
 
-### 本次的實作範圍：契約為真，流程五步的內臟為假
+### MR 描述的分段與最終報告的形狀
+
+MR 的描述可能同時裝著兩樣東西：人寫的原始描述，以及先前某一輪的 AI 分析。步驟 1
+以兩個標題為邊界把它切開，只取原始描述那一段；步驟 5 把它接上這一輪的 AI 分析，
+組成要顯示的報告。
+
+- 兩個標題常數**只有一份**，由步驟 1 與步驟 5 共用 —— 它們是同一個邊界的兩側
+- 標題的比對刻意寬鬆（階層、大小寫、舊的筆誤拼法都認得），寫出去的一律是正規形式
+- 原始描述為空時，該段**連標題一起**不出現在報告中
+- 報告不含報告標題與產生時間，段落之間不加分隔線
+- 報告只用於顯示，工具**不寫回** GitLab 的 MR 描述
+
+### 本次的實作範圍：契約為真，流程中段三步的內臟為假
 
 六支腳本的**對外契約一律為真**（標準輸出只有結果 JSON、進度走錯誤輸出、結束碼、必填檢查、參數宣告、模板傾印、兩種投遞方式）。
 
@@ -86,15 +98,21 @@ JIRA Key 的模式（`none` / `manual` / `auto`）、手動指定的 key、以�
 |---|---|
 | Qt 側全部 | 真實實作 |
 | 取得 Merge Request 清單 | **真實實作**，真的連線至 GitLab |
-| 分析流程五步 | 回傳寫死的假資料 |
+| 步驟 1：取得 Merge Request 描述 | **真實實作**，真的連線至 GitLab |
+| 流程步驟 2–4 | 回傳寫死的假資料 |
+| 步驟 5：合併為 markdown | 真實邏輯 —— 沒有外部依賴，工作就是把前面各步的產物接起來 |
 
 取得清單那支做成真的，是因為它一次驗證掉四件否則要等下一個 change 才知道的事：`namespace/project` 字串是否足以識別專案、憑證經環境變數的整條路徑是否接通、`gitlab_utils` 用起來的形狀、以及畫面上的查詢條件如何對應到實際的查詢參數。它同時是風險最低的一支：唯讀、單一端點、失敗了只是表格空著。
+
+步驟 1 後來也做成真的，理由同一類：描述分段的規則（兩個標題、舊的拼法、圍籬內
+不算）只有對著真實的 MR 描述才驗得出來，而它與取得清單同樣是唯讀、單一端點，
+失敗了只是那一步回報錯誤而流程停下。
 
 ## Capabilities
 
 ### New Capabilities
 
-- `ai-analysis-gitlab-mr`: AI Analysis GitLab MR 功能 tab 的完整行為 —— 畫面配置與元件啟用規則、Repository 與 MR 清單的來源與取得時機、單選語意與過期清單的處理、JIRA Key 三種模式、五步分析流程的組成與參數組裝、憑證的傳遞方式、失敗與結果的呈現，以及本次交付的腳本實作範圍
+- `ai-analysis-gitlab-mr`: AI Analysis GitLab MR 功能 tab 的完整行為 —— 畫面配置與元件啟用規則、Repository 與 MR 清單的來源與取得時機、單選語意與過期清單的處理、JIRA Key 三種模式、五步分析流程的組成與參數組裝、MR 描述的分段規則與最終報告的形狀、憑證的傳遞方式、失敗與結果的呈現，以及本次交付的腳本實作範圍
 
 ### Modified Capabilities
 
@@ -114,6 +132,8 @@ JIRA Key 的模式（`none` / `manual` / `auto`）、手動指定的 key、以�
 ### 腳本
 
 - `scripts/ai_analysis_gitlab_mr/` 新增入口腳本
+- `scripts/ai_analysis_gitlab_mr/__init__.py`：除既有的 helper 之外，另收兩個
+  標題常數與描述分段的函式，供步驟 1 與步驟 5 共用
 - `scripts/script_utils/gitlab_utils.py`：沿用主線既有模組，本 change 不新增共用模組（原計畫要自建一份，見 design.md 決策二十一）
 - `scripts/single_building/` 四支腳本不需修改
 
