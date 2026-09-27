@@ -65,14 +65,20 @@ def _read_required(path, what):
 
 
 def _summary_text(payload, path):
-    """從 AI 分析結果檔取出要接進報告的那段文字。
+    """從 AI 分析結果檔取出要接進報告的那一段 markdown。
 
-    這個檔案正常是一個物件，markdown 在 summary 欄位裡。整份就是一段文字時原樣
-    採用 —— 對合併而言「能接上去的文字」才是重點。
+    吃兩種形狀：
 
-    取到的東西不是文字時**回 FAIL 而不是硬轉**。硬轉的下場是把 Python 的 repr
-    （`{'risks': [...]}` 這種）原樣印進報告裡，那份報告看起來是成功產出的，交出去
-    才被發現中間夾了一段程式碼；在這裡攔下來，訊息直接說出型別與檔案位置。
+        結構化（schema_version / analysis）  交給 render_analysis() 渲染
+        整份就是一段文字，或 summary 是字串  原樣採用
+
+    第二種是為了讓還沒改寫的步驟 3 與既有的產物檔照樣跑得動。版本欄位存在的意義
+    就是同時支援多種形狀，而不是改一邊就讓另一邊爆掉。
+
+    取到的東西不是文字也不是認得的結構時**回 FAIL 而不是硬轉**。硬轉的下場是把
+    Python 的 repr（`{'mrDiff': {...}}` 這種）原樣印進報告裡，那份報告看起來是成功
+    產出的，交出去才被發現中間夾了一段程式碼；在這裡攔下來，訊息直接說出型別與
+    檔案位置。
 
     這一條是真的踩過：步驟 3 改寫之後 summary 變成巢狀物件，而當時這裡直接對它
     呼叫 .strip()，錯誤是一句 "dict object has no attribute strip" —— 那句話既沒說
@@ -84,9 +90,18 @@ def _summary_text(payload, path):
     if not isinstance(payload, dict):
         script_io.reply_fail(
             "AI 分析結果檔的內容不是物件也不是文字：%s" % path,
-            detail="讀到的型別是 %s。這個檔案應該是 {\"summary\": \"...\"} 這樣的"
-                   "物件，或整份就是一段文字。" % type(payload).__name__,
+            detail="讀到的型別是 %s。" % type(payload).__name__,
             code="MERGE_SUMMARY_BAD_TYPE")
+
+    # 結構化的那一種。認出來的依據是這兩個鍵的存在，而不是「summary 不是字串」——
+    # 後者會讓一個打錯的欄位名安靜地走進渲染路徑。
+    if "schema_version" in payload or "analysis" in payload:
+        try:
+            return ai_analysis_gitlab_mr.render_analysis(payload)
+        except ai_analysis_gitlab_mr.AnalysisFormatError as exc:
+            script_io.reply_fail(
+                "%s（檔案：%s）" % (exc, path),
+                detail=exc.detail, code=exc.code)
 
     value = payload.get("summary")
     if value is None or value == "":
@@ -98,7 +113,7 @@ def _summary_text(payload, path):
         "AI 分析結果檔的 summary 欄位不是文字：%s" % path,
         detail="summary 的型別是 %s，而報告需要一段可以直接接上去的 markdown。\n"
                "這個檔案目前有的欄位：%s\n"
-               "若 markdown 放在別的欄位，請讓上一步把它寫進 summary。"
+               "若這是結構化的分析，請讓上一步加上 schema_version 與 analysis。"
                % (type(value).__name__,
                   "、".join(sorted(payload.keys())) or "(無)"),
         code="MERGE_SUMMARY_NOT_TEXT")

@@ -27,6 +27,13 @@ __all__ = [
     "split_description",
     "render_original_description",
     "render_ai_section",
+    "ANALYSIS_SCHEMA_VERSION",
+    "AnalysisFormatError",
+    "render_analysis",
+    "MAX_FINDING_DIFF_BYTES",
+    "finding",
+    "file_entry",
+    "analysis_payload",
     "CredentialError",
     "gitlab_credentials",
     "describe_gitlab_error",
@@ -359,3 +366,249 @@ def describe_gitlab_error(exc, repo):
                 "GITLAB_TLS_FAILED")
 
     return ("GitLab 查詢失敗：%s" % exc, "", "GITLAB_REQUEST_FAILED")
+
+
+
+# --- 步驟 3 的結構化分析 → markdown ------------------------------------------
+#
+# 步驟 3 產出的是**結構**（每個檔案、每筆發現的標題／理由／diff），不是排好版的
+# 文字。渲染放在這裡而不是步驟 3：報告長什麼樣是「報告」這件事的決定，而步驟 3
+# 之後還會長出 prompt 組裝、重試、計費 —— 把排版也塞進去會讓兩件事都更難改。
+#
+# 放這個模組而不是直接寫在步驟 5 裡面，是為了與寫入側（日後的 analysis_payload()
+# 等建構函式）待在同一個畫面：欄位名散在兩邊時，改名漏一邊的症狀是 KeyError，
+# 或更糟，安靜地少一段。
+
+# 認得的結構版本。收到別的版本明確失敗，不猜 —— 猜錯的結果是一份看起來正常、
+# 實際上少了幾段的報告，而它會回報成功。
+ANALYSIS_SCHEMA_VERSION = 2
+
+
+class AnalysisFormatError(Exception):
+    """AI 分析結果的結構不符。
+
+    與 CredentialError 同一個形狀：帶著入口腳本回報時要用的三樣東西，讓它一行就能
+    轉成 FAIL。這個模組**不自己呼叫 reply_fail** —— 那會讓一支看起來只是在組字串的
+    函式把行程結束掉，而呼叫端從簽章上看不出來。
+    """
+
+    def __init__(self, message, detail, code):
+        super(AnalysisFormatError, self).__init__(message)
+        self.detail = detail
+        self.code = code
+
+
+def _plain(value):
+    """收斂成去掉頭尾空白的字串。None 與非字串都吃得下 —— AI 回來的 JSON 常有
+    null，直接丟進報告會印出 "None"。"""
+    if value is None:
+        return ""
+    text = value if isinstance(value, str) else str(value)
+    return text.strip()
+
+
+# --- 建構（寫入側）----------------------------------------------------------
+#
+# 三個函式對應結構的三層。步驟 3 用它們組出要落檔與回傳的東西，而不是自己寫
+# dict literal：欄位名散在「步驟 3 寫」與「這個模組讀」兩邊就是兩份字串，改名漏
+# 一邊的症狀是 KeyError，或更糟，安靜地少一段。寫入側與讀取側因此放同一個檔案。
+
+# 單一 finding 帶的 diff 上限（位元組）。
+#
+# 整份報告最後經 stdout 回到 Qt 再塞進結果視窗，一個大 MR 的所有 hunk 全帶進來是
+# 幾百 KB 起跳。gitlab_utils.get_mr_plain_diff() 的 max_bytes 是同一個考量。
+MAX_FINDING_DIFF_BYTES = 4000
+
+_DIFF_TRUNCATED = "\n… （diff 已截斷）"
+
+
+def _clip_diff(diff):
+    """把過長的 diff 截斷，並在尾端明著說它被截斷了。
+
+    不說的話，讀報告的人會以為那個 hunk 就到那裡為止 —— 而被截掉的往往正是後半段。
+    以位元組計算（中文一個字三個位元組），errors="ignore" 丟掉切邊切破的半個字。
+    """
+    text = _plain(diff)
+    encoded = text.encode("utf-8")
+    if len(encoded) <= MAX_FINDING_DIFF_BYTES:
+        return text
+    return (encoded[:MAX_FINDING_DIFF_BYTES].decode("utf-8", "ignore")
+            + _DIFF_TRUNCATED)
+
+
+def finding(title, reason, diff=""):
+    """diffCode 裡的一筆：標題、理由，以及相關的那段 diff。"""
+    return {
+        "title": _plain(title),
+        "reason": _plain(reason),
+        "diff": _clip_diff(diff),
+    }
+
+
+def file_entry(title="", reason="", findings=None):
+    """mrDiff 底下的一個檔案：檔案層級的標題與理由，加上每一筆 finding。
+
+    title / reason 留空時渲染端整段略過，不會留下一個空標題。
+    """
+    return {
+        "title": _plain(title),
+        "reason": _plain(reason),
+        "diffCode": list(findings or []),
+    }
+
+
+def analysis_payload(overview, model="", jira_url="", mr_diff=None):
+    """組出步驟 3 要落檔與回傳的完整結構。
+
+    mrDiff 以檔案路徑為鍵。dict 在 Python 3.7+ 與 json 模組兩側都保留插入順序，
+    所以檔案在報告中的先後就是這裡放進去的先後。
+    """
+    return {
+        "schema_version": ANALYSIS_SCHEMA_VERSION,
+        "analysis": {
+            "model": _plain(model),
+            "jira_url": _plain(jira_url),
+            "overview": _plain(overview),
+            "mrDiff": dict(mr_diff or {}),
+        },
+    }
+
+
+# --- 渲染（讀取側）----------------------------------------------------------
+
+def _fence_for(code):
+    """挑一個不會被內容提前關掉的圍籬。
+
+    diff 的內容若自己含有三個反引號（改到 markdown 檔就會），固定用 ``` 會讓程式碼
+    區塊在半路結束，後面的內容變成一般文字 —— 而報告仍然「成功」產出。數出內容裡
+    最長的一串反引號，用比它多一個。
+    """
+    longest = 0
+    run = 0
+    for char in code:
+        if char == "`":
+            run += 1
+            if run > longest:
+                longest = run
+        else:
+            run = 0
+    return "`" * max(3, longest + 1)
+
+
+def _render_finding(item, path):
+    """diffCode 裡的一筆。"""
+    if not isinstance(item, dict):
+        raise AnalysisFormatError(
+            "AI 分析結果中 %s 的 diffCode 有一筆不是物件" % path,
+            "讀到的型別是 %s。diffCode 的每一筆應該是 "
+            "{title, reason, diff} 這樣的物件。" % type(item).__name__,
+            "ANALYSIS_FINDING_BAD_TYPE")
+
+    out = []
+    title = _plain(item.get("title"))
+    if title:
+        out.append("### %s" % title)
+
+    reason = _plain(item.get("reason"))
+    if reason:
+        out.append(reason)
+
+    diff = _plain(item.get("diff"))
+    if diff:
+        fence = _fence_for(diff)
+        out.append("%sdiff\n%s\n%s" % (fence, diff, fence))
+
+    return out
+
+
+def _render_file(path, entry):
+    """mrDiff 底下的一個檔案。"""
+    if not isinstance(entry, dict):
+        raise AnalysisFormatError(
+            "AI 分析結果中 %s 的內容不是物件" % path,
+            "讀到的型別是 %s。mrDiff 的每個值應該是 "
+            "{title, reason, diffCode} 這樣的物件。" % type(entry).__name__,
+            "ANALYSIS_FILE_BAD_TYPE")
+
+    # 檔案路徑用 H2：整段最後會被放在 AI_HEADING（H1）底下，所以檔案是第二層、
+    # 每一筆發現是第三層。檔案層級的標題改用粗體而不是 H3，才不會與發現撞階層。
+    out = ["## %s" % path]
+
+    title = _plain(entry.get("title"))
+    if title:
+        out.append("**%s**" % title)
+
+    reason = _plain(entry.get("reason"))
+    if reason:
+        out.append(reason)
+
+    for item in entry.get("diffCode") or []:
+        out.extend(_render_finding(item, path))
+
+    return out
+
+
+def render_analysis(payload):
+    """把步驟 3 的結構化分析渲染成 markdown（不含 AI 分析那一行標題）。
+
+    回傳的是「接在 AI_HEADING 底下的那一段」—— 標題由 render_ai_section() 加上，
+    因為那個字串同時是下一輪切段的邊界，只能有一個來源。
+
+    空的欄位整段不放：一個只有標題、底下什麼都沒有的區塊會讓人以為內容漏掉了。
+    """
+    if not isinstance(payload, dict):
+        raise AnalysisFormatError(
+            "AI 分析結果不是一個物件",
+            "讀到的型別是 %s。" % type(payload).__name__,
+            "ANALYSIS_BAD_TYPE")
+
+    version = payload.get("schema_version")
+    if version != ANALYSIS_SCHEMA_VERSION:
+        raise AnalysisFormatError(
+            "認不得的 AI 分析結果版本：%r" % (version,),
+            "這份實作認得的是 schema_version %d。\n"
+            "版本不合時不做猜測 —— 猜錯的結果是一份看起來正常、實際上少了幾段的"
+            "報告，而它會回報成功。" % ANALYSIS_SCHEMA_VERSION,
+            "ANALYSIS_SCHEMA_UNSUPPORTED")
+
+    analysis = payload.get("analysis")
+    if not isinstance(analysis, dict):
+        raise AnalysisFormatError(
+            "AI 分析結果缺少 analysis 物件",
+            "analysis 的型別是 %s。這個檔案目前有的欄位：%s"
+            % (type(analysis).__name__,
+               "、".join(sorted(payload.keys())) or "(無)"),
+            "ANALYSIS_MISSING_BODY")
+
+    blocks = []
+
+    overview = _plain(analysis.get("overview"))
+    if overview:
+        blocks.append(overview)
+
+    meta = []
+    model = _plain(analysis.get("model"))
+    if model:
+        meta.append("- 模型：%s" % model)
+    jira_url = _plain(analysis.get("jira_url"))
+    if jira_url:
+        meta.append("- JIRA：%s" % jira_url)
+    if meta:
+        blocks.append("\n".join(meta))
+
+    # 型別檢查要在「沒給就當空的」之前 —— 反過來寫的話，一個打錯成 [] 的
+    # mrDiff 會因為空 list 是 falsy 而變成 {}，報告少了整批檔案卻回報成功。
+    mr_diff = analysis.get("mrDiff")
+    if mr_diff is None:
+        mr_diff = {}
+    if not isinstance(mr_diff, dict):
+        raise AnalysisFormatError(
+            "AI 分析結果的 mrDiff 不是物件",
+            "mrDiff 的型別是 %s。它應該是以檔案路徑為鍵的物件。"
+            % type(mr_diff).__name__,
+            "ANALYSIS_MRDIFF_BAD_TYPE")
+
+    for path, entry in mr_diff.items():
+        blocks.extend(_render_file(_plain(path), entry))
+
+    return "\n\n".join(blocks)
