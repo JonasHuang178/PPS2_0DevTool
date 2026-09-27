@@ -29,6 +29,10 @@
 - [x] 3.4 樣式必須同時涵蓋 `:selected` 與 `:selected:!active` —— 只寫前者的話，焦點離開清單後選取態仍會褪成灰色，而這正是要解決的問題
 - [x] 3.5 確認樣式套用到 `QListView` 與 `QTableView` 兩者
 - [x] 3.6 驗證：Single Building 的兩個清單外觀改變但行為不變；選取一項後點擊其他控件，選取態不變色
+- [x] 3.7 處理中對話框改為固定尺寸：`setFixedSize()` 加 `Qt::MSWindowsFixedSizeDialogHint`（前者鎖尺寸，後者讓 Windows 的視窗邊緣不再是可拖曳的縮放區）；順序上要在 `setWindowFlags()` **之後**，因為那行會重建原生視窗
+- [x] 3.8 固定尺寸之後對話框不再隨標籤內容縮放，過長的階段文字改為截斷並把完整內容放進 tooltip（與 MR 表格標題欄同一種處理）；所有會動到標籤的路徑統一走 `applyLabelText()`
+- [ ] 3.9 驗證（**需 Windows 實機**）：執行中拖曳對話框邊緣與四角都無法改變大小；步驟切換與長短不一的階段文字都不會讓它跳動；過長的階段文字顯示為「…」且 tooltip 看得到全文；取消鈕沒有被固定高度切掉
+  - 實作環境沒有 qmake / make / g++（見本節開頭與第 10 節的說明），這三個檔案的C++ 改動**未經編譯**。尺寸 460x130 是估的，若取消鈕被切到就調 `ProcessingDialog.cpp` 開頭的 `kDialogHeight`。
 
 ## 4. UI：新增功能分頁
 

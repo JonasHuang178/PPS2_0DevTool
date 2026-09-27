@@ -560,6 +560,7 @@ void    showUI_InfoMessageBox(const QString &text);
 void    showUI_WarningMessageBox(const QString &text);
 void    showUI_ErrorMessageBox(const QString &text);
 void    showResultDialog(const QString &title, const QString &content, qint64 elapsedMs);
+// 處理中對話框由外殼自動顯示／關閉，功能不需要（也無法）自己建立
 QString getUI_sourcePathLineEditText() const;
 bool    removeTabByTitle(const QString &title);
 
@@ -659,6 +660,31 @@ runFunctionFlow("Log_Report",
   也不會再被問到。
 - **一次只能執行一支腳本。** 執行期間主視窗被鎖定；程式化的連續呼叫會回 `false`。
   流程進行中（含步驟之間的間隔）同樣算執行中。
+
+### 對話框一律固定尺寸
+
+**工具彈出的對話框不讓使用者以滑鼠改變大小。** 這是整個工具的規則，不是某個
+功能的選擇。
+
+按下任何功能的執行鈕都會看到同一個處理中對話框 —— 它由外殼提供、自動顯示與關閉，
+**功能端不需要做任何事，也無法各自決定**。新增功能時不必為它寫任何程式碼。
+
+那是一個執行期間鎖住主視窗的互斥對話框，使用者在它身上唯一該做的決定是要不要取消。
+可以拖大拖小只會讓它看起來像一個可以操作的視窗，而拖動本身不改變任何事情。
+
+實作在 `ProcessingDialog.cpp`：`setFixedSize()` 加上 Windows 的
+`Qt::MSWindowsFixedSizeDialogHint`。前者鎖住尺寸，後者把視窗邊框換成固定尺寸
+對話框的細邊，邊緣不再是可拖曳的縮放區。尺寸由檔案開頭的 `kDialogWidth` /
+`kDialogHeight` 兩個常數決定。
+
+連帶效果：對話框不再隨標籤內容縮放（以前階段文字一長一短，視窗會在執行過程中
+自己跳動）。代價是過長的階段文字放不下，因此顯示時截斷成「…」並把完整內容放進
+tooltip —— 與 MR 表格的標題欄同一種處理。
+
+> **寫腳本時順帶注意**：`script_io.progress()` 回報的階段文字是上面那個標籤的
+> 內容。太長的句子會被截斷，寫短一點比較好讀。
+
+---
 
 ---
 
