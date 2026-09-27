@@ -95,7 +95,7 @@ def main():
     # 分析，而舊的那段還在。
     original, _ = ai_analysis_gitlab_mr.split_description(
         (mr or {}).get("description") or "")
-    description = ai_analysis_gitlab_mr.render_description_section(original)
+    description = ai_analysis_gitlab_mr.render_original_description(original)
 
     # 給了 out_path 才落檔。為空時一個檔案都不會產生。
     #

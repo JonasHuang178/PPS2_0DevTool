@@ -22,11 +22,10 @@ from script_utils import logger
 
 __all__ = [
     "MERGE_REQUEST_LIMIT",
-    "DESCRIPTION_HEADING",
     "AI_HEADING",
     "LEGACY_DESCRIPTION_HEADINGS",
     "split_description",
-    "render_description_section",
+    "render_original_description",
     "render_ai_section",
     "CredentialError",
     "gitlab_credentials",
@@ -136,25 +135,24 @@ def resolve_json_input(params, key):
 #（這個工具只顯示報告、不寫回 GitLab，但那份報告可能被人自己貼回描述裡）。
 # 步驟 1 只要前者，步驟 5 把前者接上這一輪的 AI 分析組成要顯示的報告。
 #
-# 兩個標題常數只有這一份，因為它們是同一個邊界的兩側：步驟 5 用 AI_HEADING
-# 寫出那一段，而步驟 1 就是靠同一個字串把它切掉。兩邊各寫一份而漂移的症狀是
-#「報告裡的 AI 分析疊了兩段，舊的那段還在」—— 而每一步都會回報成功，沒有
-# 任何地方會喊。
+# 原始描述**不冠任何標題** —— 它就是 GitLab 上那份描述的內容本身。因此 AI 分析
+# 的標題是這裡唯一會被寫出去的標記，也是切段時唯一的邊界：它之前的都是原始描述。
 
-DESCRIPTION_HEADING = "# Original description"
+# 唯一會被寫出去的標題。步驟 5 用它寫出那一段，步驟 1 用它切掉上一輪的分析 ——
+# 同一個邊界的兩側，所以只有這一份。改它只要改這一行，底下的比對式是導出的。
 AI_HEADING = "# AI 分析"
 
-# 舊版寫出去過、現在仍需認得的標題。
+# 只用來**認得**，不會被寫出去。
 #
-# 改了上面的常數之後，舊的那個要搬進這裡 —— 既有 MR 的描述裡還留著它，不認得的話
-# 那一行會突然變成「原始描述的內容」，而下一輪又接上一段新的 AI 分析，於是疊起來。
+# 早期版本的步驟 1 會在原始描述前面加一行 "# Original description"（更早還有一個
+# Oirignal 的筆誤）。現在不加了，但既有的 MR 描述裡還留著那一行 —— 認得它才能在
+# 下一輪把它清掉；不認得的話它會被當成描述的內容一直留在報告裡。
 #
-# oirignal 是早期版本寫出去的筆誤。寫出去的已經是正確拼法，帶著舊拼法的描述被處理
-#
-# AI 分析的標題沒有這樣一份清單，因為它還沒被改過。真要改的時候，照這裡的樣子
-# 加一個 LEGACY_AI_HEADINGS 再展開進 _AI_RE 即可。
-# 過一次之後就自己改正了；在確定沒有任何 MR 還帶著它之前，這一條不能拿掉。
-LEGACY_DESCRIPTION_HEADINGS = ("# Oirignal description",)
+# 確定沒有任何 MR 還帶著這兩行之前，不能拿掉。
+LEGACY_DESCRIPTION_HEADINGS = (
+    "# Original description",
+    "# Oirignal description",
+)
 
 
 def _heading_pattern(*headings):
@@ -176,8 +174,7 @@ def _heading_pattern(*headings):
     return re.compile(r"^#{1,6}\s*(?:%s)\s*$" % "|".join(alternatives), re.I)
 
 
-_DESCRIPTION_RE = _heading_pattern(DESCRIPTION_HEADING,
-                                   *LEGACY_DESCRIPTION_HEADINGS)
+_DESCRIPTION_RE = _heading_pattern(*LEGACY_DESCRIPTION_HEADINGS)
 _AI_RE = _heading_pattern(AI_HEADING)
 
 
@@ -247,16 +244,17 @@ def split_description(text):
     return original, previous_ai
 
 
-def render_description_section(original):
-    """步驟 1 的產物：標題加上原始描述。原始描述是空的就回傳空字串。
+def render_original_description(original):
+    """步驟 1 的產物：原始描述本身，不冠任何標題。
 
-    沒填描述的 MR 不該在報告裡留下一個只有標題、底下什麼都沒有的區塊 ——
-    那個標題只會讓人以為內容漏掉了。整段不放，報告就只剩 AI 分析那一段。
+    內容就是 GitLab 上那份描述扣掉上一輪的 AI 分析之後剩下的部分。不再加上
+    "# Original description" —— 那一行是工具自己加的，對讀報告的人沒有意義，而且
+    它會跟著報告被貼回描述，下一輪再被讀進來。
+
+    原始描述是空的就回傳空字串，而不是一個只有標題的空區塊。
     """
     body = original.strip()
-    if not body:
-        return ""
-    return "%s\n\n%s\n" % (DESCRIPTION_HEADING, body)
+    return body + "\n" if body else ""
 
 
 def render_ai_section(summary):

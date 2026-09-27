@@ -64,6 +64,46 @@ def _read_required(path, what):
     return file_utils.read_file(path)
 
 
+def _summary_text(payload, path):
+    """從 AI 分析結果檔取出要接進報告的那段文字。
+
+    這個檔案正常是一個物件，markdown 在 summary 欄位裡。整份就是一段文字時原樣
+    採用 —— 對合併而言「能接上去的文字」才是重點。
+
+    取到的東西不是文字時**回 FAIL 而不是硬轉**。硬轉的下場是把 Python 的 repr
+    （`{'risks': [...]}` 這種）原樣印進報告裡，那份報告看起來是成功產出的，交出去
+    才被發現中間夾了一段程式碼；在這裡攔下來，訊息直接說出型別與檔案位置。
+
+    這一條是真的踩過：步驟 3 改寫之後 summary 變成巢狀物件，而當時這裡直接對它
+    呼叫 .strip()，錯誤是一句 "dict object has no attribute strip" —— 那句話既沒說
+    是哪個檔案，也沒說是哪個欄位。
+    """
+    if isinstance(payload, str):
+        return payload
+
+    if not isinstance(payload, dict):
+        script_io.reply_fail(
+            "AI 分析結果檔的內容不是物件也不是文字：%s" % path,
+            detail="讀到的型別是 %s。這個檔案應該是 {\"summary\": \"...\"} 這樣的"
+                   "物件，或整份就是一段文字。" % type(payload).__name__,
+            code="MERGE_SUMMARY_BAD_TYPE")
+
+    value = payload.get("summary")
+    if value is None or value == "":
+        return ""
+    if isinstance(value, str):
+        return value
+
+    script_io.reply_fail(
+        "AI 分析結果檔的 summary 欄位不是文字：%s" % path,
+        detail="summary 的型別是 %s，而報告需要一段可以直接接上去的 markdown。\n"
+               "這個檔案目前有的欄位：%s\n"
+               "若 markdown 放在別的欄位，請讓上一步把它寫進 summary。"
+               % (type(value).__name__,
+                  "、".join(sorted(payload.keys())) or "(無)"),
+        code="MERGE_SUMMARY_NOT_TEXT")
+
+
 def main():
     req = script_io.parse_request(
         action=ACTION,
@@ -114,10 +154,7 @@ def main():
             script_io.reply_fail(
                 "AI 分析結果檔不是合法的 JSON：%s" % path,
                 detail=str(exc), code="MERGE_SUMMARY_NOT_JSON")
-        # 這個檔案是一個物件，markdown 在 summary 欄位裡。不是物件（例如整份就是
-        # 一段文字）時原樣採用 —— 對合併而言「能接上去的文字」才是重點。
-        summary = (payload.get("summary") or "") if isinstance(payload, dict) \
-            else str(payload)
+        summary = _summary_text(payload, path)
 
     code_review = ""
     if _is_given(params["code_review_md_file_path"]):
