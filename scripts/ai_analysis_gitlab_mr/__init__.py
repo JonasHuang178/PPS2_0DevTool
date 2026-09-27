@@ -23,9 +23,10 @@ from script_utils import logger
 __all__ = [
     "MERGE_REQUEST_LIMIT",
     "AI_HEADING",
-    "LEGACY_DESCRIPTION_HEADINGS",
+    "DESCRIPTION_HEADING",
     "split_description",
     "render_original_description",
+    "render_description_section",
     "render_ai_section",
     "ANALYSIS_SCHEMA_VERSION",
     "AnalysisFormatError",
@@ -145,21 +146,25 @@ def resolve_json_input(params, key):
 # 原始描述**不冠任何標題** —— 它就是 GitLab 上那份描述的內容本身。因此 AI 分析
 # 的標題是這裡唯一會被寫出去的標記，也是切段時唯一的邊界：它之前的都是原始描述。
 
-# 唯一會被寫出去的標題。步驟 5 用它寫出那一段，步驟 1 用它切掉上一輪的分析 ——
-# 同一個邊界的兩側，所以只有這一份。改它只要改這一行，底下的比對式是導出的。
-AI_HEADING = "# AI 分析"
-
-# 只用來**認得**，不會被寫出去。
+# 報告裡兩個段落的標題。兩者都由**步驟 5** 在組報告時寫出。
 #
-# 早期版本的步驟 1 會在原始描述前面加一行 "# Original description"（更早還有一個
-# Oirignal 的筆誤）。現在不加了，但既有的 MR 描述裡還留著那一行 —— 認得它才能在
-# 下一輪把它清掉；不認得的話它會被當成描述的內容一直留在報告裡。
+# AI_HEADING 同時是切段的邊界：步驟 1 靠它把上一輪的分析從描述裡切掉。寫出與
+# 切掉用同一個字串，所以只有這一份 —— 底下的比對式由它導出，不另外手寫一份
+# 字面文字。改標題只要改這裡一行。
 #
-# 確定沒有任何 MR 還帶著這兩行之前，不能拿掉。
-LEGACY_DESCRIPTION_HEADINGS = (
-    "# Original description",
-    "# Oirignal description",
-)
+# DESCRIPTION_HEADING 不是邊界 —— 它永遠在 AI_HEADING 之前，切段時連同它之前的
+# 內容一起被當成原始描述，再由 _DESCRIPTION_RE 把標題那一行本身去掉。
+#
+# 只認得「現在這一個」。改了標題之後，既有 MR 描述裡若還留著舊的那一行，它會
+# 被當成描述的內容留下來，而報告又接上一段新的分析 —— 症狀是報告裡出現兩段
+# AI 分析。要處理的話，在底下 _heading_pattern() 的呼叫多傳幾個舊字串即可：
+#
+#     _AI_RE = _heading_pattern(AI_HEADING, "# AI 分析")
+#
+# 本工具不寫回 GitLab，舊標題只可能來自「有人自己把報告貼回描述」，所以預設
+# 不帶任何舊字串。真的撞到時，症狀在報告上看得見，補一個字串就好。
+DESCRIPTION_HEADING = "# Original Description"
+AI_HEADING = "# AI 分析結果"
 
 
 def _heading_pattern(*headings):
@@ -170,9 +175,12 @@ def _heading_pattern(*headings):
     邊界，舊的 AI 分析被當成原始描述留下來，報告每跑一次多疊一段。而每一步都回報
     成功，沒有任何地方會喊。導出之後，常數就是唯一要改的地方。
 
-    導出的比對式比常數本身寬鬆：階層 # 到 ###### 都收、大小寫不分、詞與詞之間的
-    空白多寡不拘、行首行尾的空白容許。描述是人在 GitLab 網頁上編輯的東西，這些都
-    會被動到，而動到不該讓邊界消失。
+    導出的比對式比常數本身寬鬆：階層 # 到 ###### 都收、大小寫不分、詞與詞之間與
+    行首行尾的空白都容許。描述是人在 GitLab 網頁上編輯的東西，這些都會被動到，而
+    動到不該讓邊界消失。
+
+    整串以 ^...$ 錨定，所以「AI 分析結果」與「AI 分析」兩個 alternative 不會互相
+    誤中 —— 前者不會被後者的規則吃掉半截。
     """
     alternatives = []
     for heading in headings:
@@ -181,7 +189,7 @@ def _heading_pattern(*headings):
     return re.compile(r"^#{1,6}\s*(?:%s)\s*$" % "|".join(alternatives), re.I)
 
 
-_DESCRIPTION_RE = _heading_pattern(*LEGACY_DESCRIPTION_HEADINGS)
+_DESCRIPTION_RE = _heading_pattern(DESCRIPTION_HEADING)
 _AI_RE = _heading_pattern(AI_HEADING)
 
 
@@ -262,6 +270,25 @@ def render_original_description(original):
     """
     body = original.strip()
     return body + "\n" if body else ""
+
+
+def render_description_section(original):
+    """報告裡「原始描述」那一段：標題加上內容。原始描述為空就回傳空字串。
+
+    與 render_original_description() 的差別是**有沒有標題**，兩者服務不同的消費者：
+
+        render_original_description()  步驟 1 的產物（01_description.md）。
+                                       就是 GitLab 上那份描述的內容本身，不冠標題。
+        render_description_section()   報告裡的那一段。標題由這裡加上。
+
+    分成兩支而不是共用一支，是因為標題屬於**報告**而不屬於描述。步驟 1 的產物冠上
+    標題的話，那一行會跟著報告被貼回 MR 描述，下一輪再被讀進來 —— 雖然切得掉，但
+    那是讓工具自己製造出要再清理的東西。
+    """
+    body = _plain(original)
+    if not body:
+        return ""
+    return "%s\n\n%s\n" % (DESCRIPTION_HEADING, body)
 
 
 def render_ai_section(summary):
@@ -495,34 +522,40 @@ def _fence_for(code):
     return "`" * max(3, longest + 1)
 
 
-def _render_finding(item, path):
-    """diffCode 裡的一筆。"""
-    if not isinstance(item, dict):
-        raise AnalysisFormatError(
-            "AI 分析結果中 %s 的 diffCode 有一筆不是物件" % path,
-            "讀到的型別是 %s。diffCode 的每一筆應該是 "
-            "{title, reason, diff} 這樣的物件。" % type(item).__name__,
-            "ANALYSIS_FINDING_BAD_TYPE")
+def _entry_blocks(title, reason, diff):
+    """一個條目：`- 標題`、緊接下一行的理由，以及（選配）一段 diff。
 
-    out = []
-    title = _plain(item.get("title"))
-    if title:
-        out.append("### %s" % title)
+    理由刻意**不空行**地接在 bullet 下面 —— 那是樣板指定的形狀。已知的取捨：在
+    GitLab 這類會渲染 markdown 的地方，第二行會被當成同一個項目的延續而與標題併成
+    一行；在工具的結果視窗（純文字）則如實顯示成兩行。要兩邊都分行的話，理由前面
+    要空一行並縮排兩格。
+    """
+    blocks = []
 
-    reason = _plain(item.get("reason"))
-    if reason:
-        out.append(reason)
+    lines = []
+    text = _plain(title)
+    if text:
+        lines.append("- %s" % text)
+    text = _plain(reason)
+    if text:
+        lines.append(text)
+    if lines:
+        blocks.append("\n".join(lines))
 
-    diff = _plain(item.get("diff"))
-    if diff:
-        fence = _fence_for(diff)
-        out.append("%sdiff\n%s\n%s" % (fence, diff, fence))
+    code = _plain(diff)
+    if code:
+        fence = _fence_for(code)
+        blocks.append("%sdiff\n%s\n%s" % (fence, code, fence))
 
-    return out
+    return blocks
 
 
-def _render_file(path, entry):
-    """mrDiff 底下的一個檔案。"""
+def _render_file(index, path, entry):
+    """Code Changes 底下的一個檔案。
+
+    檔案層級的 title / reason 與 diffCode 裡的每一筆用同一種條目形狀呈現 —— 前者是
+    「對整個檔案的一句話」，後者是「對某一段的一句話」，讀的人要的東西一樣。
+    """
     if not isinstance(entry, dict):
         raise AnalysisFormatError(
             "AI 分析結果中 %s 的內容不是物件" % path,
@@ -530,31 +563,45 @@ def _render_file(path, entry):
             "{title, reason, diffCode} 這樣的物件。" % type(entry).__name__,
             "ANALYSIS_FILE_BAD_TYPE")
 
-    # 檔案路徑用 H2：整段最後會被放在 AI_HEADING（H1）底下，所以檔案是第二層、
-    # 每一筆發現是第三層。檔案層級的標題改用粗體而不是 H3，才不會與發現撞階層。
-    out = ["## %s" % path]
+    out = ["### %d. %s" % (index, path)]
 
-    title = _plain(entry.get("title"))
-    if title:
-        out.append("**%s**" % title)
-
-    reason = _plain(entry.get("reason"))
-    if reason:
-        out.append(reason)
+    # 檔案層級的那一句（沒有就整個不出現）
+    out.extend(_entry_blocks(entry.get("title"), entry.get("reason"), ""))
 
     for item in entry.get("diffCode") or []:
-        out.extend(_render_finding(item, path))
+        if not isinstance(item, dict):
+            raise AnalysisFormatError(
+                "AI 分析結果中 %s 的 diffCode 有一筆不是物件" % path,
+                "讀到的型別是 %s。diffCode 的每一筆應該是 "
+                "{title, reason, diff} 這樣的物件。" % type(item).__name__,
+                "ANALYSIS_FINDING_BAD_TYPE")
+        out.extend(_entry_blocks(item.get("title"), item.get("reason"),
+                                 item.get("diff")))
 
     return out
 
 
 def render_analysis(payload):
-    """把步驟 3 的結構化分析渲染成 markdown（不含 AI 分析那一行標題）。
+    """把步驟 3 的結構化分析渲染成報告裡「AI 分析結果」底下的內容。
 
-    回傳的是「接在 AI_HEADING 底下的那一段」—— 標題由 render_ai_section() 加上，
-    因為那個字串同時是下一輪切段的邊界，只能有一個來源。
+    回傳的是接在 AI_HEADING 底下的那一段 —— 標題由 render_ai_section() 加上，因為
+    那個字串同時是下一輪切段的邊界，只能有一個來源。
+
+    版面：
+
+        ## Summary
+        <overview>
+
+        ## Code Changes
+        ### 1. <檔案路徑>
+        - <標題>
+        <理由>
+        ```diff
+        <diff>
+        ```
 
     空的欄位整段不放：一個只有標題、底下什麼都沒有的區塊會讓人以為內容漏掉了。
+    整個 mrDiff 為空時連 "## Code Changes" 都不出現。
     """
     if not isinstance(payload, dict):
         raise AnalysisFormatError(
@@ -584,17 +631,8 @@ def render_analysis(payload):
 
     overview = _plain(analysis.get("overview"))
     if overview:
+        blocks.append("## Summary")
         blocks.append(overview)
-
-    meta = []
-    model = _plain(analysis.get("model"))
-    if model:
-        meta.append("- 模型：%s" % model)
-    jira_url = _plain(analysis.get("jira_url"))
-    if jira_url:
-        meta.append("- JIRA：%s" % jira_url)
-    if meta:
-        blocks.append("\n".join(meta))
 
     # 型別檢查要在「沒給就當空的」之前 —— 反過來寫的話，一個打錯成 [] 的
     # mrDiff 會因為空 list 是 falsy 而變成 {}，報告少了整批檔案卻回報成功。
@@ -608,7 +646,11 @@ def render_analysis(payload):
             % type(mr_diff).__name__,
             "ANALYSIS_MRDIFF_BAD_TYPE")
 
-    for path, entry in mr_diff.items():
-        blocks.extend(_render_file(_plain(path), entry))
+    files = []
+    for index, (path, entry) in enumerate(mr_diff.items(), start=1):
+        files.extend(_render_file(index, _plain(path), entry))
+    if files:
+        blocks.append("## Code Changes")
+        blocks.extend(files)
 
     return "\n\n".join(blocks)

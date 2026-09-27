@@ -200,7 +200,9 @@ def main():
     sections = []
 
     if description.strip():
-        sections.append(description.strip())
+        sections.append(
+            ai_analysis_gitlab_mr.render_description_section(
+                description).strip())
 
     if summary.strip():
         sections.append(
