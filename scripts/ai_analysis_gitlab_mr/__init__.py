@@ -554,13 +554,40 @@ def _fence_for(code):
     return "`" * max(3, longest + 1)
 
 
-def _entry_blocks(item, path, position):
-    """一筆 finding：`- 標題`、緊接下一行的理由，以及（選配）一段 diff。
+# 條目內的縮排。理由與 diff 都縮在 bullet 底下，讓它們在視覺上屬於那一筆，而不是
+# 平鋪在檔案標題下的另一段。兩格是 markdown 認得的清單延續縮排。
+_ENTRY_INDENT = "  "
 
-    理由刻意**不空行**地接在 bullet 下面 —— 那是指定的形狀。已知的取捨：在 GitLab
-    這類會渲染 markdown 的地方，第二行會被當成同一個項目的延續而與標題併成一行；
-    在工具的結果視窗（純文字）則如實顯示成兩行。要兩邊都分行的話，理由前面要空一行
-    並縮排兩格。
+
+def _indent(text):
+    """把每一行縮排。空行不補空白 —— 那只會留下看不見的行尾空格。"""
+    return "\n".join(_ENTRY_INDENT + line if line else ""
+                      for line in text.split("\n"))
+
+
+def _entry_block(item, path, position):
+    """一筆 finding，組成報告裡的一個條目。
+
+    形狀：
+
+        - <標題>
+          <理由>
+          <details>
+
+          ```diff
+          <diff>
+          ```
+          </details>
+
+    理由緊接在 bullet 下一行、縮排兩格。GitLab 會把它併進同一段（markdown 的清單
+    延續），結果視窗是純文字則如實顯示成兩行縮排 —— 兩邊都讀得下去。
+
+    diff 包在 <details> 裡收合：一筆 finding 的 diff 可能幾十行，攤開來會把整份報告
+    的可讀性吃掉，而讀的人多半先看標題與理由、需要時才展開。<details> 之後必須空一行，
+    否則 GitLab 不會把裡面的內容當 markdown 解析，圍籬會原樣印出來。
+
+    整段縮排兩格是為了讓它留在該筆 bullet 之內；markdown 會把圍籬的縮排從內容行一併
+    扣掉，所以 diff 本身不會多出兩格。
     """
     if not isinstance(item, dict):
         raise AnalysisFormatError(
@@ -569,24 +596,25 @@ def _entry_blocks(item, path, position):
             % type(item).__name__,
             "ANALYSIS_FINDING_BAD_TYPE")
 
-    blocks = []
+    title = _plain(item.get("title"))
+    reason = _plain(item.get("reason"))
+    code = _plain(item.get("diffCode"))
 
     lines = []
-    text = _plain(item.get("title"))
-    if text:
-        lines.append("- %s" % text)
-    text = _plain(item.get("reason"))
-    if text:
-        lines.append(text)
-    if lines:
-        blocks.append("\n".join(lines))
+    if title:
+        lines.append("- %s" % title)
+    if reason:
+        # 沒有標題時理由自己當 bullet —— 否則會是一段縮排卻沒有歸屬的文字。
+        lines.append(_indent(reason) if title else "- %s" % reason)
 
-    code = _plain(item.get("diffCode"))
     if code:
         fence = _fence_for(code)
-        blocks.append("%sdiff\n%s\n%s" % (fence, code, fence))
+        block = "%s%sdiff\n%s\n%s%s" % (
+            "<details>\n\n", fence, code, fence, "\n</details>")
+        # 有 bullet 才縮排；沒有的話縮排會變成一段無主的內容。
+        lines.append(_indent(block) if lines else block)
 
-    return blocks
+    return "\n".join(lines)
 
 
 def _file_body(path, findings):
@@ -604,7 +632,9 @@ def _file_body(path, findings):
 
     body = []
     for position, item in enumerate(findings, start=1):
-        body.extend(_entry_blocks(item, path, position))
+        block = _entry_block(item, path, position)
+        if block:
+            body.append(block)
     return body
 
 
@@ -685,7 +715,7 @@ def render_analysis(payload):
         if not body:
             continue
         index += 1
-        files.append("### %d. %s" % (index, clean))
+        files.append("### %d. `%s`" % (index, clean))
         files.extend(body)
     if files:
         blocks.append("## Code Changes")
