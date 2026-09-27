@@ -128,20 +128,21 @@ def main():
         model=params["ai_model"] or "(未指定)",
         jira_url=jira_url(jira_key),
         mr_diff={
-            "cpp/example.cpp": ai_analysis_gitlab_mr.file_entry(findings=[
+            "cpp/example.cpp": [
                 ai_analysis_gitlab_mr.finding(
                     title="重試上限調高後可能超過呼叫端的逾時",
                     reason="單次逾時 30s、重試 10 次，最壞情況 300s。",
-                    diff="@@ -12,7 +12,7 @@\n-    retry = 3\n+    retry = 10"),
+                    diff_code="@@ -12,7 +12,7 @@\n-    retry = 3\n+    retry = 10"),
                 ai_analysis_gitlab_mr.finding(
                     title="競態修正只涵蓋讀取路徑",
-                    reason="寫入路徑用的是同一個 cache，未一併加鎖。",
-                    diff=""),
-            ]),
-            "tests/example_test.cpp": ai_analysis_gitlab_mr.file_entry(
-                title="新增的測試蓋不到這次修的問題",
-                reason="只有單執行緒的案例。",
-                findings=[]),
+                    reason="寫入路徑用的是同一個 cache，未一併加鎖。"),
+            ],
+            "tests/example_test.cpp": [
+                # 清單的第一筆當「對整個檔案的一句話」用 —— 不需要為它另設一層。
+                ai_analysis_gitlab_mr.finding(
+                    title="新增的測試蓋不到這次修的問題",
+                    reason="只有單執行緒的案例。"),
+            ],
         },
     )
     # -----------------------------------------------------------

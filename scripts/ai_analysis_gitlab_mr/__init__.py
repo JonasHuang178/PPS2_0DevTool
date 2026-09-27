@@ -33,7 +33,6 @@ __all__ = [
     "render_analysis",
     "MAX_FINDING_DIFF_BYTES",
     "finding",
-    "file_entry",
     "analysis_payload",
     "CredentialError",
     "gitlab_credentials",
@@ -463,32 +462,28 @@ def _clip_diff(diff):
             + _DIFF_TRUNCATED)
 
 
-def finding(title, reason, diff=""):
-    """diffCode 裡的一筆：標題、理由，以及相關的那段 diff。"""
-    return {
-        "title": _plain(title),
-        "reason": _plain(reason),
-        "diff": _clip_diff(diff),
-    }
+def finding(title, reason, diff_code=""):
+    """mrDiff 底下的一筆：標題、理由，以及（選配）相關的那段 diff。
 
-
-def file_entry(title="", reason="", findings=None):
-    """mrDiff 底下的一個檔案：檔案層級的標題與理由，加上每一筆 finding。
-
-    title / reason 留空時渲染端整段略過，不會留下一個空標題。
+    欄位名是 diffCode —— 與這個功能的既有產出一致。省略或給空字串都代表「這一筆
+    沒有 diff」，渲染時不會留下一個空的程式碼區塊。
     """
     return {
         "title": _plain(title),
         "reason": _plain(reason),
-        "diffCode": list(findings or []),
+        "diffCode": _clip_diff(diff_code),
     }
 
 
 def analysis_payload(overview, model="", jira_url="", mr_diff=None):
     """組出步驟 3 要落檔與回傳的完整結構。
 
-    mrDiff 以檔案路徑為鍵。dict 在 Python 3.7+ 與 json 模組兩側都保留插入順序，
-    所以檔案在報告中的先後就是這裡放進去的先後。
+    mrDiff 以檔案路徑為鍵，每個值是**那個檔案的 finding 清單**（沒有中間層）。
+    想寫「對整個檔案的一句話」時，把它放在清單的第一筆、不給 diffCode 即可 ——
+    渲染出來與任何一筆 finding 相同，所以不需要為它另設一層。
+
+    dict 在 Python 3.7+ 與 json 模組兩側都保留插入順序，所以檔案在報告中的先後
+    就是這裡放進去的先後。
     """
     return {
         "schema_version": ANALYSIS_SCHEMA_VERSION,
@@ -522,27 +517,34 @@ def _fence_for(code):
     return "`" * max(3, longest + 1)
 
 
-def _entry_blocks(title, reason, diff):
-    """一個條目：`- 標題`、緊接下一行的理由，以及（選配）一段 diff。
+def _entry_blocks(item, path, position):
+    """一筆 finding：`- 標題`、緊接下一行的理由，以及（選配）一段 diff。
 
-    理由刻意**不空行**地接在 bullet 下面 —— 那是樣板指定的形狀。已知的取捨：在
-    GitLab 這類會渲染 markdown 的地方，第二行會被當成同一個項目的延續而與標題併成
-    一行；在工具的結果視窗（純文字）則如實顯示成兩行。要兩邊都分行的話，理由前面
-    要空一行並縮排兩格。
+    理由刻意**不空行**地接在 bullet 下面 —— 那是指定的形狀。已知的取捨：在 GitLab
+    這類會渲染 markdown 的地方，第二行會被當成同一個項目的延續而與標題併成一行；
+    在工具的結果視窗（純文字）則如實顯示成兩行。要兩邊都分行的話，理由前面要空一行
+    並縮排兩格。
     """
+    if not isinstance(item, dict):
+        raise AnalysisFormatError(
+            "AI 分析結果中 %s 的第 %d 筆不是物件" % (path, position),
+            "讀到的型別是 %s。每一筆應該是 {title, reason, diffCode} 這樣的物件。"
+            % type(item).__name__,
+            "ANALYSIS_FINDING_BAD_TYPE")
+
     blocks = []
 
     lines = []
-    text = _plain(title)
+    text = _plain(item.get("title"))
     if text:
         lines.append("- %s" % text)
-    text = _plain(reason)
+    text = _plain(item.get("reason"))
     if text:
         lines.append(text)
     if lines:
         blocks.append("\n".join(lines))
 
-    code = _plain(diff)
+    code = _plain(item.get("diffCode"))
     if code:
         fence = _fence_for(code)
         blocks.append("%sdiff\n%s\n%s" % (fence, code, fence))
@@ -550,35 +552,23 @@ def _entry_blocks(title, reason, diff):
     return blocks
 
 
-def _render_file(index, path, entry):
-    """Code Changes 底下的一個檔案。
+def _file_body(path, findings):
+    """一個檔案底下的內容（不含 `### N. 路徑` 那一行）。
 
-    檔案層級的 title / reason 與 diffCode 裡的每一筆用同一種條目形狀呈現 —— 前者是
-    「對整個檔案的一句話」，後者是「對某一段的一句話」，讀的人要的東西一樣。
+    回傳空清單代表這個檔案沒有任何可呈現的內容 —— 呼叫端據此整個略過它，不留下一個
+    底下什麼都沒有的標題，編號也不會跳號。
     """
-    if not isinstance(entry, dict):
+    if not isinstance(findings, list):
         raise AnalysisFormatError(
-            "AI 分析結果中 %s 的內容不是物件" % path,
-            "讀到的型別是 %s。mrDiff 的每個值應該是 "
-            "{title, reason, diffCode} 這樣的物件。" % type(entry).__name__,
+            "AI 分析結果中 %s 的內容不是清單" % path,
+            "讀到的型別是 %s。mrDiff 的每個值應該是一個 list，裡面每一筆是 "
+            "{title, reason, diffCode}。" % type(findings).__name__,
             "ANALYSIS_FILE_BAD_TYPE")
 
-    out = ["### %d. %s" % (index, path)]
-
-    # 檔案層級的那一句（沒有就整個不出現）
-    out.extend(_entry_blocks(entry.get("title"), entry.get("reason"), ""))
-
-    for item in entry.get("diffCode") or []:
-        if not isinstance(item, dict):
-            raise AnalysisFormatError(
-                "AI 分析結果中 %s 的 diffCode 有一筆不是物件" % path,
-                "讀到的型別是 %s。diffCode 的每一筆應該是 "
-                "{title, reason, diff} 這樣的物件。" % type(item).__name__,
-                "ANALYSIS_FINDING_BAD_TYPE")
-        out.extend(_entry_blocks(item.get("title"), item.get("reason"),
-                                 item.get("diff")))
-
-    return out
+    body = []
+    for position, item in enumerate(findings, start=1):
+        body.extend(_entry_blocks(item, path, position))
+    return body
 
 
 def render_analysis(payload):
@@ -595,6 +585,7 @@ def render_analysis(payload):
         ## Code Changes
         ### 1. <檔案路徑>
         - <標題>
+        <理由>
         <理由>
         ```diff
         <diff>
@@ -647,8 +638,15 @@ def render_analysis(payload):
             "ANALYSIS_MRDIFF_BAD_TYPE")
 
     files = []
-    for index, (path, entry) in enumerate(mr_diff.items(), start=1):
-        files.extend(_render_file(index, _plain(path), entry))
+    index = 0
+    for path, findings in mr_diff.items():
+        clean = _plain(path)
+        body = _file_body(clean, findings)
+        if not body:
+            continue
+        index += 1
+        files.append("### %d. %s" % (index, clean))
+        files.extend(body)
     if files:
         blocks.append("## Code Changes")
         blocks.extend(files)
