@@ -31,8 +31,9 @@
 - [x] 3.6 驗證：Single Building 的兩個清單外觀改變但行為不變；選取一項後點擊其他控件，選取態不變色
 - [x] 3.7 處理中對話框改為固定尺寸：`setFixedSize()` 加 `Qt::MSWindowsFixedSizeDialogHint`（前者鎖尺寸，後者讓 Windows 的視窗邊緣不再是可拖曳的縮放區）；順序上要在 `setWindowFlags()` **之後**，因為那行會重建原生視窗
 - [x] 3.8 固定尺寸之後對話框不再隨標籤內容縮放，過長的階段文字改為截斷並把完整內容放進 tooltip（與 MR 表格標題欄同一種處理）；所有會動到標籤的路徑統一走 `applyLabelText()`
-- [ ] 3.9 驗證（**需 Windows 實機**）：執行中拖曳對話框邊緣與四角都無法改變大小；步驟切換與長短不一的階段文字都不會讓它跳動；過長的階段文字顯示為「…」且 tooltip 看得到全文；取消鈕沒有被固定高度切掉
+- [x] 3.9 驗證（**需 Windows 實機**）：執行中拖曳對話框邊緣與四角都無法改變大小；步驟切換與長短不一的階段文字都不會讓它跳動；過長的階段文字顯示為「…」且 tooltip 看得到全文；取消鈕沒有被固定高度切掉
   - 實作環境沒有 qmake / make / g++（見本節開頭與第 10 節的說明），這三個檔案的C++ 改動**未經編譯**。尺寸 460x130 是估的，若取消鈕被切到就調 `ProcessingDialog.cpp` 開頭的 `kDialogHeight`。
+  - 使用者於 2026-09-27 在 Windows 實機確認通過。
 
 ## 4. UI：新增功能分頁
 
@@ -80,7 +81,8 @@
 - [x] 6.8 每一步的 `envVars` 注入 `GITLAB_SERVER_URL` / `GITLAB_ACCESS_TOKEN` / `GITLAB_VERIFY_SSL` / `JIRA_SERVER_URL` / `JIRA_ACCESS_TOKEN`（值取自合併後的 config，變數名為鍵名全大寫）
 - [x] 6.9 AI 的端點、金鑰、模型名經由步驟 3 的 `params` 傳入，不注入環境變數、不上命令列
 - [x] 6.10 JIRA 的三個值（`jira_mode` / `jira_key_manual` / `jira_key_detected`）一併放進步驟 3 的 `params`，Qt 端不做挑選
-- [x] 6.11 步驟 2 回傳的 `script_info`（含 `handler` / `source` / `path`）原樣放進步驟 3 與 5 的 `params`，不解讀
+- [x] 6.11 步驟 2 回傳的 `script_info`（含 `handler` / `source` / `path`）原樣放進**步驟 3** 的 `params`，不解讀
+  - 原本寫的是「步驟 3 與 5」。步驟 5 現在沒有任何地方會讀它，傳過去只是一個沒人讀的參數；等 handler 的 dispatch 真的實作時再加。見 design.md 決策十四。
 - [x] 6.12 流程 callback：全部成功時以 `showResultDialog("AI Analysis", data.markdown, result.elapsedMs)` 顯示；內容取自 `data`，**不得開啟任何檔案**
 - [x] 6.13 流程 callback：有失敗時顯示一個錯誤訊息框，指出第幾步（用 `failedStepIndex`）與該步的 `message`，畫面不變
 - [x] 6.14 取消鈕維持外殼現狀，不做任何額外處理
@@ -161,6 +163,9 @@
 - [x] 9.5 `README.md` 新增「不得整包 log 出 `config`」的紀律
 - [x] 9.6 `scripts/_function_template.py` 加上同一條紀律的註解
 - [x] 9.7 `pps2_0devtool.h` 開頭的「新增一個功能的步驟」註解與 README 同步（兩份必須一致）
+- [x] 9.8 `README.md` 新增「報告的版面」與「`03_summary.json` 的格式」兩節 —— 報告長什麼樣、資料契約是什麼，是下一個要接手的人最先需要的兩件事，原本只在 design.md 裡
+- [x] 9.9 修正四處與實作不符的陳述：`script_info` 只送到步驟 3（design 決策十四、tasks 6.11、spec scenario、README 各一處都寫著「步驟 3 與 5」）
+- [x] 9.10 `README.md` 的功能範圍引言更新為「兩支真的連線、第 5 步真實邏輯、第 2～4 步 stub」，並在已知行為補上程式碼審閱段的標題層級與步驟 5 收不到 `script_info` 兩條
 
 ## 10. 驗收
 
