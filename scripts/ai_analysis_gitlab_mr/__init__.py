@@ -16,11 +16,18 @@ script_utils/ 之下，任何功能都能用。
 
 import json
 import os
+import re
 
 from script_utils import logger
 
 __all__ = [
     "MERGE_REQUEST_LIMIT",
+    "DESCRIPTION_HEADING",
+    "AI_HEADING",
+    "LEGACY_DESCRIPTION_HEADINGS",
+    "split_description",
+    "render_description_section",
+    "render_ai_section",
     "CredentialError",
     "gitlab_credentials",
     "describe_gitlab_error",
@@ -121,6 +128,140 @@ def resolve_json_input(params, key):
         return json.loads(_read_file(path))
 
     return {}
+
+
+# --- MR 描述的分段 ----------------------------------------------------------
+#
+# MR 的描述可能同時裝著兩樣東西：人寫的原始描述，以及先前某一輪的 AI 分析
+#（這個工具只顯示報告、不寫回 GitLab，但那份報告可能被人自己貼回描述裡）。
+# 步驟 1 只要前者，步驟 5 把前者接上這一輪的 AI 分析組成要顯示的報告。
+#
+# 兩個標題常數只有這一份，因為它們是同一個邊界的兩側：步驟 5 用 AI_HEADING
+# 寫出那一段，而步驟 1 就是靠同一個字串把它切掉。兩邊各寫一份而漂移的症狀是
+#「報告裡的 AI 分析疊了兩段，舊的那段還在」—— 而每一步都會回報成功，沒有
+# 任何地方會喊。
+
+DESCRIPTION_HEADING = "# Original description"
+AI_HEADING = "# AI 分析"
+
+# 舊版寫出去過、現在仍需認得的標題。
+#
+# 改了上面的常數之後，舊的那個要搬進這裡 —— 既有 MR 的描述裡還留著它，不認得的話
+# 那一行會突然變成「原始描述的內容」，而下一輪又接上一段新的 AI 分析，於是疊起來。
+#
+# oirignal 是早期版本寫出去的筆誤。寫出去的已經是正確拼法，帶著舊拼法的描述被處理
+#
+# AI 分析的標題沒有這樣一份清單，因為它還沒被改過。真要改的時候，照這裡的樣子
+# 加一個 LEGACY_AI_HEADINGS 再展開進 _AI_RE 即可。
+# 過一次之後就自己改正了；在確定沒有任何 MR 還帶著它之前，這一條不能拿掉。
+LEGACY_DESCRIPTION_HEADINGS = ("# Oirignal description",)
+
+
+def _heading_pattern(*headings):
+    """由標題常數**導出**寬鬆的比對式，不另外手寫一份字面文字。
+
+    這件事非做不可：認得的規則若自己抄一份標題文字，改了常數而忘了改它時，寫出去
+    的標題與切得掉的標題就是兩個不同的東西 —— 步驟 5 寫 A、步驟 1 找 B，於是切不到
+    邊界，舊的 AI 分析被當成原始描述留下來，報告每跑一次多疊一段。而每一步都回報
+    成功，沒有任何地方會喊。導出之後，常數就是唯一要改的地方。
+
+    導出的比對式比常數本身寬鬆：階層 # 到 ###### 都收、大小寫不分、詞與詞之間的
+    空白多寡不拘、行首行尾的空白容許。描述是人在 GitLab 網頁上編輯的東西，這些都
+    會被動到，而動到不該讓邊界消失。
+    """
+    alternatives = []
+    for heading in headings:
+        words = heading.lstrip("#").split()
+        alternatives.append(r"\s*".join(re.escape(w) for w in words))
+    return re.compile(r"^#{1,6}\s*(?:%s)\s*$" % "|".join(alternatives), re.I)
+
+
+_DESCRIPTION_RE = _heading_pattern(DESCRIPTION_HEADING,
+                                   *LEGACY_DESCRIPTION_HEADINGS)
+_AI_RE = _heading_pattern(AI_HEADING)
+
+
+def _heading_positions(lines):
+    """掃出兩個標題的行號，回傳 (原始描述, AI 分析)，沒找到的為 None。
+
+    圍籬（``` 或 ~~~）內的內容一律不當標題看。描述裡的程式碼區塊剛好出現
+    "# AI 分析" 的機會不高，但真的發生時，在那裡切下去會產出一份看起來正常、
+    實際上被截斷的原始描述 —— 而被截掉的那一段會在寫回描述時真的消失。
+    """
+    fence = None
+    description_at = None
+    ai_at = None
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            continue
+        if fence is not None:
+            continue
+
+        if description_at is None and _DESCRIPTION_RE.match(stripped):
+            description_at = index
+        elif ai_at is None and _AI_RE.match(stripped):
+            ai_at = index
+
+    return description_at, ai_at
+
+
+def split_description(text):
+    """把 MR 描述切成 (原始描述, 上一次的 AI 分析)。
+
+    兩段都**不含**標題那一行 —— 標題一律由 render_* 寫出，拼法因此只有一個來源。
+
+    三種情況：
+
+        有 AI 分析標題         原始描述 = 該標題之前那一段
+        沒有 AI 分析標題       整份都是原始描述
+        連原始描述標題也沒有   整份都是原始描述
+
+    最後一種最重要：一筆從沒被這個工具處理過的 MR，描述就是純人寫的內容，沒有
+    任何標題。若要求一定要找到標題才回傳內容，第一次跑的結果會是空的 —— 而空
+    描述在下游是合法值（步驟 1 不視為失敗），症狀會是「AI 拿到一份空白去分析」，
+    不是一個錯誤訊息。
+    """
+    lines = (text or "").splitlines()
+    description_at, ai_at = _heading_positions(lines)
+
+    # AI 分析的標題跑到原始描述標題前面是不該出現的順序（有人手動搬動過）。
+    # 那種情況下不信任原始描述的標題，改當成「整份都是原始描述」—— 寧可多留
+    # 一段給人看，也不要把人寫的內容切掉。
+    if description_at is not None and ai_at is not None and ai_at < description_at:
+        description_at = None
+
+    start = description_at + 1 if description_at is not None else 0
+    end = ai_at if ai_at is not None else len(lines)
+
+    original = "\n".join(lines[start:end]).strip()
+    previous_ai = ("\n".join(lines[ai_at + 1:]).strip()
+                   if ai_at is not None else "")
+    return original, previous_ai
+
+
+def render_description_section(original):
+    """步驟 1 的產物：標題加上原始描述。原始描述是空的就回傳空字串。
+
+    沒填描述的 MR 不該在報告裡留下一個只有標題、底下什麼都沒有的區塊 ——
+    那個標題只會讓人以為內容漏掉了。整段不放，報告就只剩 AI 分析那一段。
+    """
+    body = original.strip()
+    if not body:
+        return ""
+    return "%s\n\n%s\n" % (DESCRIPTION_HEADING, body)
+
+
+def render_ai_section(summary):
+    """步驟 5 接在原始描述後面的那一段。"""
+    return "%s\n\n%s\n" % (AI_HEADING, summary.strip())
 
 
 # --- GitLab 憑證與錯誤分流 --------------------------------------------------

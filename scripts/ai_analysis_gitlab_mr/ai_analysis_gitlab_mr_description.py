@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""AI Analysis GitLab MR —— 步驟 1/5：取得 Merge Request 描述。
+"""AI Analysis GitLab MR —— 步驟 1/5：取得 Merge Request 的原始描述。
+
+MR 的描述可能同時裝著兩樣東西：人寫的原始描述，以及先前某一輪的 AI 分析。這一
+步只取前者。切法與標題常數都在 ai_analysis_gitlab_mr 裡，與步驟 5 共用同一份
+—— 步驟 5 寫出那一段用的標題，就是這裡用來切的那一刀。
+
+沒填描述的 MR 會得到空字串，而且仍然是成功：那是 MR 本身沒填，不是取得失敗。
 
     python ai_analysis_gitlab_mr_description.py --help
     python ai_analysis_gitlab_mr_description.py --dump-config > run.json
@@ -27,56 +33,7 @@ from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "mr_description"
-DESCRIPTION      = "取得指定 Merge Request 的描述"
-
-
-def _build_markdown(repo, mr_iid, mr):
-    """把 GitLab 原樣的 MR 物件整理成一份 markdown 文件。
-
-    為什麼不只回傳 description 欄位：這份內容要落成 01_description.md，也要當作
-    後面 AI 分析那一步的輸入。標題、分支與作者是判讀一則描述時的必要背景 ——
-    只給描述本文，AI 連「這是往哪個分支合」都不知道。
-
-    欄位全部以 or "" 取值：GitLab 對沒填的欄位給的是 null，直接丟進字串格式化會
-    變成 "None" 印在文件上。
-    """
-    title = (mr.get("title") or "").strip()
-    author = (mr.get("author") or {}).get("name") \
-        or (mr.get("author") or {}).get("username") or ""
-    source_branch = mr.get("source_branch") or ""
-    target_branch = mr.get("target_branch") or ""
-    state = mr.get("state") or ""
-    created_at = mr.get("created_at") or ""
-    web_url = mr.get("web_url") or ""
-    body = (mr.get("description") or "").strip()
-
-    lines = ["# !%s %s" % (mr_iid, title) if title else "# !%s" % mr_iid, ""]
-
-    facts = [("專案", repo)]
-    if source_branch or target_branch:
-        facts.append(("分支", "`%s` → `%s`" % (source_branch, target_branch)))
-    if author:
-        facts.append(("作者", author))
-    if state:
-        facts.append(("狀態", state))
-    if created_at:
-        facts.append(("建立時間", created_at))
-    if web_url:
-        facts.append(("網址", web_url))
-
-    for name, value in facts:
-        lines.append("- **%s**：%s" % (name, value))
-
-    lines.extend(["", "## 描述", ""])
-
-    if body:
-        lines.append(body)
-    else:
-        # 沒有描述是正常狀態，不是錯誤。明著寫出來，後面的 AI 才不會把一份
-        # 空白當成「取得失敗」而去猜內容。
-        lines.append("> 這個 Merge Request 沒有填寫描述。")
-
-    return "\n".join(lines) + "\n"
+DESCRIPTION      = "取得指定 Merge Request 的原始描述（不含上一輪的 AI 分析）"
 
 
 def main():
@@ -97,7 +54,7 @@ def main():
             script_io.arg("debug_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
-                          help="額外把描述寫到這個檔案；空字串代表不落檔"),
+                          help="額外把原始描述寫到這個檔案；空字串代表不落檔"),
         ],
     )
 
@@ -133,9 +90,22 @@ def main():
             code = "GITLAB_MR_NOT_FOUND"
         script_io.reply_fail(message, detail=detail, code=code)
 
-    description = _build_markdown(repo, mr_iid, mr or {})
+    # 描述裡可能已經有先前某一輪的 AI 分析。只留人寫的那一段 —— 不切的話，舊
+    # 的分析會被當成原始描述往下傳，步驟 5 再接上一段新的，報告裡於是有兩段 AI
+    # 分析，而舊的那段還在。
+    original, _ = ai_analysis_gitlab_mr.split_description(
+        (mr or {}).get("description") or "")
+    description = ai_analysis_gitlab_mr.render_description_section(original)
 
     # 給了 out_path 才落檔。為空時一個檔案都不會產生。
+    #
+    # 原始描述是空的時候**仍然要寫出那個檔案**（內容為零位元組）。它是這一步確實
+    # 跑過的證據：勾了除錯分析檔的人打開目錄，看到 01_description.md 在那裡但是空
+    # 的，知道的是「這筆 MR 沒填描述」；檔案整個不在，看起來像這一步沒跑或掛了。
+    # 步驟 5 也吃得下空檔案 —— 它讀到空內容就整段略過。
+    #
+    # 這個行為現在是 write_artifact() 照寫不誤得來的。若哪天有人在那裡加一句
+    # 「內容為空就不寫」，這裡會安靜地不再產生檔案，所以把意圖寫在這裡。
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], description)
     ai_analysis_gitlab_mr.write_debug_log(
         debug_dir, "description -> %d 字元" % len(description))
@@ -144,8 +114,12 @@ def main():
 
     # 描述是空的仍然是成功：那是 MR 本身沒填，不是取得失敗。回 FAIL 會讓整條
     # 五步流程因為一筆沒寫描述的 MR 而中斷。
+    message = (("已取得 Merge Request !%s 的原始描述" % mr_iid)
+               if description
+               else ("Merge Request !%s 沒有填寫描述" % mr_iid))
+
     script_io.reply(
-        message="已取得 Merge Request !%s 的描述" % mr_iid,
+        message=message,
         detail="專案：%s" % repo,
         data={"description": description},
     )

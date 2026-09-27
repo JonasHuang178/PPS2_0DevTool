@@ -5,6 +5,10 @@
 本身 —— 它的工作就是「把這幾份檔案接起來」，命令列直接呼叫時的用法與 Qt 完全
 相同。
 
+產出是要顯示給人看的報告：原始描述那一段原樣保留，後面接上這一輪的 AI 分析。
+不加報告標題、也不加產生時間 —— 使用者要看的就是這兩段內容本身。工具不會把
+它寫回 GitLab。
+
     python ai_analysis_gitlab_mr_merge_to_md.py --help
     python ai_analysis_gitlab_mr_merge_to_md.py --dump-config > run.json
     python ai_analysis_gitlab_mr_merge_to_md.py --request run.json
@@ -17,7 +21,6 @@
 **額外**寫一份檔案。
 """
 
-import datetime
 import os
 import sys
 
@@ -32,7 +35,7 @@ from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "merge_to_md"
-DESCRIPTION      = "把前面各步落下的檔案合併成一份 markdown 報告"
+DESCRIPTION      = "把前面各步落下的檔案合併成新的 MR 描述 markdown"
 
 
 def _is_given(path):
@@ -69,7 +72,7 @@ def main():
         config=[],
         params=[
             script_io.arg("ori_md_file_path", default="",
-                          help="MR 描述的 markdown 檔；null 表示沒有這一段"),
+                          help="MR 原始描述的 markdown 檔；null 表示沒有這一段"),
             script_io.arg("mr_summary_json_file_path", default="",
                           help="AI 分析結果的 JSON 檔（取其中的 summary 欄位）；"
                                "null 表示沒有這一段"),
@@ -78,11 +81,12 @@ def main():
             script_io.arg("out_path", default="",
                           help="額外把報告寫到這個檔案；null 表示不落檔"),
 
-            # 底下兩個只影響報告標題，不是內容來源。命令列只想合併檔案時可以不給。
+            # 底下兩個**不進報告內容**，只用於診斷訊息與除錯日誌。命令列只想
+            # 合併檔案時可以不給。
             script_io.arg("repo", default="",
-                          help="專案，namespace/project 形式；只用於報告標題"),
+                          help="專案，namespace/project 形式；只用於診斷訊息"),
             script_io.arg("mr_iid", default="",
-                          help="Merge Request 編號；只用於報告標題"),
+                          help="Merge Request 編號；只用於診斷訊息"),
 
             script_io.arg("debug_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
@@ -133,22 +137,27 @@ def main():
                 len(description), len(summary), len(code_review))
 
     # --- 組報告 ---
-    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #
+    # 不加報告標題、不加產生時間：使用者要看的就是「原始描述」與「AI 分析」這
+    # 兩段內容本身，多一層框架只是噪音。
+    #
+    # AI 分析那一段的標題由 render_ai_section() 寫出，與步驟 1 用來切的是同一
+    # 個常數 —— 這樣一份被人貼回 MR 描述的報告，下一次跑的時候切得掉。
+    #
+    # 空的段落整段不放 —— 一個只有標題沒有內容的區塊會讓人以為內容漏掉了。
+    sections = []
 
-    heading = "# AI Analysis"
-    if repo and mr_iid:
-        heading = "# AI Analysis — %s !%s" % (repo, mr_iid)
-    elif repo:
-        heading = "# AI Analysis — %s" % repo
+    if description.strip():
+        sections.append(description.strip())
 
-    sections = [heading, "", "產生時間：%s" % stamp]
+    if summary.strip():
+        sections.append(
+            ai_analysis_gitlab_mr.render_ai_section(summary).strip())
 
-    # 空的段落整段不放 —— 一個只有分隔線沒有內容的區塊比沒有還糟。
-    for part in (description, summary, code_review):
-        if part.strip():
-            sections += ["", "---", "", part.strip()]
+    if code_review.strip():
+        sections.append(code_review.strip())
 
-    markdown = "\n".join(sections) + "\n"
+    markdown = "\n\n".join(sections) + "\n"
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], markdown)
     ai_analysis_gitlab_mr.write_debug_log(
