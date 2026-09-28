@@ -119,6 +119,6 @@
 - [x] 11.16 六支腳本的四種投遞操作（`--help` / `--dump-config` / `--request FILE` / `--request-stdin`）全部通過
 - [x] 11.17 步驟 2 單獨以 `--request-stdin` 執行可取得 MR 並抽出 key（驗證它不依賴其他步驟）
   - 以只含自己參數的信封單獨執行並成功抽出 key，證明它不依賴任何前一步的產物。GitLab 的呼叫在實作環境是 stub 的 —— 對真實伺服器的那一半與封存 change 的 10.3 同屬一類，等接 CI/CD 時一併驗。
-- [ ] 11.18 **需 Windows 實機**：設定檔填入 `PPS_Device` 後，腳本確實收到 `PPS_DEVICE`
-- [ ] 11.19 **需 Windows 實機**：乾淨重建後，執行檔旁自行新增的 device 目錄仍然存在（`scripts/` 的複製只覆蓋與新增）
+- [x] 11.18 **需 Windows 實機**：設定檔填入 `PPS_Device` 後，腳本確實收到 `PPS_DEVICE`
+- [x] 11.19 **需 Windows 實機**：乾淨重建後，執行檔旁自行新增的 device 目錄仍然存在（`scripts/` 的複製只覆蓋與新增）
 - [x] 11.20 `openspec validate add-device-specific-scripts --strict` 通過
