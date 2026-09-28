@@ -131,7 +131,7 @@ PPS2_0DevTool/
 │   │   │                     分析結構的建構與驗證、出處、除錯檔
 │   │   ├── ai_analysis_gitlab_mr_list_merge_requests.py  取得 MR 清單
 │   │   ├── ai_analysis_gitlab_mr_description.py   1/5 取得 MR 描述
-│   │   ├── ai_analysis_gitlab_mr_info.py          2/5 取得相關資訊（jira_key）
+│   │   ├── ai_analysis_gitlab_mr_info.py          2/5 取得相關資訊（jira_key、mr_type）
 │   │   ├── ai_analysis_gitlab_mr_summary.py       3/5 AI 分析
 │   │   ├── ai_analysis_gitlab_mr_code_review.py   4/5 程式碼審閱（stub）
 │   │   ├── ai_analysis_gitlab_mr_merge_to_md.py   5/5 合併為 markdown
@@ -386,7 +386,7 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
 | 步 | 腳本 | 產物 |
 |---|---|---|
 | 1 | `..._description.py` | MR 描述 |
-| 2 | `..._info.py` | `jira_key`（自行連 GitLab 取 MR，再交給 device 的鉤子抽） |
+| 2 | `..._info.py` | `jira_key` 與 `mr_type`（自行連 GitLab 取 MR 一次，兩個鉤子各自抽） |
 | 3 | `..._summary.py` | AI 分析結果 |
 | 4 | `..._code_review.py` | 程式碼審閱報告 |
 | 5 | `..._merge_to_md.py` | 合併後的 markdown |
@@ -398,6 +398,11 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
 
 **腳本路徑固定寫死在 C++**，不取自任何步驟的回傳資料。哪一段運算因 device 而異，
 由環境變數 `PPS_DEVICE` 決定（見下面的 device 一節），同樣不取自回傳資料。
+
+**「種類」是這條規則的明確例外。** 它由第 2 步從 MR 解出來（多半是標題），再決定第 3、5
+步用哪一份鉤子 —— 也就是說，MR 標題會影響載入哪個模組。範圍是收死的：名字必須通過
+`^[a-z_][a-z0-9_]*$`（擋掉路徑穿越），而且必須對應到一個**已經部署在該 device 底下**的
+目錄。所以標題只能在既有的選項之間挑，帶不進任何新的程式碼，也指不到別的位置。
 
 **任一步失敗即停**，以一個錯誤訊息框指出第幾步與該步腳本寫的原因，畫面不變。
 
@@ -812,9 +817,14 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 小寫英數與底線、不以數字開頭。`ssd_gen4` 可以，`ssd-gen4` 不行。比對時不分大小寫，
 設定檔寫 `SSD` 也找得到 `ssd`。
 
-三個鉤子都是選用的，只放你要覆寫的。但 `__init__.py` 的 `VERSION` **一定要有** ——
-沒宣告會直接失敗。那個版本會印在報告末尾（`Device: ssd v1.2`），**改了產出方式就把它
-往上加**；不加的話，用舊邏輯與新邏輯產生的兩份報告會帶同一個版本號。
+四個鉤子都是選用的，只放你要覆寫的；要再依種類分開就多開子目錄（見上面的 type 一節）。
+
+但 `__init__.py` 的 `VERSION` **一定要有** —— 沒宣告會直接失敗。那個版本會印在報告末尾
+（`Device: ssd v1.2`），**改了產出方式就把它往上加**；不加的話，用舊邏輯與新邏輯產生的
+兩份報告會帶同一個版本號。
+
+`__init__.py` 裡還有哪些可宣告的（目前只有 `STRICT_TYPE`），範本已經以註解列好，不必
+翻文件。
 
 寫鉤子時請用這些共用函式，不要自己重寫：
 
@@ -825,6 +835,10 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 | `contract.finding(...)` / `contract.analysis_body(...)` | 組分析結構 |
 | `contract.jira_url(key)` | 組 JIRA 網址 |
 | `contract.MAX_FINDING_DIFF_BYTES` | 單筆 diff 的位元組上限 |
+| `contract.ai_credentials(inputs)` | 取出 AI 端點、金鑰與模型名 |
+| `contract.ai_verify_ssl()` | 要不要驗 TLS 憑證（預設否） |
+| `ai_utils.ask(...)` / `ask_json(...)` | 問 AI，含重試與重問 |
+| `ai_utils.as_json(text)` / `strip_fence(text)` | 解析回覆、剝 markdown 圍籬 |
 
 `fence_for()` 特別重要：寫死三個反引號的話，內容本身含反引號的 diff（改到 markdown 檔
 就會）會讓程式碼區塊提前結束，而報告仍然「成功」產出。
