@@ -792,6 +792,13 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         // 上一步解出來的 key。有效性由該 device 的鉤子判定，不在這裡也不在上一步。
         params.insert(QString("jira_key"),
                       done.at(1).data.value(QString("jira_key")).toString());
+        // 上一步解出來的種類。它決定該 device 的哪一份 summary 鉤子被載入，但
+        // 「誰被載入」仍由腳本端決定 —— Qt 只是原樣轉送，不認得任何種類。
+        //
+        // 步驟 5 不需要這一行：種類會被步驟 3 寫進分析結果，而步驟 5 本來就要讀
+        // 那份檔案。轉送兩次就有兩個來源，而它們可以不一致。
+        params.insert(QString("mr_type"),
+                      done.at(1).data.value(QString("mr_type")).toString());
         // 模式唯讀轉送，讓鉤子能分辨 key 是抽出來的還是使用者手填的。
         params.insert(QString("jira_mode"), context.jiraMode);
         // AI 的四項走 params（不注入環境變數），因此不會出現在命令列上。

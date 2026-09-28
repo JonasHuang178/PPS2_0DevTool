@@ -100,16 +100,25 @@ def _analysis_section(payload, path, inputs):
             script_io.reply_fail("%s（檔案：%s）" % (exc, path),
                                  detail=exc.detail, code=exc.code)
 
+        # 種類自**產物**讀取，不由 Qt 再轉送一次。步驟 5 收到的只有檔案路徑，而那個值
+        # 已經在分析結構裡 —— 少一個參數，Qt 也就只需要為這件事改一行。
+        #
+        # 沒有 mr_type 的舊結構（版本 3）視為沒有種類，走通用版面，不失敗。
+        mr_type = ai_analysis_gitlab_mr.plain(analysis.get("mr_type"))
+
         try:
-            hook, owner = device.load_hook("merge_to_md")
+            hook, owner = device.load_hook("merge_to_md", mr_type=mr_type)
         except device.DeviceError as exc:
             script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
 
         try:
-            section = hook.render(dict(inputs, analysis=analysis, device=owner))
+            section = hook.render(dict(inputs, analysis=analysis, device=owner,
+                                       mr_type=mr_type))
         except Exception as exc:                    # noqa: BLE001
+            # 訊息要指得出種類：改壞的往往是某個種類專屬的那一份。
             script_io.reply_fail(
-                "device %s 的 merge_to_md.py 執行失敗" % owner,
+                "device %s 的 %smerge_to_md.py 執行失敗"
+                % (owner, ("%s/" % mr_type) if mr_type else ""),
                 detail="%s: %s" % (exc.__class__.__name__, exc),
                 code="DEVICE_HOOK_RUNTIME_ERROR")
 
@@ -243,6 +252,9 @@ def main():
 
     # 出處資訊永遠都在：報告被貼到 MR 討論串之後就脫離了產生它的環境，這一段是
     # 「這份分析是哪一版腳本、在哪裡跑出來的」唯一的答案。
+    #
+    # 種類不必在這裡取得 —— 它在 analysis 裡，render_footer 自己會讀。多傳一次的話
+    # 就有兩個來源，而它們可以不一致。
     # device 的名稱與版本由這一步自己讀環境變數取得 —— 它本來就要讀那個變數來
     # 載入自己的鉤子，不必經參數、也不必動 schema。
     device_name = ""

@@ -31,6 +31,7 @@ __all__ = [
     "render_code_review_section",
     "CODE_REVIEW_HEADING",
     "ANALYSIS_SCHEMA_VERSION",
+    "ACCEPTED_SCHEMA_VERSIONS",
     "AnalysisFormatError",
     "SCRIPT_NAME",
     "SCRIPT_VERSION",
@@ -558,7 +559,21 @@ def describe_gitlab_error(exc, repo):
 # 實際上少了幾段的報告，而它會回報成功。
 #
 # 版本 3 相對於 2 多了三個 JIRA 欄位（jira_key / jira_state / jira_url）。
-ANALYSIS_SCHEMA_VERSION = 3
+# 版本 4 相對於 3 多了 mr_type —— 那個值決定步驟 5 用哪一份版面，所以它必須跟著產物
+# 一起走，不能只存在於當次執行的參數裡。
+ANALYSIS_SCHEMA_VERSION = 4
+
+# **讀**得懂的版本。寫出去的一律是 ANALYSIS_SCHEMA_VERSION。
+#
+# 規格要的是「依版本決定如何讀取」，而不是「只讀最新的一版」—— 版本 3 與 4 的差別只有
+# 多一個選填欄位，讀 3 的方式就是「視為沒有種類」。那不是猜測，是一條知道的讀法。
+#
+# 實際的好處很具體：開發時常常單獨拿昨天的 03_summary.json 重跑步驟 5 來看版面，
+# 而那份檔案是舊版本寫的。只認最新版會讓那個迴路在每次改版時斷一次。
+#
+# 加一個版本進來之前先問：那一版的讀法真的知道嗎？不知道就不要加 —— 猜的下場是一份
+# 看起來正常、實際上少了幾段的報告，而它會回報成功。
+ACCEPTED_SCHEMA_VERSIONS = (3, 4)
 
 
 # 一次分析的 JIRA 狀態。
@@ -650,7 +665,7 @@ def finding(title, reason, diff_code=""):
 
 
 def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
-                  jira_url="", mr_diff=None):
+                  jira_url="", mr_diff=None, mr_type=""):
     """組出 analysis 的**內容**。
 
     刻意不含 schema_version —— 版本由入口腳本蓋章。讓鉤子自己填，遲早有人複製範本時
@@ -665,9 +680,13 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
 
     jira_state 的三個值見 JIRA_STATES。invalid 時 jira_key 請保留**被拒絕的原值** ——
     報告要靠它告訴讀者「抽到的是 WIP」，只說「無效」等於要人自己猜。
+
+    mr_type 由**入口腳本蓋章**，鉤子不必填（填了也會被覆蓋）—— 與 schema_version 同一個
+    理由。它必須進到產物裡，因為步驟 5 要靠它決定用哪一份版面，而步驟 5 拿到的只有檔案。
     """
     return {
         "model": plain(model),
+        "mr_type": plain(mr_type),
         "jira_key": plain(jira_key),
         "jira_state": plain(jira_state) or JIRA_STATE_NONE,
         "jira_url": plain(jira_url),
@@ -707,15 +726,16 @@ def validate_analysis(payload, source=""):
             "ANALYSIS_BAD_TYPE")
 
     raw_version = payload.get("schema_version")
-    if _schema_version(raw_version) != ANALYSIS_SCHEMA_VERSION:
+    if _schema_version(raw_version) not in ACCEPTED_SCHEMA_VERSIONS:
         raise AnalysisFormatError(
             "%s認不得的 AI 分析結果版本：%r" % (where, raw_version),
-            "這份實作認得的是 schema_version %d —— 數字與純數字字串都收"
+            "這份實作讀得懂的是 schema_version %s —— 數字與純數字字串都收"
             "（%d、\"%d\"、\"%d.0\" 視為同一個版本）。\n"
             "版本不合時不做猜測 —— 猜錯的結果是一份看起來正常、實際上少了幾段的"
             "報告，而它會回報成功。"
-            % (ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION,
-               ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION),
+            % ("、".join(str(v) for v in ACCEPTED_SCHEMA_VERSIONS),
+               ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION,
+               ANALYSIS_SCHEMA_VERSION),
             "ANALYSIS_SCHEMA_UNSUPPORTED")
 
     analysis = payload.get("analysis")
@@ -736,6 +756,16 @@ def validate_analysis(payload, source=""):
             "並把原值留在 jira_key。"
             % ("、".join(JIRA_STATES), JIRA_STATE_NONE, JIRA_STATE_INVALID),
             "ANALYSIS_JIRA_STATE_BAD")
+
+    # 種類可以是空字串（這筆 MR 沒有種類，或該 device 不用種類），但型別必須是字串。
+    # 不是字串時明確失敗，不靜默轉換 —— 一個 dict 被 str() 起來會變成 "{'a': 1}"，
+    # 然後被拿去當目錄名比對，永遠對不上而且看不出原因。
+    mr_type = analysis.get("mr_type", "")
+    if not isinstance(mr_type, str):
+        raise AnalysisFormatError(
+            "%sAI 分析結果的 mr_type 不是字串：%r" % (where, mr_type),
+            "讀到的型別是 %s。沒有種類時請填空字串。" % type(mr_type).__name__,
+            "ANALYSIS_MR_TYPE_BAD")
 
     # 型別檢查要在「沒給就當空的」之前 —— 反過來寫的話，一個打錯成 [] 的
     # mrDiff 會因為空 list 是 falsy 而變成 {}，報告少了整批檔案卻回報成功。
@@ -944,7 +974,7 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
 
         ---
 
-        Script: v1.0 | Device: ssd v1.2 | AI Mode: Open AI | JIRA: WIP (invalid)
+        Script: v1.0 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid)
         Gitlab Pipeline #1000 | Commit e456d23
 
     每個值前面都有名字。沒有標籤的話（例如 `(Open AI / ssd v1.2)`）兩個版本號並列時
@@ -965,6 +995,13 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     if name:
         version = plain(device_version)
         parts.append("Device: %s" % (("%s v%s" % (name, version)) if version else name))
+
+    # 種類緊接在 device 後面：兩者一起才說得出「這份報告是哪一段邏輯產生的」。
+    # 沒有種類時**整段不印**，不印「無」—— 不用種類的 device 每一份報告都多一個
+    # 「Type: 無」只是噪音。
+    mr_type = plain((analysis or {}).get("mr_type"))
+    if mr_type:
+        parts.append("Type: %s" % mr_type)
 
     mode = plain(ai_mode)
     if mode:

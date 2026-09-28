@@ -9,11 +9,28 @@ device，目錄名就是 device 名：
       ssd/              只放想覆寫的鉤子，缺的自動用 default 的
       _template/        底線開頭，不是 device
 
-三個鉤子（缺一不可地對應到三個步驟）：
+四個鉤子，分成兩類 —— 差別在**解析時要不要考慮種類**：
 
-    jira_key.py     步驟 2：怎麼從 Merge Request 抽出 JIRA key
-    summary.py      步驟 3：問 AI 什麼、怎麼解析、組出什麼分析內容
-    merge_to_md.py  步驟 5：AI 分析那一段的版面
+    不因種類而異（在種類被決定之前執行）
+      jira_key.py     步驟 2：怎麼從 Merge Request 抽出 JIRA key
+      mr_type.py      步驟 2：怎麼從 Merge Request 抽出種類
+
+    因種類而異
+      summary.py      步驟 3：問 AI 什麼、怎麼解析、組出什麼分析內容
+      merge_to_md.py  步驟 5：AI 分析那一段的版面
+
+種類（type）是第二個軸：同一個 device 底下，不同種類的 MR 可以走不同的 summary 與
+merge_to_md。種類以子目錄表示：
+
+    device/ssd/
+      mr_type.py        取標題第二個方括號
+      bug/summary.py    Bug 專用的 prompt，版面沿用 ssd 的
+      newtestcase/      這個種類兩支都覆寫
+        summary.py
+        merge_to_md.py
+
+**種類只在自己的 device 之內解析**（見 load_hook）。各 device 的字彙互相獨立 ——
+認得哪些種類就是「有哪些子目錄」，不需要跨產品線的共識。
 
 **這個模組只負責找到與載入鉤子，不決定何時呼叫。** 三種 JIRA 模式的分派、參數的組裝、
 回傳的驗證都在入口腳本裡 —— 那些是政策，每個 device 重寫一次只會寫歪。
@@ -29,9 +46,14 @@ __all__ = [
     "DEVICE_ENV",
     "DEFAULT_DEVICE",
     "HOOK_NAMES",
+    "TYPED_HOOKS",
+    "UNTYPED_HOOKS",
     "DeviceError",
     "resolve_name",
     "known_devices",
+    "known_types",
+    "normalize_type",
+    "strict_type",
     "load_hook",
     "device_version",
 ]
@@ -45,14 +67,23 @@ DEVICE_ENV = "PPS_DEVICE"
 # 未指定時用的 device。明著指定這個名稱也是合法的。
 DEFAULT_DEVICE = "default"
 
-# 三個鉤子的模組名。
-HOOK_NAMES = ("jira_key", "summary", "merge_to_md")
+# 在種類被決定**之前**執行的鉤子。mr_type.py 就是決定它的那一支，所以種類這一層
+# 對這兩支沒有意義 —— 它們維持兩段解析（<device>/ -> default/）。
+UNTYPED_HOOKS = ("jira_key", "mr_type")
 
-# device 名稱只接受這個形狀。
+# 因種類而異的鉤子。三段解析（<device>/<type>/ -> <device>/ -> default/）。
+TYPED_HOOKS = ("summary", "merge_to_md")
+
+# 全部鉤子的模組名。分成上面兩組而不是在解析時用字串比對，是為了讓「這一支要不要
+# 考慮種類」只有一個地方寫著 —— 散在各處的話，新增鉤子時一定會漏掉一處。
+HOOK_NAMES = UNTYPED_HOOKS + TYPED_HOOKS
+
+# device 與種類的名稱都只接受這個形狀。
 #
 # 名稱會被拿去 import，所以必須是合法的 Python 識別字 —— ssd_gen4 可以，ssd-gen4 不行。
-# 這條檢查同時擋掉 "../../etc" 那類值：名稱從頭到尾不會被拿去組任何檔案路徑（見
-# load_hook），這個檢查是第二道。
+# 這條檢查同時擋掉 "../../etc" 那類值。對種類而言這一點格外重要：種類的名字來自 MR
+# 的標題，也就是任何能開 MR 的人打的字。通過這條檢查、且必須對應到一個已經部署的
+# 目錄，兩者合起來使標題只能在既有的選項之間挑，帶不進任何新的程式碼。
 _NAME_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 # 這個套件所在的目錄，用來掃出有哪些 device。
@@ -138,6 +169,89 @@ def resolve_name(raw=None):
     return name
 
 
+def known_types(device=None):
+    """某個 device 目前認得哪些種類，依名稱排序。
+
+    掃該 device 底下的子目錄，與 known_devices() 同一個作法 —— **沒有中央的種類清單**。
+    各 device 的字彙就是它有哪些目錄，兩條產品線不需要對彼此的字彙有任何共識。
+
+    底線開頭的目錄不算，所以 __pycache__ 與種類範本都不會被誤認。
+
+    一個沒有任何鉤子的空目錄仍算一個認得的種類。那是刻意的：搭配 STRICT_TYPE 時，
+    建幾個空目錄正好可以宣告「這些種類我認得，但不需要客製」。
+    """
+    name = resolve_name() if device is None else device
+    base = os.path.join(_HERE, name)
+    if not os.path.isdir(base):
+        return []
+
+    names = []
+    for entry in sorted(os.listdir(base)):
+        if entry.startswith("_"):
+            continue
+        if os.path.isdir(os.path.join(base, entry)):
+            names.append(entry)
+    return names
+
+
+def normalize_type(raw):
+    """把鉤子抽出來的字串收斂成一個可用的種類名稱；不合用時回空字串。
+
+    轉小寫是因為標題裡寫的是給人看的形式（`[NewTestCase]`），而目錄名一律小寫。
+
+    **不合法的字串視同沒有種類，不報錯。** 那是 MR 作者打的字，不是部署者的錯誤，
+    而兩者的後續處理相同（走通用版，或在嚴格模式下失敗）—— 分開回報只會多一種
+    使用者無法行動的訊息。
+
+    回傳非字串則是另一回事：那是鉤子寫壞了，所以明確失敗。把它當成「沒有種類」會讓
+    一個壞掉的鉤子看起來像是這筆 MR 沒標種類。
+    """
+    if raw is None:
+        return ""
+
+    if not isinstance(raw, str):
+        raise DeviceError(
+            "mr_type 鉤子回傳的不是字串",
+            "收到的型別是 %s。extract() 必須回傳一個字串；沒有種類就回空字串。"
+            % type(raw).__name__,
+            "DEVICE_HOOK_BAD_RETURN")
+
+    name = raw.strip().lower()
+    if not name:
+        return ""
+
+    if not _NAME_RE.match(name):
+        logger.debug("種類 %r 不是合法的名稱，視同沒有種類", raw)
+        return ""
+
+    return name
+
+
+def strict_type(device=None):
+    """這個 device 是否要求每一筆 MR 都解析出認得的種類。未宣告時為 False。
+
+    「MR 一定要標明種類」是一條團隊紀律，而紀律是各條產品線自己的事 —— 所以開關掛在
+    device 上，不是全域的。字彙都不共用的兩條產品線，沒道理在這件事上必須一致。
+
+    與 VERSION 不同，**這一項不是必填**：設成必填會讓每一個既有的 device 立刻失效，
+    而它有一個明確且安全的預設值。
+
+    型別不對時明確失敗，不做真值判斷 —— `STRICT_TYPE = "false"` 在 Python 裡是真，
+    而寫成那樣的人想的是假。靜默照字串判斷會讓整條產品線在不知情的狀況下變嚴格。
+    """
+    name = resolve_name() if device is None else device
+    module = _import("%s.%s" % (__name__, name), name, "__init__.py")
+
+    value = getattr(module, "STRICT_TYPE", False)
+    if not isinstance(value, bool):
+        raise DeviceError(
+            "device %s 的 STRICT_TYPE 不是布林值" % name,
+            "收到的型別是 %s。請寫成 STRICT_TYPE = True 或 STRICT_TYPE = False"
+            "（不要加引號）。" % type(value).__name__,
+            "DEVICE_STRICT_TYPE_INVALID")
+    return value
+
+
 def _import(module_name, device, what):
     """載入一個模組，把失敗轉成說得出位置的 DeviceError。
 
@@ -173,36 +287,74 @@ def _import(module_name, device, what):
             "DEVICE_HOOK_LOAD_ERROR")
 
 
-def load_hook(hook, device=None):
-    """載入某個 device 的鉤子模組；該 device 沒有這個鉤子時用 default 的。
+def _hook_file(owner, sub, hook):
+    """某個候選位置的鉤子檔路徑。sub 為空字串代表 device 層。"""
+    parts = [_HERE, owner] + ([sub] if sub else []) + ["%s.py" % hook]
+    return os.path.join(*parts)
 
-    **逐鉤子回退，不是逐 device。** 只想改報告版面的 device 不該被迫複製其他鉤子 ——
-    那份複本會與 default 漸漸不同。device 本身不存在是另一回事，那在 resolve_name()
-    就失敗了。
 
-    模組以名稱載入（importlib），名稱從頭到尾不會被拿去組檔案路徑 —— 既有設計明文
-    禁止「腳本輸出的字串變成被執行的路徑」。
+def load_hook(hook, device=None, mr_type=None):
+    """載入鉤子模組，回傳 (模組, 實際提供它的 device 名稱)。
 
-    回傳 (模組, 實際提供這個鉤子的 device 名稱)。
+    **不因種類而異的鉤子**（見 UNTYPED_HOOKS）忽略 mr_type，兩段解析：
+
+        <device>/   ->   default/
+
+    **因種類而異的鉤子**（見 TYPED_HOOKS）三段解析：
+
+        <device>/<type>/   ->   <device>/   ->   default/
+
+    **刻意不找 default/<type>/。** 各 device 的種類字彙互相獨立且各自演化，同一個名稱
+    在兩個 device 下不保證是同一件事 —— SD 的 tool 與 SSD 的 tool 若意思不同，跨過去
+    取用就是套上另一條產品線的邏輯，而每一個步驟都會回報成功。那正是「未知的 device
+    必須失敗」當初要避免的失敗形狀。
+
+    少了那一段還有一個附帶的好處：**解析順序沒有任何模稜兩可之處**。四段的話就必須
+    裁決「我自己的通用版」與「預設的種類版」孰先，而兩種答案都講得通 —— 講得通的兩種
+    優先序，就是之後每個人都會搞錯的地方。
+
+    種類目錄不需要 __init__.py（namespace package），所以「放一個目錄進去」字面上就是
+    新增一個種類。
+
+    逐鉤子回退：種類目錄只放 summary.py 是合法的，merge_to_md 會落到下一段。只想改
+    prompt 的種類不該被迫複製版面，那份複本會漸漸漂移。
+
+    回傳的第二個值是 **device 名稱**，不含種類 —— 呼叫端把它當成「這是哪一個 device」
+    使用（含交給鉤子的 inputs）。錯誤訊息裡要指名種類的話，載入失敗由這裡處理（見下面
+    的 what），執行期的例外由呼叫端自己組（它手上有 mr_type）。
     """
     assert hook in HOOK_NAMES, hook
     name = resolve_name() if device is None else device
 
-    owner = name
-    if not os.path.isfile(os.path.join(_HERE, name, "%s.py" % hook)):
-        if name != DEFAULT_DEVICE:
-            logger.debug("device %s 沒有 %s，改用 %s 的", name, hook, DEFAULT_DEVICE)
-        owner = DEFAULT_DEVICE
+    type_name = normalize_type(mr_type) if hook in TYPED_HOOKS else ""
 
-    if not os.path.isfile(os.path.join(_HERE, owner, "%s.py" % hook)):
-        raise DeviceError(
-            "找不到 %s 鉤子" % hook,
-            "device %s 與 %s 都沒有 %s.py。這是部署不完整，不是設定的問題。"
-            % (name, DEFAULT_DEVICE, hook),
-            "DEVICE_HOOK_MISSING")
+    candidates = []
+    if type_name:
+        candidates.append((name, type_name))
+    candidates.append((name, ""))
+    if name != DEFAULT_DEVICE:
+        candidates.append((DEFAULT_DEVICE, ""))
 
-    module = _import("%s.%s.%s" % (__name__, owner, hook), owner, "%s.py" % hook)
-    return module, owner
+    for owner, sub in candidates:
+        if not os.path.isfile(_hook_file(owner, sub, hook)):
+            continue
+
+        if (owner, sub) != (name, type_name):
+            logger.debug("%s 取自 %s（原本要找 %s）", hook,
+                         "%s/%s" % (owner, sub) if sub else owner,
+                         "%s/%s" % (name, type_name) if type_name else name)
+
+        parts = [__name__, owner] + ([sub] if sub else []) + [hook]
+        what = "%s/%s.py" % (sub, hook) if sub else "%s.py" % hook
+        return _import(".".join(parts), owner, what), owner
+
+    raise DeviceError(
+        "找不到 %s 鉤子" % hook,
+        "找過這些位置都沒有 %s.py：%s。\n"
+        "這是部署不完整，不是設定的問題。"
+        % (hook, "、".join("%s/%s" % (o, sub) if sub else "%s/" % o
+                           for o, sub in candidates)),
+        "DEVICE_HOOK_MISSING")
 
 
 def device_version(device=None):

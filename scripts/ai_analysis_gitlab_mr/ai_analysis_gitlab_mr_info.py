@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """AI Analysis GitLab MR —— 步驟 2/5：取得相關資訊。
 
-取得該 Merge Request 的後設資訊，並解出這次要用的 JIRA key。
+取得該 Merge Request 的後設資訊，並解出這次要用的 JIRA key 與**種類**。
+
+種類（mr_type）決定步驟 3 與步驟 5 會用哪一份 summary.py 與 merge_to_md.py。它與
+JIRA key 都是從同一份 MR 的同一個標題解出來的，所以在同一步進行 —— 分成兩步會讓
+同一筆 MR 被取得三次。
 
 **自己連線 GitLab。** 抽 JIRA key 的預設規則讀的是標題，而步驟 1 的產物只有描述本文；
 畫面也不可靠 —— 使用者手動輸入編號時沒有標題。自己抓的代價是同一個 MR 被抓兩次，換到
@@ -36,7 +40,7 @@ from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "mr_info"
-DESCRIPTION      = "取得 Merge Request 的相關資訊並解出 JIRA key"
+DESCRIPTION      = "取得 Merge Request 的相關資訊並解出 JIRA key 與種類"
 
 
 def _mr_fields(repo, mr_iid, mr):
@@ -87,6 +91,61 @@ def _resolve_jira_key(mode, manual, fields, repo, mr_iid, debug_dir):
     return key
 
 
+def _resolve_mr_type(fields, device_name):
+    """解出這次的種類。回傳正規化過的字串；沒有就是空字串。
+
+    嚴格模式的檢查也在這裡 —— 也就是在**任何 AI 花費之前**。一個沒照約定的標題不該先
+    付一次錢才被告知。
+    """
+    # device 明著傳進去，不讓 load_hook 自己再去讀一次環境變數 —— 這一支的其餘判斷
+    # （認得哪些種類、嚴不嚴格）都以 device_name 為準，載入卻用另一個來源的話，兩者
+    # 一旦不同就會「載入 A 的鉤子、卻拿 B 的種類清單去檢查」，而且不會有任何徵兆。
+    hook, owner = device.load_hook("mr_type", device=device_name)
+
+    try:
+        raw = hook.extract(fields)
+    except Exception as exc:                        # noqa: BLE001
+        raise device.DeviceError(
+            "device %s 的 mr_type.py 執行失敗" % owner,
+            "%s: %s" % (exc.__class__.__name__, exc),
+            "DEVICE_HOOK_RUNTIME_ERROR")
+
+    # 正規化在入口，不在鉤子：去空白、轉小寫、檢查形狀。不合法的字串視同沒有種類 ——
+    # 那是 MR 作者打的字，不是部署者的錯誤。
+    mr_type = device.normalize_type(raw)
+
+    known = device.known_types(device_name)
+
+    if mr_type and mr_type not in known:
+        logger.info("device %s 認不得種類 %r（認得的是：%s）",
+                    device_name, mr_type, "、".join(known) or "(無)")
+        if device.strict_type(device_name):
+            raise device.DeviceError(
+                "device %s 認不得 type：%s" % (device_name, mr_type),
+                "目前認得的是：%s。\n"
+                "這個 device 宣告了 STRICT_TYPE = True，所以認不得的 type 是錯誤"
+                "而不是回退。\n"
+                "要新增一個 type，在 device/%s/ 底下建一個同名目錄即可。"
+                % ("、".join(known) or "(無)", device_name),
+                "DEVICE_TYPE_UNKNOWN")
+        # 不嚴格：回退到通用版。回空字串讓後面幾步不必再判斷一次。
+        return ""
+
+    if not mr_type and device.strict_type(device_name):
+        # 與「認不得」分開：使用者的下一步不同 —— 一個是去補標題，一個是去確認名稱。
+        raise device.DeviceError(
+            "這筆 Merge Request 沒有宣告 type",
+            "device %s 宣告了 STRICT_TYPE = True，要求每一筆 Merge Request 都標明"
+            "種類。\n"
+            "抽取規則見 device/%s/mr_type.py（沒有的話是 device/%s/mr_type.py）。\n"
+            "目前認得的 type：%s。"
+            % (device_name, device_name, device.DEFAULT_DEVICE,
+               "、".join(known) or "(無)"),
+            "DEVICE_TYPE_MISSING")
+
+    return mr_type
+
+
 def main():
     req = script_io.parse_request(
         action=ACTION,
@@ -110,6 +169,9 @@ def main():
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把結果寫到這個檔案；空字串代表不落檔"),
+
+            # 種類沒有對應的參數：它完全由 device 的鉤子自標題等欄位解出，
+            # 呼叫端不能指定。可指定的話，兩個呼叫端就會各自長出一套判斷。
         ],
     )
 
@@ -146,17 +208,22 @@ def main():
     try:
         jira_key = _resolve_jira_key(params["jira_mode"], params["jira_key_manual"],
                                      fields, repo, mr_iid, debug_dir)
+        mr_type = _resolve_mr_type(fields, device.resolve_name())
     except device.DeviceError as exc:
+        ai_analysis_gitlab_mr.write_debug_log(
+            debug_dir, "FAIL [%s] %s" % (exc.code, exc))
         script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
 
-    result = {"jira_key": jira_key}
+    result = {"jira_key": jira_key, "mr_type": mr_type}
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], result)
     ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "mr_info repo=%s mr=%s jira_key=%r" % (repo, mr_iid, jira_key))
+        debug_dir, "mr_info repo=%s mr=%s jira_key=%r mr_type=%r"
+        % (repo, mr_iid, jira_key, mr_type))
 
     script_io.reply(
-        message="已取得相關資訊（JIRA key：%s）" % (jira_key or "(無)"),
+        message="已取得相關資訊（JIRA key：%s，type：%s）"
+                % (jira_key or "(無)", mr_type or "(無)"),
         detail="專案：%s\nMerge Request：!%s" % (repo, mr_iid),
         data=result,
     )

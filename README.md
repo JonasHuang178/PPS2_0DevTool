@@ -136,9 +136,11 @@ PPS2_0DevTool/
 │   │   ├── ai_analysis_gitlab_mr_code_review.py   4/5 程式碼審閱（stub）
 │   │   ├── ai_analysis_gitlab_mr_merge_to_md.py   5/5 合併為 markdown
 │   │   └── device/           各產品線自己的分析邏輯（見下面的 device 一節）
-│   │       ├── __init__.py   解析 PPS_DEVICE、掃目錄、逐鉤子回退
+│   │       ├── __init__.py   解析 PPS_DEVICE 與種類、掃目錄、逐鉤子回退
 │   │       ├── default/      未指定時用這一份，也是所有 device 的後備
+│   │       │   └── <type>/   選用：某個種類專屬的 summary / merge_to_md
 │   │       └── _template/    範本（底線開頭，不是 device）
+│   │           └── _type_template/   種類目錄的範本
 │   │
 │   └── script_utils/         共用模組依「技術領域」分組
 │       ├── logger.py         log（唯一設定 logging 的地方）
@@ -432,7 +434,7 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
 
 ---
 
-Script: v1.0 | Device: default v1.0 | AI Mode: Open AI | JIRA: PPS-1234
+Script: v1.0 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: PPS-1234
 PPS 2.0 DevTool v2.0.0
 ````
 
@@ -466,9 +468,10 @@ PPS 2.0 DevTool v2.0.0
 
 ````json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "analysis": {
     "model": "gpt-4o",
+    "mr_type": "bug",
     "jira_key": "PPS-1234",
     "jira_state": "ok",
     "jira_url": "https://jira.example.com/browse/PPS-1234",
@@ -488,8 +491,13 @@ PPS 2.0 DevTool v2.0.0
   **被拒絕的原值**，報告會印成 `JIRA: WIP (invalid)` —— 一眼看出標題的第一個方括號
   放錯了東西
 - `model` 留在資料裡供其他消費者使用，**不進報告**
+- `mr_type` 是這一筆的種類，決定步驟 5 用哪一份版面；沒有種類時是空字串。它由**入口
+  腳本蓋章**，device 的鉤子不必填（填了也會被覆蓋）
 - 某個檔案的清單為空時，該檔案整個不出現，編號也只算實際出現的檔案
-- `schema_version` 比對時寬鬆：`3`、`"3"`、`"3.0"` 是同一個版本；`"3.5"` 與 `true` 不收
+- `schema_version` 比對時寬鬆：`4`、`"4"`、`"4.0"` 是同一個版本；`"4.5"` 與 `true` 不收
+- **讀得懂版本 3 與 4**（寫出去的一律是 4）。版本 3 少的就是 `mr_type`，讀法是「視為
+  沒有種類」—— 那不是猜測，是一條知道的讀法。實際的好處是開發時常常拿昨天的
+  `03_summary.json` 單獨重跑步驟 5 看版面，只認最新版會讓那個迴路每次改版就斷一次
 - 建構用 `ai_analysis_gitlab_mr` 的 `finding()` 與 `analysis_body()`，不要自己寫
   dict literal —— 欄位名散在寫入側與讀取側兩邊，改名漏一邊就是安靜地少一段
 - `schema_version` **由入口腳本蓋章**，device 的鉤子只回 `analysis` 的內容。入口收到
@@ -640,19 +648,25 @@ print(load_hook('summary')[0].build_prompt({
 一個 MR 該怎麼分析，會因為它屬於哪一條產品線而不同 —— SD 與 SSD 要問 AI 的問題不一樣，
 報告要怎麼排也不一樣。所以流程中**三個步驟**的業務運算可以按 device 客製：
 
-| 步驟 | 鉤子 | device 決定 |
-|---|---|---|
-| 2 | `jira_key.py` | 怎麼從 MR 抽出 JIRA key |
-| 3 | `summary.py` | 問 AI 什麼、怎麼解析、組出什麼分析內容 |
-| 5 | `merge_to_md.py` | AI 分析那一段的版面 |
+| 步驟 | 鉤子 | device 決定 | 因種類而異 |
+|---|---|---|---|
+| 2 | `jira_key.py` | 怎麼從 MR 抽出 JIRA key | 否 |
+| 2 | `mr_type.py` | 怎麼從 MR 抽出**種類** | 否 |
+| 3 | `summary.py` | 問 AI 什麼、怎麼解析、組出什麼分析內容 | **是** |
+| 5 | `merge_to_md.py` | AI 分析那一段的版面 | **是** |
 
 步驟 1（取得描述）與步驟 4（程式碼審閱）不因 device 而異。
+
+「種類」是第二個軸，見下面的 type 一節。前兩支不因種類而異，因為它們在種類被決定
+**之前**執行 —— `mr_type.py` 就是決定它的那一支。
 
 ```
 scripts/ai_analysis_gitlab_mr/device/
   default/          未指定時用這一份，也是所有 device 的後備
   _template/        範本（底線開頭，不是 device）
+    _type_template/ 種類目錄的範本
   ssd/              只放想覆寫的鉤子
+    bug/            一個種類，一樣只放想覆寫的
 ```
 
 **哪一個 device 由環境變數 `PPS_DEVICE` 決定。** 工具端由 Qt 從設定檔的 `PPS_Device`
@@ -673,6 +687,118 @@ PPS_DEVICE = sdd         ->  失敗，訊息列出目前認得哪些
 而那份複本會跟著 default 漂移。
 
 認得哪些 device 由**掃目錄**決定，沒有註冊表：放一個目錄進去就是新增一個 device。
+
+### type：同一個 device 底下再分種類
+
+一筆修 bug 的 MR 與一筆新增測試案例的 MR，要問 AI 的問題不一樣，報告也不該長得一樣。
+所以 `summary.py` 與 `merge_to_md.py` 可以再依**種類**分開 —— 以子目錄表示：
+
+```
+device/ssd/
+  __init__.py       VERSION、STRICT_TYPE
+  mr_type.py        怎麼從 MR 抽出種類
+  bug/
+    summary.py      Bug 專用的 prompt，版面沿用 ssd 或 default 的
+  newtestcase/
+    summary.py
+    merge_to_md.py  這個種類兩支都覆寫
+```
+
+**種類不需要 `__init__.py`**（namespace package），放一個目錄進去字面上就是新增一個
+種類。認得哪些種類同樣由掃目錄決定，沒有註冊表。
+
+#### 誰決定種類
+
+由該 device 的 `mr_type.py` 從 MR 抽出來，規則各自決定 —— SSD 可能看標題第二個方括號、
+SD 看第三個：
+
+```
+mod:[PPS-1234][Bug] 修正重試上限
+    ^^^^^^^^^^ jira_key.py 取這個
+              ^^^^^ ssd/mr_type.py 取這個 -> "Bug" -> 轉小寫 -> bug/
+```
+
+抽出來的字一律轉小寫比對，所以 `[NewTestCase]` 對應到 `newtestcase/`。鉤子也可以做
+**映射**：標題寫 `[FW-Update]`、回 `"fw_update"`，目錄名維持合法識別字。
+
+它與 `jira_key.py` 在**同一步、同一次 GitLab 取得**裡跑完，不會多一次連線。
+
+> ⚠️ 標題格式與 default 不同的 device，`jira_key.py` 與 `mr_type.py` **通常要一起寫**。
+> 只寫一支的話另一支會沿用 default 的規則，安靜地抽到錯的東西 —— 症狀是報告印出
+> `JIRA: Alpha (invalid)`，看得見，但要看報告才看得見。
+
+#### 解析鏈：種類只在自己的 device 之內
+
+```
+  <device>/<type>/   ->   <device>/   ->   default/
+```
+
+例如 `PPS_DEVICE=ssd`、種類 `bug`：
+
+| 鉤子 | 找的順序 | 上面那個例子的結果 |
+|---|---|---|
+| `summary` | `ssd/bug/` → `ssd/` → `default/` | `ssd/bug/summary.py` |
+| `merge_to_md` | `ssd/bug/` → `ssd/` → `default/` | `default/merge_to_md.py` |
+
+**不會去找 `default/bug/`。** 各 device 的種類字彙是各自演化的 —— SD 的 `tool` 與
+SSD 的 `tool` 不保證是同一件事，跨過去取用就是套上另一條產品線的邏輯，而每一步都回報
+成功。少了那一段還有一個好處：**沒有優先序需要裁決**。四段的話就得回答「我的通用版
+與別人的種類版誰先」，而兩種答案都講得通。
+
+真的要共用就**明著 import**，不要靠回退：
+
+```python
+# device/ssd/bug/summary.py
+from ai_analysis_gitlab_mr.device.default.bug import summary as base
+```
+
+#### 認不得的種類 —— 與 device 相反
+
+| | 未知時 | 為什麼 |
+|---|---|---|
+| **device** | **報錯** | 名字來自設定檔，打錯是操作者的責任。靜默改用通用邏輯會產出一份用錯邏輯、每一步卻都回報成功的報告 |
+| **type** | **回退** | 名字來自 MR 標題，是任何能開 MR 的人打的字。為了一個沒照約定的標題讓整份分析做不出來，等於把工具的可用性綁在別人的打字習慣上 |
+
+抽不到、名稱不合法（`[緊急]`、`[bug fix]`）、或這個 device 沒有那個目錄，三者都走回退。
+
+要改成報錯，在該 device 的 `__init__.py` 宣告：
+
+```python
+VERSION = "1.2"
+STRICT_TYPE = True
+```
+
+- 未宣告視為 `False`。它**不是必填** —— 設成必填會讓每一個既有的 device 立刻壞掉
+- 必須寫成 `True` / `False`，不要加引號。字串 `"false"` 在 Python 裡是真值，寫成那樣會
+  直接報錯而不是安靜地變嚴格
+- **失敗發生在步驟 2**，也就是在任何 AI 花費之前。標題打錯不該先付一次錢才被告知
+- 兩種情況的訊息分開（下一步不同）：
+
+  ```
+  這筆 Merge Request 沒有宣告 type
+  device ssd 認不得 type：refactor    目前認得的是：bug、newtestcase
+  ```
+
+- **只管種類本身認不認得，不要求種類目錄放齊鉤子。** `bug/` 底下只有 `summary.py` 時，
+  `merge_to_md` 照常回退，即使 `STRICT_TYPE = True`。否則開一個種類就得放齊四支
+
+#### 種類怎麼傳下去
+
+```
+02_mr_info.json   { "jira_key": "PPS-1234", "mr_type": "bug" }
+      |
+      |  Qt 轉送（case 2 那一行）
+      v
+03_summary.json   { "schema_version": 4, "analysis": { "mr_type": "bug", ... } }
+                                                            |
+                                                            |  步驟 5 讀這份檔案
+                                                            v
+                                                      挑 merge_to_md
+```
+
+步驟 5 從**產物**讀而不是由 Qt 再轉送一次：Qt 只需要改一行，而且種類被記進產物，可以
+印在報告出處（`Type: bug`），也留給其他消費者。種類由**入口腳本蓋章**，鉤子不填 ——
+與 `schema_version` 同一個理由，讓鉤子填遲早有人複製範本時忘記。
 
 ### 新增一個 device
 

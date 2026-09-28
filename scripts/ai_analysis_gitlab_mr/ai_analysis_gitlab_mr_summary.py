@@ -170,6 +170,9 @@ def main():
                           help="上一步解出的 JIRA key；有效性由 device 的鉤子判定"),
             script_io.arg("jira_mode", default="auto",
                           help="none / manual / auto；唯讀傳給鉤子，讓它分辨 key 的來源"),
+            script_io.arg("mr_type", default="",
+                          help="上一步解出的種類；決定用哪一份 summary 鉤子，"
+                               "空字串代表用該 device 的通用版"),
             script_io.arg("ai_mode_name", default="", help="AI 模式名稱"),
             script_io.arg("ai_api_url", default="", help="AI 端點"),
             script_io.arg("ai_api_key", default="", help="AI 金鑰"),
@@ -188,14 +191,22 @@ def main():
     # 輸入雙軌：params 有內容就用內容（Qt 走這條），沒內容但有路徑就讀路徑（CI 走這條）。
     description = ai_analysis_gitlab_mr.resolve_text_input(params, "description")
 
+    # 種類決定用哪一份 summary。上一步已經正規化過（去空白、轉小寫、檢查形狀），
+    # 這裡再走一次是為了讓命令列直接執行時也一致 —— 那條路徑沒有經過上一步。
+    mr_type = params["mr_type"]
+
     try:
-        hook, owner = device.load_hook("summary")
+        hook, owner = device.load_hook("summary", mr_type=mr_type)
+        mr_type = device.normalize_type(mr_type)
     except device.DeviceError as exc:
         _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
 
-    where = "device %s 的 summary.py" % owner
-    logger.info("AI 分析：device=%s mode=%s model=%s jira_key=%s",
+    # 訊息要指得出種類：改壞的往往是某個種類專屬的那一份，而不是通用的那一份。
+    where = "device %s 的 %ssummary.py" % (owner,
+                                           ("%s/" % mr_type) if mr_type else "")
+    logger.info("AI 分析：device=%s type=%s mode=%s model=%s jira_key=%s",
                 owner,
+                mr_type or "(無)",
                 params["ai_mode_name"] or "(未指定)",
                 params["ai_model"] or "(未指定)",
                 params["jira_key"] or "(無)")
@@ -215,6 +226,10 @@ def main():
         "fetch_jira": _fetch_jira,
         "jira_key": params["jira_key"],
         "jira_mode": params["jira_mode"],
+
+        # 唯讀轉送：讓鉤子知道自己是被哪一個種類選中的。通用的那一份可以據此微調，
+        # 而種類專屬的那一份通常不需要看它。
+        "mr_type": mr_type,
         "ai_mode_name": params["ai_mode_name"],
         "ai_api_url": params["ai_api_url"],
         "ai_api_key": params["ai_api_key"],
@@ -260,7 +275,11 @@ def main():
               traceback.format_exc(),
               "DEVICE_HOOK_RUNTIME_ERROR")
 
-    # 版本由入口蓋章，鉤子不填 —— 讓它自己填，遲早有人複製範本時忘了改。
+    # 版本與種類都由入口蓋章，鉤子不填 —— 讓它自己填，遲早有人複製範本時忘了改。
+    #
+    # 種類覆寫而不是「沒有才補」：鉤子若回了一個與實際解析結果不同的種類，那份產物會
+    # 讓步驟 5 挑到另一份版面，而兩步的說法互相矛盾卻都回報成功。
+    body["mr_type"] = mr_type
     payload = ai_analysis_gitlab_mr.wrap_analysis(body)
 
     try:
@@ -276,12 +295,13 @@ def main():
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], payload)
     ai_analysis_gitlab_mr.write_debug_log(
         params["debug_dir"],
-        "summary(%s) repo=%s mr=%s jira_state=%s files=%d"
-        % (owner, repo, mr_iid, body.get("jira_state"),
+        "summary(%s) repo=%s mr=%s type=%r jira_state=%s files=%d"
+        % (owner, repo, mr_iid, mr_type, body.get("jira_state"),
            len(body.get("mrDiff") or {})))
 
     script_io.reply(
-        message="AI 分析完成（device：%s）" % owner,
+        message="AI 分析完成（device：%s%s）"
+                % (owner, ("，type：%s" % mr_type) if mr_type else ""),
         detail="專案：%s\nMerge Request：!%s" % (repo, mr_iid),
         data=payload,
     )
