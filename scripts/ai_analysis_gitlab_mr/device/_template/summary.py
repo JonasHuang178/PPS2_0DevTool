@@ -40,6 +40,11 @@ def analyze(inputs):
         mr_iid          編號
         device          這個 device 的名稱
         progress        progress(text)，在對話框上顯示一行字
+        debug_write     debug_write(檔名, 內容)，寫一份除錯檔。除錯輸出沒打開
+                        時什麼都不做，所以可以無條件呼叫。調 prompt 時把實際
+                        送出的 prompt 與 AI 的原始回覆各寫一份 —— 那兩份不
+                        進 log（prompt 含原始碼，回覆動輒幾萬字元），除錯檔
+                        是唯一看得到它們的地方
 
     AI 的呼叫是分鐘級的，而那個對話框是固定尺寸、只有一行字 —— 兩分鐘沒動靜看起來
     就是當掉了。把 progress 包成 ai_utils 的 on_retry 回呼，重試時使用者才看得到。

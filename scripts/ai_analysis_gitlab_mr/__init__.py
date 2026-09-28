@@ -56,6 +56,8 @@ __all__ = [
     "DEBUG_LOG_NAME",
     "write_artifact",
     "write_debug_log",
+    "write_debug_file",
+    "debug_writer",
     "resolve_text_input",
     "resolve_json_input",
 ]
@@ -114,6 +116,41 @@ def write_debug_log(debug_dir, message):
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(str(message) + "\n")
     return True
+
+
+def write_debug_file(debug_dir, name, content):
+    """把一整份內容寫成除錯目錄下的獨立檔案。debug_dir 為空就什麼都不做。
+
+    與 write_debug_log() 分開的理由是用途不同：那一支是一行一行追加的流水帳，這一支
+    是「把這次實際送出／收到的東西整份留下來」。prompt 與 AI 的原始回覆都是幾千到幾萬
+    字元、含換行的整塊文字，塞進流水帳只會把它淹掉。
+
+    **只在除錯目錄有設定時才寫。** prompt 裡有整份 diff，也就是原始碼；預設就落到磁碟
+    不是使用者要求的事。畫面上那個除錯輸出的勾選才是「我知道我在把這些寫出來」。
+
+    回傳寫出的路徑，沒寫就回 False —— 呼叫端可以據此決定要不要在訊息裡提到它。
+    """
+    if not debug_dir:
+        return False
+
+    if not os.path.isdir(debug_dir):
+        os.makedirs(debug_dir, exist_ok=True)
+
+    path = os.path.join(debug_dir, name)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content if isinstance(content, str) else str(content))
+    return path
+
+
+def debug_writer(debug_dir):
+    """做一個綁好除錯目錄的 write_debug_file。
+
+    給 device 的鉤子用：它拿到的是一個「寫一份除錯檔」的能力，不必知道目錄在哪、
+    也不必自己判斷除錯有沒有開 —— 沒開的時候這個函式什麼都不做。
+    """
+    def write(name, content):
+        return write_debug_file(debug_dir, name, content)
+    return write
 
 
 def _read_file(path):

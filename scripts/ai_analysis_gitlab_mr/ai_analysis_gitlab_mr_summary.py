@@ -214,6 +214,13 @@ def main():
         # 傳函式進來而不是讓鉤子自己 import script_io：鉤子是使用者寫的，它拿到的
         # 應該是一個「報進度」的能力，而不是一個可以自行結束行程的模組。
         "progress": script_io.progress,
+
+        # 寫一份除錯檔的能力。除錯目錄沒設定時它什麼都不做，所以鉤子可以無條件
+        # 呼叫，不必自己判斷除錯有沒有開。
+        #
+        # prompt 與 AI 的原始回覆是調 prompt 時唯一真正需要看的兩份東西，而它們
+        # 都不進 log（prompt 含原始碼，回覆動輒幾萬字元）。
+        "debug_write": ai_analysis_gitlab_mr.debug_writer(params["debug_dir"]),
     }
 
     try:

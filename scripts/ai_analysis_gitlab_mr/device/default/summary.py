@@ -366,17 +366,31 @@ def analyze(inputs):
 
     prompt = build_prompt(inputs)
     # prompt 本身不進 log：裡面有整份 diff，印出來會把 log 撐爆，也把原始碼落到磁碟。
+    # 要看實際送出去的內容就打開除錯輸出，它會整份寫成一個檔（見下）。
     logger.info("prompt 組好了，%d 字元", len(prompt))
+
+    debug_write = inputs.get("debug_write") or (lambda name, text: False)
+    debug_write("ai_prompt.txt", prompt)
 
     # 兩層驗證串成同一個 parse：先要是合法 JSON，再要是認得的結構。任何一層不過都
     # 丟 ValueError，ai_utils 據此重問一次（reask=1）。
     #
     # 分兩段寫的話，第二段跑在 ask() 之外，重問就永遠觸發不到 —— 而「JSON 合法但
     # 結構不對」恰好是模型最常見的失手方式。
+    attempt = [0]
+
+    def parse(text):
+        # 每一次嘗試各寫一個檔（ai_reply_1.txt、ai_reply_2.txt…）。**寫在解析之前**，
+        # 所以解析失敗時那一份仍然留著 —— 那正是你需要看的那一份。覆寫同一個檔的話，
+        # 重問成功會把失敗的那次蓋掉，而失敗的那次才是線索。
+        attempt[0] += 1
+        debug_write("ai_reply_%d.txt" % attempt[0], text)
+        return parse_reply(ai_utils.as_json(text))
+
     summary, mr_diff = ai_utils.ask(
         api_url, prompt,
         api_key=api_key,
-        parse=lambda text: parse_reply(ai_utils.as_json(text)),
+        parse=parse,
         reask=1,
         on_retry=_on_retry(inputs.get("progress")))
 
