@@ -45,10 +45,13 @@ __all__ = [
     "jira_url",
     "fence_for",
     "MAX_FINDING_DIFF_BYTES",
+    "MAX_PROMPT_DIFF_BYTES",
     "finding",
     "analysis_body",
     "CredentialError",
     "gitlab_credentials",
+    "jira_credentials",
+    "ai_credentials",
     "describe_gitlab_error",
     "DEBUG_LOG_NAME",
     "write_artifact",
@@ -385,6 +388,67 @@ def gitlab_credentials():
     return server_url, token, verify_ssl
 
 
+def jira_credentials():
+    """自環境變數取出 JIRA 的連線資訊，回傳 (base_url, token)。
+
+    與 gitlab_credentials() 同一套規則：只讀環境變數，Qt 會把設定檔 Service 區塊的
+    鍵以全大寫注入。
+
+    **缺漏不一定是錯誤**，所以這裡拋例外、由呼叫端決定要不要當成失敗：組 prompt 時
+    JIRA 只是補充資料，沒設定就不放那一段；但要是有人專門去查一張 issue 卻沒有位址，
+    那就是錯誤。這個函式不替呼叫端決定。
+    """
+    base_url = os.environ.get("JIRA_SERVER_URL", "").strip()
+    token = os.environ.get("JIRA_ACCESS_TOKEN", "").strip()
+
+    if not base_url:
+        raise CredentialError(
+            "未設定環境變數 JIRA_SERVER_URL",
+            "設定檔的 Service.Jira_Server_URL 會由工具注入為這個環境變數；"
+            "以命令列執行時請自行設定。",
+            "JIRA_SERVER_URL_MISSING")
+
+    if not token:
+        raise CredentialError(
+            "未設定環境變數 JIRA_ACCESS_TOKEN",
+            "設定檔的 Service.Jira_Access_Token 會由工具注入為這個環境變數；"
+            "以命令列執行時請自行設定。",
+            "JIRA_ACCESS_TOKEN_MISSING")
+
+    return base_url, token
+
+
+def ai_credentials(inputs):
+    """自鉤子的 inputs 取出 AI 的連線資訊，回傳 (api_url, api_key, model)。
+
+    與另外兩個不同，AI 的四項走 **params 而不是環境變數**（見步驟 3 的入口腳本）——
+    因此它們從 inputs 進來，不從 os.environ 讀。
+
+    金鑰本身**不檢查**：有些地端服務根本不要認證，空字串是合法的。位址與模型名缺了
+    就沒得問，那才是錯誤。
+
+    放在契約層而不是 ai_utils：認得 inputs 的形狀是這個功能的事，script_utils 底下的
+    模組不該知道任何一個功能的參數長什麼樣。
+    """
+    api_url = plain(inputs.get("ai_api_url"))
+    api_key = plain(inputs.get("ai_api_key"))
+    model = plain(inputs.get("ai_model"))
+
+    if not api_url:
+        raise CredentialError(
+            "未指定 AI 端點",
+            "設定檔 Service.AI_Mode_List 裡所選模式的 Api_URL 是空的。",
+            "AI_API_URL_MISSING")
+
+    if not model:
+        raise CredentialError(
+            "未指定 AI 模型",
+            "設定檔 Service.AI_Mode_List 裡所選模式的 Model 是空的。",
+            "AI_MODEL_MISSING")
+
+    return api_url, api_key, model
+
+
 def describe_gitlab_error(exc, repo):
     """把 GitLabError 轉成 (message, detail, code)，供入口腳本回報。
 
@@ -491,6 +555,13 @@ def plain(value):
 # 整份報告最後經 stdout 回到 Qt 再塞進結果視窗，一個大 MR 的所有 hunk 全帶進來是
 # 幾百 KB 起跳。gitlab_utils.get_mr_plain_diff() 的 max_bytes 是同一個考量。
 MAX_FINDING_DIFF_BYTES = 4000
+
+# 送進 prompt 的 diff 上限。超過就截斷，並在 prompt 裡明講截斷了 —— 靜默截斷會讓
+# 模型對著半份 diff 給出一份自信的分析。
+#
+# 這個數字是**起點，不是定論**：合適的值取決於實際使用的模型 context window 有多大。
+# 落地模型的規格確定後應該重訂，改這一行即可。逐檔切開分批呼叫是之後的事。
+MAX_PROMPT_DIFF_BYTES = 120000
 
 _DIFF_TRUNCATED = "\n… （diff 已截斷）"
 

@@ -2,7 +2,11 @@
 """AI Analysis GitLab MR —— 步驟 3/5：AI 分析。
 
 這一步的業務運算全部交給 device 的 summary 鉤子 —— 要問 AI 什麼、怎麼解析、組出什麼
-分析內容，由該 device 決定。入口只負責信封、參數、驗證與落檔。
+分析內容，由該 device 決定。入口負責信封、參數、**把素材備好**、驗證與落檔。
+
+「備好素材」指的是 MR 的 diff 與 JIRA issue 的內容：兩者都要連線、要憑證、要處理錯誤，
+而寫 prompt 的人不該為了改一句話去面對 HTTP。鉤子收到的是現成的文字（見 inputs 的
+mr_diff 與 jira_issue），它只決定怎麼把那些素材排進 prompt。
 
 **鉤子回傳的結構在收到的當下就驗證。** 不驗的話，錯誤會在兩步之後的渲染才爆，而訊息
 指的是合併那一步、不是寫壞的那個 device。
@@ -11,7 +15,12 @@
     python ai_analysis_gitlab_mr_summary.py --dump-config > run.json
     python ai_analysis_gitlab_mr_summary.py --request run.json
 
-    PPS_DEVICE   sd / ssd / ...（未設定時用 default）
+    PPS_DEVICE            sd / ssd / ...（未設定時用 default）
+    GITLAB_SERVER_URL     取 diff 用，必要
+    GITLAB_ACCESS_TOKEN   取 diff 用，必要
+    GITLAB_VERIFY_SSL     未設定時視為不驗證
+    JIRA_SERVER_URL       取 issue 內容用，缺了就不放那一段
+    JIRA_ACCESS_TOKEN     同上
 """
 
 import os
@@ -23,11 +32,78 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ai_analysis_gitlab_mr
 import script_io
 from ai_analysis_gitlab_mr import device
+from script_utils import gitlab_utils
+from script_utils import jira_utils
 from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "ai_summary"
 DESCRIPTION      = "以 AI 分析 Merge Request（內容由 device 的鉤子決定）"
+
+# 從 JIRA 取哪些欄位。只取組 prompt 用得到的 —— 整張 issue 回來會有幾十個欄位，
+# 絕大多數是工作流程的內部狀態，塞進 prompt 只是浪費 context。
+_JIRA_FIELDS = ("summary", "description", "status", "issuetype")
+
+
+def _fetch_diff(repo, mr_iid):
+    """取得這支 MR 的 unified diff。
+
+    失敗就讓整步失敗：沒有 diff 的「程式碼分析」只能靠描述瞎猜，而它會回報成功。
+    """
+    try:
+        server_url, token, verify_ssl = ai_analysis_gitlab_mr.gitlab_credentials()
+    except ai_analysis_gitlab_mr.CredentialError as exc:
+        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+
+    try:
+        project_id = gitlab_utils.get_repo_id(server_url, token, repo,
+                                              verify_ssl=verify_ssl)
+        return gitlab_utils.get_mr_plain_diff(
+            server_url, token, project_id, mr_iid,
+            max_bytes=ai_analysis_gitlab_mr.MAX_PROMPT_DIFF_BYTES,
+            verify_ssl=verify_ssl)
+    except gitlab_utils.GitLabError as exc:
+        message, detail, code = ai_analysis_gitlab_mr.describe_gitlab_error(
+            exc, repo)
+        script_io.reply_fail(message, detail=detail, code=code)
+
+
+def _fetch_jira(jira_key):
+    """取得 JIRA issue 的內容，回傳 dict；取不到時回 None。
+
+    **取不到不讓流程失敗。** JIRA 在這裡是補充資料，而查不到的原因多半無害：key 是從
+    MR 標題的第一個方括號抽出來的，那裡放 [WIP]、[Draft] 非常常見，抽出來的東西本來
+    就不一定是真的 issue。為了一張查不到的 issue 讓整份分析做不出來，代價與收益不成
+    比例 —— 記一筆警告，prompt 就少那一段。
+    """
+    if not jira_key:
+        return None
+
+    try:
+        base_url, token = ai_analysis_gitlab_mr.jira_credentials()
+    except ai_analysis_gitlab_mr.CredentialError as exc:
+        logger.warn("未設定 JIRA 連線資訊，prompt 不放 issue 內容：%s", exc)
+        return None
+
+    try:
+        issue = jira_utils.get_issue_info(base_url, token, jira_key,
+                                          fields=_JIRA_FIELDS)
+    except jira_utils.JiraError as exc:
+        logger.warn("取不到 JIRA issue %s，prompt 不放那一段：%s", jira_key, exc)
+        return None
+
+    fields = (issue or {}).get("fields") or {}
+    status = fields.get("status") or {}
+    issue_type = fields.get("issuetype") or {}
+
+    return {
+        "key": (issue or {}).get("key") or jira_key,
+        "summary": fields.get("summary") or "",
+        "description": fields.get("description") or "",
+        "status": status.get("name") or "",
+        "type": issue_type.get("name") or "",
+        "url": ai_analysis_gitlab_mr.jira_url(jira_key),
+    }
 
 
 def main():
@@ -78,10 +154,26 @@ def main():
                 params["ai_mode_name"] or "(未指定)",
                 params["ai_model"] or "(未指定)",
                 params["jira_key"] or "(無)")
+    # 素材在呼叫鉤子**之前**備好。連線失敗要在這裡爆，而不是從使用者寫的鉤子裡
+    # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
+    # 把一個連線問題講成腳本寫壞了。
+    script_io.progress("取得程式碼差異…")
+    mr_diff = _fetch_diff(repo, mr_iid)
+
+    jira_issue = None
+    if params["jira_key"]:
+        script_io.progress("取得 JIRA 內容…")
+        jira_issue = _fetch_jira(params["jira_key"])
+
+    logger.info("素材：diff %d 字元、JIRA %s",
+                len(mr_diff), jira_issue["key"] if jira_issue else "(無)")
+
     script_io.progress("送交 AI 分析…")
 
     inputs = {
         "description": description,
+        "mr_diff": mr_diff,
+        "jira_issue": jira_issue,
         "jira_key": params["jira_key"],
         "jira_mode": params["jira_mode"],
         "ai_mode_name": params["ai_mode_name"],
@@ -91,6 +183,13 @@ def main():
         "repo": repo,
         "mr_iid": mr_iid,
         "device": owner,
+
+        # 回報進度用。AI 的呼叫是分鐘級的，而那個對話框是固定尺寸、只有一行字 ——
+        # 一個兩分鐘沒動靜的視窗看起來就是當掉了。
+        #
+        # 傳函式進來而不是讓鉤子自己 import script_io：鉤子是使用者寫的，它拿到的
+        # 應該是一個「報進度」的能力，而不是一個可以自行結束行程的模組。
+        "progress": script_io.progress,
     }
 
     try:
