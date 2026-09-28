@@ -82,27 +82,31 @@ JIRA_TEMPLATE = u"""
 # ⚠️ 這一段與底下的 parse_reply() 是**同一件事的兩面**：這裡怎麼要求，那裡就怎麼解析。
 # 改格式時兩邊要一起改，否則模型照新格式回、程式照舊格式讀，症狀是「AI 的回覆不是
 # 預期的格式」而不是任何有用的訊息。
+#
+# code_changes 是**以檔名為鍵的物件**。規格最初寫成方括號（陣列）卻裝著鍵值對，那在
+# JSON 裡不合法；這裡用物件，因為它與最終產出的 mrDiff 形狀一致，少一層轉換。
+# 但 parse_reply() 兩種都收 —— 規格有歧義的時候模型也會兩種都產。
+#
+# hunkHeader 特別交代不要加圍籬：報告會自己把它包進 ```diff，裡面再有一層圍籬會把
+# markdown 的解析弄壞，而症狀出現在報告上而不是這裡。
 OUTPUT_SPEC = u"""\
 ## 回覆格式
 只回覆一個 JSON 物件，不要有任何開場白、說明或 markdown 圍籬。
 
 {
-  "overview": "整體變更的摘要，三到五句",
-  "files": [
-    {
-      "path": "檔案路徑，與上面 diff 裡的一致",
-      "findings": [
-        {
-          "title": "一句話講完這個發現",
-          "reason": "為什麼值得注意，兩三句",
-          "diff": "相關的那幾行 diff，可留空"
-        }
-      ]
-    }
-  ]
+  "summary": "整體變更的摘要，三到五句",
+  "code_changes": {
+    "修改的檔案名稱": [
+      {
+        "title": "一句話講完這個發現",
+        "reason": "為什麼值得注意，兩三句",
+        "hunkHeader": "相關的那幾行 diff，git diff 格式，不要加上 ``` 圍籬"
+      }
+    ]
+  }
 }
 
-沒有值得注意之處的檔案不要放進 files。
+檔名要與上面 diff 裡出現的一致。沒有值得注意之處的檔案不要放進 code_changes。
 """
 
 
@@ -163,58 +167,100 @@ def build_prompt(inputs):
     )
 
 
+def _file_pairs(code_changes):
+    """把 code_changes 正規化成 [(檔名, findings), ...]。
+
+    兩種形狀都收：
+
+        {"a.cpp": [...], "b.cpp": [...]}        以檔名為鍵的物件
+        [{"a.cpp": [...]}, {"b.cpp": [...]}]    每個元素一個單鍵物件
+
+    規格原本寫成方括號卻裝著鍵值對，那在 JSON 裡不合法，所以兩種讀法都說得通 ——
+    而規格有歧義的時候模型也會兩種都產。只認一種的話，另一種會變成「缺少必要欄位」，
+    而那個訊息完全指不出真正的原因。
+
+    順序有意義（報告的檔案編號照這個順序），dict 與 list 都保留原順序。
+    """
+    if isinstance(code_changes, dict):
+        return list(code_changes.items())
+
+    if isinstance(code_changes, list):
+        pairs = []
+        for index, entry in enumerate(code_changes):
+            if not isinstance(entry, dict):
+                raise ValueError("code_changes[%d] 不是物件，而是 %s"
+                                 % (index, type(entry).__name__))
+            if not entry:
+                continue
+            pairs.extend(entry.items())
+        return pairs
+
+    raise ValueError("code_changes 不是物件也不是陣列，而是 %s"
+                     % type(code_changes).__name__)
+
+
 def parse_reply(data):
-    """把 AI 回的 JSON 轉成 (overview, mrDiff)。
+    """把 AI 回的 JSON 轉成 (summary, mrDiff)。
 
     ⚠️ 與 OUTPUT_SPEC 是同一件事的兩面，改格式要一起改。
 
-    格式不對時丟 ValueError —— ai_utils 收到 ValueError 會重問一次（見 ask_json 的
-    reask）。拿回一個半殘的結構硬湊比重問糟得多：湊出來的報告看起來是完整的。
-    """
-    overview = contract.plain(data.get("overview"))
+    對應關係：
 
-    files = data.get("files")
-    if files is None:
-        files = []
-    if not isinstance(files, list):
-        raise ValueError("files 不是陣列，而是 %s" % type(files).__name__)
+        summary                     → 報告的 ## Summary
+        code_changes[檔名][*].title  → finding 的標題
+        code_changes[檔名][*].reason → finding 的理由
+        code_changes[檔名][*].hunkHeader → finding 的 diffCode
+
+    格式不對時丟 ValueError —— ai_utils 收到 ValueError 會重問一次（見 ask 的 reask）。
+    拿回一個半殘的結構硬湊比重問糟得多：湊出來的報告看起來是完整的。
+    """
+    summary = contract.plain(data.get("summary"))
+
+    code_changes = data.get("code_changes")
+    pairs = _file_pairs(code_changes) if code_changes else []
 
     mr_diff = {}
-    for index, entry in enumerate(files):
-        if not isinstance(entry, dict):
-            raise ValueError("files[%d] 不是物件，而是 %s"
-                             % (index, type(entry).__name__))
+    for path, findings in pairs:
+        clean = contract.plain(path)
+        if not clean:
+            # 沒有檔名的發現放不進報告 —— mrDiff 是以檔名為鍵的。
+            raise ValueError("code_changes 裡有一筆沒有檔名")
 
-        path = contract.plain(entry.get("path"))
-        if not path:
-            # 沒有路徑的發現放不進報告 —— mrDiff 是以路徑為鍵的。
-            raise ValueError("files[%d] 少了 path" % index)
-
-        findings = entry.get("findings")
         if findings is None:
             findings = []
         if not isinstance(findings, list):
-            raise ValueError("files[%d].findings 不是陣列，而是 %s"
-                             % (index, type(findings).__name__))
+            raise ValueError("code_changes[%r] 不是陣列，而是 %s"
+                             % (clean, type(findings).__name__))
 
         items = []
         for item in findings:
             if not isinstance(item, dict):
                 raise ValueError("%s 底下有一筆發現不是物件，而是 %s"
-                                 % (path, type(item).__name__))
+                                 % (clean, type(item).__name__))
+
+            # 圍籬還是剝一次。OUTPUT_SPEC 已經交代不要加，但模型對「不要加圍籬」的
+            # 服從度不高，而一層多餘的圍籬會出現在報告自己的 ```diff 裡面，把 markdown
+            # 的解析弄壞 —— 症狀出現在報告上，離這裡很遠。
+            hunk = ai_utils.strip_fence(contract.plain(item.get("hunkHeader")))
+
             items.append(contract.finding(
                 title=contract.plain(item.get("title")),
                 reason=contract.plain(item.get("reason")),
-                diff_code=contract.plain(item.get("diff"))))
+                diff_code=hunk))
 
         if items:
             # 空的檔案整個不放：一個底下什麼都沒有的標題會讓人以為內容漏掉了。
-            mr_diff[path] = items
+            mr_diff[clean] = items
 
-    if not overview and not mr_diff:
-        raise ValueError("overview 與 files 都是空的")
+    if not summary and not mr_diff:
+        # 訊息帶上實際收到的鍵。這個分支最常見的成因是模型用了別的欄位名，而
+        # 「都是空的」看不出那件事 —— 重問一次還是失敗的話，這一行就是要查的線索。
+        raise ValueError(
+            "summary 與 code_changes 都是空的（實際收到的欄位：%s）"
+            % ("、".join(sorted(data.keys())) if isinstance(data, dict)
+               else "(不是物件)"))
 
-    return overview, mr_diff
+    return summary, mr_diff
 
 
 def _jira_state(mode, key):
@@ -295,7 +341,7 @@ def analyze(inputs):
     #
     # 分兩段寫的話，第二段跑在 ask() 之外，重問就永遠觸發不到 —— 而「JSON 合法但
     # 結構不對」恰好是模型最常見的失手方式。
-    overview, mr_diff = ai_utils.ask(
+    summary, mr_diff = ai_utils.ask(
         api_url, prompt,
         api_key=api_key,
         parse=lambda text: parse_reply(ai_utils.as_json(text)),
@@ -304,8 +350,11 @@ def analyze(inputs):
 
     logger.info("AI 回覆解析完成：%d 個檔案", len(mr_diff))
 
+    # AI 回的欄位叫 summary，產出的欄位叫 overview —— 名字在這一行交接。兩邊各自
+    # 命名是刻意的：回覆格式是那個服務的事，產出格式是報告的事，其中一邊改名不該
+    # 逼另一邊跟著改。
     return contract.analysis_body(
-        overview=overview,
+        overview=summary,
         model=model,
         jira_key=key,
         jira_state=state,
