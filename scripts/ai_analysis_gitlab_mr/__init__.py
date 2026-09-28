@@ -52,6 +52,7 @@ __all__ = [
     "gitlab_credentials",
     "jira_credentials",
     "ai_credentials",
+    "ai_verify_ssl",
     "describe_gitlab_error",
     "DEBUG_LOG_NAME",
     "write_artifact",
@@ -486,6 +487,22 @@ def ai_credentials(inputs):
             "AI_API_URL_MISSING")
 
     return api_url, api_key, model
+
+
+def ai_verify_ssl():
+    """要不要驗證 AI 服務的 TLS 憑證。
+
+    **未設定時不驗證**，與 GitLab 的 GITLAB_VERIFY_SSL 同一個預設、同一個理由（見
+    design.md 決策二十三）：地端服務常用自簽或內部 CA 簽發的憑證，驗證失敗會讓功能
+    完全無法使用，而這個工具跑在內網、對著已知的位址。
+
+    這是一個明著寫出來的取捨，不是疏忽。要開啟就設 AI_VERIFY_SSL=true。
+
+    為什麼讀環境變數而不是設定檔：Qt 目前只把 Service 區塊裡列在 kServiceKey[] 的鍵
+    注入成環境變數，加一個新鍵要動 C++ 並重新建置。放成環境變數的話，CI 想開就開，
+    而工具端維持「不驗證」這個對地端服務唯一可用的預設。
+    """
+    return _truthy(os.environ.get("AI_VERIFY_SSL", "false"))
 
 
 def describe_gitlab_error(exc, repo):

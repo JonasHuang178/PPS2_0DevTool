@@ -302,6 +302,22 @@ def _describe(response, url):
     return error
 
 
+def _is_ssl_error(exc):
+    """這個連線層例外是不是憑證問題。
+
+    **憑證問題不重試。** 一張不被信任的憑證不會在兩秒後變得被信任 —— 重試三次只是把
+    一個註定的失敗等三倍，而使用者盯著的是一個沒有動靜的對話框。
+
+    以類別名稱判斷而不是 isinstance：這個模組刻意不 import requests（見 http_utils 的
+    require_requests），為了一個分類就把它變成硬相依不划算。requests 的 SSLError 繼承
+    自 ConnectionError，所以要走整條繼承鏈看，不能只看最外層那個名字。
+    """
+    for klass in type(exc).__mro__:
+        if "SSL" in klass.__name__ or "Certificate" in klass.__name__:
+            return True
+    return False
+
+
 def _call_once(session, url, payload, timeout, verify_ssl):
     """送出一次請求並取出回覆文字。失敗時拋 AiError。"""
     try:
@@ -309,7 +325,11 @@ def _call_once(session, url, payload, timeout, verify_ssl):
                                 verify=verify_ssl)
     except Exception as exc:                        # noqa: BLE001
         # requests 的連線層例外。這一層不 import requests，所以以基底型別接。
-        # 逾時與斷線在分鐘級的呼叫上很常見，值得重試。
+        # 逾時與斷線在分鐘級的呼叫上很常見，值得重試 —— 但憑證問題不是（見下）。
+        if _is_ssl_error(exc):
+            raise AiError(
+                "AI 服務的 TLS 憑證驗證失敗：%s" % exc, url=url)
+
         error = AiError("無法連線至 AI 服務：%s" % exc, url=url)
         error.retryable = True
         raise error

@@ -390,6 +390,7 @@ def analyze(inputs):
     summary, mr_diff = ai_utils.ask(
         api_url, prompt,
         api_key=api_key,
+        verify_ssl=contract.ai_verify_ssl(),
         parse=parse,
         reask=1,
         on_retry=_on_retry(inputs.get("progress")))

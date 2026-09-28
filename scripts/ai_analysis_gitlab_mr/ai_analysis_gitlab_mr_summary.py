@@ -19,6 +19,7 @@ mr_diff 與 jira_issue），它只決定怎麼把那些素材排進 prompt。
     GITLAB_SERVER_URL     取 diff 用，必要
     GITLAB_ACCESS_TOKEN   取 diff 用，必要
     GITLAB_VERIFY_SSL     未設定時視為不驗證
+    AI_VERIFY_SSL         未設定時**不驗證** AI 服務的 TLS 憑證
     JIRA_SERVER_URL       取 issue 內容用，缺了就不放那一段
     JIRA_ACCESS_TOKEN     同上
 """
