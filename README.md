@@ -126,6 +126,20 @@ PPS2_0DevTool/
 │   │   ├── single_building_modify_setting.py    寫入設定
 │   │   └── single_building_recovery_setting.py  清空設定
 │   │
+│   ├── ai_analysis_gitlab_mr/
+│   │   ├── __init__.py       功能專屬的契約：報告的標題常數與切段、憑證取得、
+│   │   │                     分析結構的建構與驗證、出處、除錯檔
+│   │   ├── ai_analysis_gitlab_mr_list_merge_requests.py  取得 MR 清單
+│   │   ├── ai_analysis_gitlab_mr_description.py   1/5 取得 MR 描述
+│   │   ├── ai_analysis_gitlab_mr_info.py          2/5 取得相關資訊（jira_key）
+│   │   ├── ai_analysis_gitlab_mr_summary.py       3/5 AI 分析
+│   │   ├── ai_analysis_gitlab_mr_code_review.py   4/5 程式碼審閱（stub）
+│   │   ├── ai_analysis_gitlab_mr_merge_to_md.py   5/5 合併為 markdown
+│   │   └── device/           各產品線自己的分析邏輯（見下面的 device 一節）
+│   │       ├── __init__.py   解析 PPS_DEVICE、掃目錄、逐鉤子回退
+│   │       ├── default/      未指定時用這一份，也是所有 device 的後備
+│   │       └── _template/    範本（底線開頭，不是 device）
+│   │
 │   └── script_utils/         共用模組依「技術領域」分組
 │       ├── logger.py         log（唯一設定 logging 的地方）
 │       ├── system_utils.py   向作業系統要東西：環境變數、建立資料夾、
@@ -136,15 +150,18 @@ PPS2_0DevTool/
 │       ├── http_utils.py     REST 共用底層：session、逾時、重試、例外基底
 │       ├── gitlab_utils.py   GitLab REST：通用呼叫、分頁、專案、分支、
 │       │                     檔案內容、merge request
-│       └── jira_utils.py     Jira REST（Server/DC）：通用呼叫、分頁、JQL 搜尋、
-│                             issue 查詢／建立／ensure、留言、描述更新、附件
+│       ├── jira_utils.py     Jira REST（Server/DC）：通用呼叫、分頁、JQL 搜尋、
+│       │                     issue 查詢／建立／ensure、留言、描述更新、附件
+│       └── ai_utils.py       AI 服務：提問、重試與退避、回覆解析與重問
+│                             （為特定一家地端服務寫的，不是通用抽象）
 │
 └── openspec/                 規格與設計決策
-    ├── specs/                現行行為契約（四個 capability）
+    ├── specs/                現行行為契約（五個 capability）
     │   ├── app-shell/
     │   ├── script-execution/
     │   ├── script-envelope/
-    │   └── single-building/
+    │   ├── single-building/
+    │   └── ai-analysis-gitlab-mr/
     └── changes/              進行中與已歸檔的變更
         └── archive/          已完成的變更（含當時的 proposal / design / tasks）
 ```
@@ -317,10 +334,12 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 在工具裡瀏覽某個 GitLab 專案的 Merge Request，挑一筆交給 AI 分析，結果以
 markdown 呈現在結果視窗。
 
-> **本次交付的範圍**：Qt 這一側整個是真的，六支腳本的**對外契約**也是真的。
-> 真的連線 GitLab 的有兩支：「取得 Merge Request 清單」與流程第 1 步「取得 MR
-> 描述」。第 5 步的合併沒有外部依賴，邏輯本來就是真的。**第 2 至 4 步是 stub**，
-> 回傳寫死的假資料，不連線 AI 或 JIRA。
+> **目前的狀態**：只有第 4 步「取得程式碼審閱報告」還是 stub —— 它回傳固定內容，
+> 不連線任何外部服務，來源尚未定案。其餘都是真的：第 1、2 步連 GitLab，第 3 步連
+> GitLab（取差異）、JIRA（取議題內容）與 AI 服務，第 5 步沒有外部依賴。
+>
+> 沒設定 AI 端點時第 3 步不會失敗，而是產出替代內容，並在首行言明未經過 AI ——
+> 開發期還沒有端點時整條流程仍要能跑完才驗得到。
 
 ### 畫面
 
@@ -479,6 +498,143 @@ PPS 2.0 DevTool v2.0.0
 舊的 `{"summary": "一段文字"}` 仍然收得下，渲染時原樣接上。
 
 
+### 呼叫 AI
+
+`script_utils/ai_utils.py` 負責「問與等」。**組 prompt 不在它裡面** —— 那是各條產品線
+要自己掌握的東西，收進共用模組等於把 device 機制的意義抵消掉。
+
+```python
+ask(api_url, prompt, history=None, file_ids=None, api_key="",
+    timeout=120, retries=3, on_retry=None, verify_ssl=True,
+    parse=None, reask=0)
+
+ask_json(api_url, prompt, require=(), reask=1, **kwargs)
+split_share_code(api_url) -> (url, share_code)
+as_json(text, require=())   strip_fence(text)
+```
+
+**這是為特定一家地端服務寫的客戶端，不是通用的多供應商抽象。** 請求形狀集中在
+`_build_payload()`、回應取值在 `_extract_reply()`、認證標頭在 `_headers()`。換服務
+改這三支，重試那一段完全不用碰。
+
+**shareCode 黏在 `Api_URL` 尾端**，以冒號分隔：
+
+```
+https://主機:8443/端點:SHARE_CODE
+```
+
+拆解時**只有最後一個斜線之後的冒號才算分隔符** —— 位址本身至少有一個冒號
+（`https:`），還可能有連接埠，切錯會把整個路徑當成 shareCode 送出去，而伺服器只回
+一個看不出原因的 400。沒帶 shareCode 時直接失敗並講出正確寫法。
+
+設定檔的 `Model` **不進請求**（模型由 shareCode 那端決定），它只印在報告的出處那一行，
+所以也不是必填。
+
+#### 重試的界線
+
+重點不在重試幾次，在**哪些不重試**：
+
+| 情況 | 處理 |
+|---|---|
+| 逾時、連線中斷、限流、5xx | 重試（限流優先照 `Retry-After` 指定的秒數等） |
+| 認證失敗、端點不存在、prompt 過長、**憑證驗證失敗** | **不重試** |
+| 回應形狀與預期不符 | **不重試** |
+
+「值不值得重試」由**拋出錯誤的那一處**決定，不由重試邏輯從狀態碼反推 —— 連線中斷與
+「回應欄位不對」都沒有狀態碼，卻該分在兩邊。
+
+`Retry-After` 指定的秒數超過上限（30 秒）時直接失敗，不照它等：一個卡五分鐘、最後仍然
+失敗的對話框比立刻說明白糟得多。
+
+逾時預設 120 秒，不沿用 `http_utils` 的 30 秒 —— 秒級逾時會把正常的長回答判成失敗，
+然後重試，結果是等更久而且每次都計費。
+
+### 改 prompt
+
+Prompt 住在 device 的 `summary.py`，可改的東西集中在最上面四個字串常數：
+
+| 常數 | 內容 | 改了要連動嗎 |
+|---|---|---|
+| `ROLE_PROMPT` | 角色與語氣，放在 prompt 最前面 | 不用 |
+| `PROMPT_TEMPLATE` | 版面與各段順序 | 不用 |
+| `JIRA_TEMPLATE` | JIRA 那一段（沒 issue 時整段不出現） | 不用 |
+| `OUTPUT_SPEC` | 要求 AI 回什麼格式 | **要**，見下 |
+
+`PROMPT_TEMPLATE` 可用的佔位符：`{role}` `{repo}` `{mr_iid}` `{description}` `{jira}`
+`{diff}` `{output_spec}`。順序隨你排，不要的整段拿掉即可 —— `build_prompt()` 備妥的值
+比樣板用到的多，`format()` 會忽略沒用到的。
+
+> **⚠️ 樣板裡的大括號全部會被當成佔位符。** prompt 含 JSON 範例、C 片段或 `{變數}`
+> 時要疊成兩層（`{{` `}}`），否則填值會失敗。**更省事的做法是搬進 `OUTPUT_SPEC`**
+> —— 它是被代入的值、不是樣板，裡面的大括號原樣輸出。
+>
+> 真的寫壞了訊息會指名：`PROMPT_TEMPLATE 裡有認不得的佔位符 {"summary"}。可用的是：
+> description、diff、jira、mr_iid、output_spec、repo、role。…請寫成兩層：{{ 與 }}。`
+
+`build_prompt(inputs)` 可以單獨呼叫，**不打 AI 就能把 prompt 印出來看**：
+
+```python
+from ai_analysis_gitlab_mr.device import load_hook
+print(load_hook('summary')[0].build_prompt({
+    "repo": "group/proj", "mr_iid": "7", "description": "（假的）",
+    "mr_diff": open("sample.diff", encoding="utf-8").read(),
+    "jira_issue": None,
+}))
+```
+
+#### AI 回覆的格式
+
+`OUTPUT_SPEC` 要求什麼、`parse_reply()` 就讀什麼，**兩者是同一件事的兩面**，改了要
+一起改。目前：
+
+```json
+{
+  "summary": "整體變更的摘要",
+  "code_changes": {
+    "檔案路徑": [
+      { "title": "...", "reason": "...", "hunkHeader": "相關的那幾行 diff" }
+    ]
+  }
+}
+```
+
+對應到產出：`summary` → `overview`、`code_changes[檔名]` → `mrDiff[檔名]`、
+`hunkHeader` → `diffCode`。兩邊各自命名是刻意的 —— 回覆格式是那個服務的事，產出格式
+是報告的事。
+
+`code_changes` **物件與「單鍵物件的陣列」兩種都收**。規格有歧義的時候模型也會兩種都產，
+只認一種的話另一種會變成「缺少必要欄位」，而那訊息指不到真正的原因。
+
+`hunkHeader` 即使已經交代不要加圍籬，解析時仍會**再剝一次** —— 模型對否定指令的服從度
+不高，而多餘的圍籬會落在報告自己的 ```` ```diff ```` 裡面，把 markdown 弄壞，症狀出現
+在報告上、離這裡很遠。
+
+#### 重問
+
+回覆不符預期時會在 prompt 尾端追加「只回覆結果本身」重問一次（`reask=1`）。
+
+**JSON 解析與結構檢查要串成同一個 `parse` 傳給 `ask()`**，不能分成前後兩段 —— 分開寫
+的話第二段跑在 `ask()` 之外，重問永遠觸發不到，而「JSON 合法但結構不對」恰好是模型最
+常見的失手方式。
+
+### 素材怎麼來
+
+第 3 步在呼叫鉤子**之前**把素材備好，鉤子拿到的是現成的內容：
+
+| inputs | 內容 |
+|---|---|
+| `mr_diff` | unified diff 純文字，上限 `MAX_PROMPT_DIFF_BYTES`（目前 120000），超過截斷並註明 |
+| `fetch_jira` | `fetch_jira(key)` → dict 或 None，**函式而不是內容**，見下 |
+| `progress` | `progress(text)`，在那個固定尺寸對話框上顯示一行字 |
+| `debug_write` | `debug_write(檔名, 內容)`，除錯沒開時什麼都不做 |
+
+連線、憑證、錯誤分類都留在入口 —— 改 prompt 的人不該為了一句話面對 HTTP。連線失敗也
+因此不會被包裝成「device 的 summary.py 執行失敗」，那會把連線問題講成腳本寫壞了。
+
+**JIRA 是函式而不是現成內容**，因為「key 有沒有效」是 device 的政策，入口不認得。先抓
+的話，`[WIP]`、`[Draft]` 這種從標題方括號抽出來的字串每次都會白打一趟 JIRA 換回 404。
+鉤子判定有效之後再呼叫它。查不到不會讓流程失敗，prompt 少那一段而已。
+
 ### device：讓每條產品線有自己的分析邏輯
 
 一個 MR 該怎麼分析，會因為它屬於哪一條產品線而不同 —— SD 與 SSD 要問 AI 的問題不一樣，
@@ -575,8 +731,21 @@ gitlab_mr_result_lw-os_123_20260912_143012/
   03_summary.json
   04_code_review.md
   05_report.md
+  ai_prompt.txt        實際送給 AI 的完整 prompt
+  ai_reply_1.txt       AI 的原始回覆（每次嘗試各一個檔）
+  ai_reply_2.txt       重問過才會有
+  bad_analysis.json    鉤子回傳的結構沒通過驗證時才會有
   debug.log
 ```
+
+**調 prompt 就是看 `ai_prompt.txt` 與 `ai_reply_1.txt`。** 這兩份都不進 log ——
+prompt 含整份 diff（也就是原始碼），回覆動輒幾萬字元。除錯檔是唯一看得到它們的地方。
+
+每一次回覆**寫在解析之前**，各自成檔：重問成功不會蓋掉失敗的那一次，而失敗的那次
+才是線索。
+
+`debug.log` **失敗時也會寫**，內容是該次失敗的訊息、代碼與細節；鉤子拋出例外時細節
+是完整的 traceback。只在成功時記錄的話，最需要那份紀錄的時候剛好沒有。
 
 **未勾選時整條流程不產生任何檔案。** 報告內容一律經由回應的 `data` 送回，
 結果視窗從那裡取內容，Qt 從不開檔。
@@ -600,6 +769,13 @@ JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
 會暴露給連線中間人，且被攔截時沒有任何徵兆。確認伺服器有正規憑證之後，把
 `Service.Gitlab_Verify_SSL` 設為 `"true"` 即可，不需要重新建置。自簽但想驗證的話
 改設 `SSL_CERT_FILE` 指向公司的 CA 憑證。
+
+**AI 服務的 TLS 驗證同樣預設關閉**，理由一樣（地端服務多半用自簽憑證）。它讀的是
+環境變數 `AI_VERIFY_SSL`，設為 `true` 才驗證。不放設定檔是因為 Qt 只注入
+`kServiceKey[]` 列出的 Service 鍵，加一個新鍵要動 C++ 並重新建置。
+
+憑證驗證失敗**不重試** —— 一張不被信任的憑證不會在兩秒後變得被信任，重試三次只是
+把註定的失敗等三倍。訊息會直接說是憑證驗證失敗。
 
 ### 已知行為
 
@@ -660,6 +836,25 @@ GitLab、JIRA 這類會被多個功能共用的端點與憑證放在 `Service`�
 > **不要把整包 `config` log 出來。** 合併後它含有權杖，而 `Debug_Mode` 開啟時
 > 那一行會出現在 console 上。範本裡示範的 `logger.debug("設定 =%r", cfg)` 是
 > 給沒有憑證的功能看的，有憑證時請只印出你真正需要的那幾個鍵。
+
+`AI_Mode_List` 是一個清單，畫面上的 AI Mode 下拉選單就是用每一筆的 `Name` 填的：
+
+```json
+"AI_Mode_List": [
+  {
+    "Name": "地端模型",
+    "Api_URL": "https://主機:8443/端點:SHARE_CODE",
+    "Api_Key": "送出時放進 X-Api-Key 標頭",
+    "Model": "只印在報告出處，不進請求"
+  }
+]
+```
+
+**`Api_URL` 尾端要以冒號黏上 shareCode**（見「呼叫 AI」）。這四項走 `params` 而不是
+環境變數 —— 它們隨使用者選的模式而變，屬於該次執行的參數。
+
+選單是拿**選單上的文字回去比對 `Name`**。改了 `Name` 或那一筆不在清單裡，比對不到就
+會拿到空的 `Api_URL`，於是掉回替代內容（報告首行會寫「未經過 AI」）。
 
 ### 命名風格
 
@@ -1178,7 +1373,7 @@ python get_gitlab_mr.py ... -v      # 打開 DEBUG 等級的診斷輸出
 
 規格與決策記錄在 `openspec/` 底下。
 
-**`openspec/specs/`** —— 現行的行為契約，這是**權威來源**。四個 capability：
+**`openspec/specs/`** —— 現行的行為契約，這是**權威來源**。五個 capability：
 
 | capability | 涵蓋範圍 |
 |---|---|
@@ -1186,6 +1381,7 @@ python get_gitlab_mr.py ... -v      # 打開 DEBUG 等級的診斷輸出
 | `script-execution` | `runFunctionScript` 與 `runFunctionFlow` 契約、通道分離、成敗判定、取消狀態機、處理中對話框、行程環境、流程編排與業務運算的分工邊界 |
 | `script-envelope` | Request/Response 信封、`script_io` API、參數與設定宣告、logger、exit code、跨平台、腳本目錄結構 |
 | `single-building` | Single Building 功能：兩個清單的挑選與過濾、四支腳本的觸發與串接、暫存設定檔、失敗與取消的處理 |
+| `ai-analysis-gitlab-mr` | AI Analysis GitLab MR 功能：畫面與查詢、五步流程、GitLab 與 JIRA 連線、AI 呼叫與重試、device 機制、報告版面、除錯輸出 |
 
 **`openspec/changes/archive/`** —— 已完成的變更，保留當時的 `proposal.md`（為什麼要做）、
 `design.md`（決策與取捨理由）與 `tasks.md`（實作與驗證記錄）。
