@@ -53,6 +53,9 @@ PROMPT_TEMPLATE = u"""\
 
 ## Merge Request
 {repo} !{mr_iid}
+
+### 原始 MR 的描述
+{description}
 {jira}
 ## 程式碼差異
 ```diff
@@ -191,12 +194,9 @@ def build_prompt(inputs):
     JIRA 那一段吃 inputs["jira_issue"]，那是 analyze() 在確認 key 有效之後才取回來
     放進去的（見底下）。單獨呼叫這一支時自己塞一個 dict 或 None 即可。
     """
-    # 這裡備妥的值比樣板目前用到的多。format() 會忽略沒用到的，而多留著的好處是
-    # 要把某一段加回樣板時只要動字串、不用動程式 —— 佔位符打錯時 _fill 列出的
+    # 這裡備妥的值可以比樣板實際用到的多。format() 會忽略沒用到的，所以把某一段
+    # 從樣板拿掉或加回去只要動字串、不用動程式 —— 佔位符打錯時 _fill 列出的
     # 「可用的是」也才是完整的清單。
-    #
-    # {description} 目前不在樣板裡：MR 的描述多半是作者寫給人看的摘要，與 diff 重複，
-    # 而它佔掉的是 diff 可以用的 context。要放回去就在樣板裡加一行 {description}。
     return _fill(
         "PROMPT_TEMPLATE", PROMPT_TEMPLATE,
         role=ROLE_PROMPT.strip(),
