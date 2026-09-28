@@ -155,6 +155,9 @@ def build_prompt(inputs):
         python -c "import summary; print(summary.build_prompt({...}))"
 
     這樣改完 prompt 可以先印出來確認，不必真的打一次 AI。
+
+    JIRA 那一段吃 inputs["jira_issue"]，那是 analyze() 在確認 key 有效之後才取回來
+    放進去的（見底下）。單獨呼叫這一支時自己塞一個 dict 或 None 即可。
     """
     return PROMPT_TEMPLATE.format(
         role=ROLE_PROMPT.strip(),
@@ -276,6 +279,24 @@ def _jira_state(mode, key):
     return contract.JIRA_STATE_INVALID, key
 
 
+def _lookup_jira(inputs, key, state):
+    """key 有效時取回 issue 的內容，否則回 None（prompt 就少那一段）。
+
+    取不到也回 None：JIRA 在這裡是補充資料，一張查不到的 issue 不該讓整份分析做不
+    出來。入口腳本已經記了警告。
+    """
+    if state != contract.JIRA_STATE_OK:
+        return None
+
+    fetch = inputs.get("fetch_jira")
+    if not callable(fetch):
+        # 命令列單獨呼叫 analyze() 時可能沒帶這個。不是錯誤，少那一段而已。
+        logger.debug("inputs 沒有 fetch_jira，prompt 不放 JIRA 那一段")
+        return None
+
+    return fetch(key)
+
+
 def _on_retry(progress):
     """給 ai_utils 的重試回呼，把狀況轉成對話框上的一行字。
 
@@ -328,9 +349,20 @@ def analyze(inputs):
         logger.warn("JIRA key %r 不符合樣式，視為無效", key)
 
     if not contract.plain(inputs.get("ai_api_url")):
+        # 這一條要在取 JIRA 之前：替代內容用不到 issue，先抓等於為一份假分析打一趟
+        # 網路。
         return _stub_analysis(inputs, key, state)
 
     api_url, api_key, model = contract.ai_credentials(inputs)
+
+    # 確認有效**之後**才去抓 issue 的內容。
+    #
+    # 順序有意義：抽取那一支拿的是 MR 標題的第一個方括號，而 [WIP]、[Draft] 非常
+    # 常見。先抓的話每一次都會為了這種前綴打一趟 JIRA，換回一個 404 和一筆警告。
+    #
+    # 抓取本身由入口腳本提供（inputs["fetch_jira"]）—— 憑證與錯誤分類留在那邊，
+    # 這裡只決定「這個 key 值不值得去查」。
+    inputs = dict(inputs, jira_issue=_lookup_jira(inputs, key, state))
 
     prompt = build_prompt(inputs)
     # prompt 本身不進 log：裡面有整份 diff，印出來會把 log 撐爆，也把原始碼落到磁碟。

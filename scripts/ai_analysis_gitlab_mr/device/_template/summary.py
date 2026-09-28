@@ -22,9 +22,14 @@ def analyze(inputs):
 
         description     MR 的原始描述（已扣掉上一輪的 AI 分析）
         mr_diff         unified diff 純文字。太大時已截斷，尾端會註明
-        jira_issue      dict 或 None，鍵有 key / summary / description /
-                        status / type / url。沒有 key、查不到、或沒設定 JIRA
-                        連線都是 None —— 那不是錯誤，prompt 少那一段即可
+        fetch_jira      fetch_jira(key) -> dict 或 None。鍵有 key / summary /
+                        description / status / type / url。查不到、或沒設定
+                        JIRA 連線都回 None —— 那不是錯誤，prompt 少那一段即可。
+
+                        **這是函式而不是現成的內容，因為「key 有沒有效」是你的
+                        政策。** 入口不認得那個政策，先抓的話 [WIP]、[Draft] 這種
+                        從標題方括號抽出來的東西每次都會白打一趟 JIRA。判定有效
+                        之後再呼叫它。憑證與錯誤分類仍然在入口那邊。
         jira_key        該次採用的 key；沒有就是空字串
         jira_mode       none / manual / auto —— 讓你分辨 key 是抽的還是使用者填的
         ai_mode_name    使用者選的 AI 模式名稱

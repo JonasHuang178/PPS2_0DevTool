@@ -45,6 +45,10 @@ DESCRIPTION      = "以 AI 分析 Merge Request（內容由 device 的鉤子決�
 # 絕大多數是工作流程的內部狀態，塞進 prompt 只是浪費 context。
 _JIRA_FIELDS = ("summary", "description", "status", "issuetype")
 
+# issue 描述送進 prompt 的長度上限。與 diff 的上限（contract.MAX_PROMPT_DIFF_BYTES）
+# 是同一個道理，只是這一段通常小得多，所以另訂一個比較緊的值。
+_JIRA_DESCRIPTION_LIMIT = 8000
+
 
 def _fetch_diff(repo, mr_iid):
     """取得這支 MR 的 unified diff。
@@ -72,13 +76,22 @@ def _fetch_diff(repo, mr_iid):
 def _fetch_jira(jira_key):
     """取得 JIRA issue 的內容，回傳 dict；取不到時回 None。
 
-    **取不到不讓流程失敗。** JIRA 在這裡是補充資料，而查不到的原因多半無害：key 是從
-    MR 標題的第一個方括號抽出來的，那裡放 [WIP]、[Draft] 非常常見，抽出來的東西本來
-    就不一定是真的 issue。為了一張查不到的 issue 讓整份分析做不出來，代價與收益不成
-    比例 —— 記一筆警告，prompt 就少那一段。
+    **這一支是交給鉤子按需呼叫的，不是入口自己先跑。** 「這個 key 有沒有效」是 device
+    的政策（見各 device 的 summary.py），而入口不認得那個政策 —— 先抓的話，`[WIP]`、
+    `[Draft]` 這種從標題方括號抽出來的東西每次都會去打一次 JIRA，換回一個 404。
+
+    交出去的是函式而不是 HTTP 的零件：憑證、錯誤分類、截斷都留在這裡，鉤子拿到的仍然
+    只是「呼叫一下就有內容」的能力，改 prompt 的人不必面對這些。
+
+    **取不到不讓流程失敗。** JIRA 在這裡是補充資料，查不到的原因多半無害。為了一張查
+    不到的 issue 讓整份分析做不出來，代價與收益不成比例 —— 記一筆警告，prompt 就少
+    那一段。
     """
+    jira_key = (jira_key or "").strip()
     if not jira_key:
         return None
+
+    script_io.progress("取得 JIRA %s…" % jira_key)
 
     try:
         base_url, token = ai_analysis_gitlab_mr.jira_credentials()
@@ -100,11 +113,27 @@ def _fetch_jira(jira_key):
     return {
         "key": (issue or {}).get("key") or jira_key,
         "summary": fields.get("summary") or "",
-        "description": fields.get("description") or "",
+        "description": _clip(fields.get("description") or ""),
         "status": status.get("name") or "",
         "type": issue_type.get("name") or "",
         "url": ai_analysis_gitlab_mr.jira_url(jira_key),
     }
+
+
+def _clip(text):
+    """把過長的 issue 描述截短，並在結尾註明。
+
+    JIRA 的描述沒有長度上限，實務上有人把整份規格書貼進去。原樣送進 prompt 會把
+    diff 擠出 context window —— 而使用者要的是程式碼的分析，不是規格書的讀後感。
+
+    截斷一定要留下記號：沒有記號的話，模型會對著半句話往下推論，而讀報告的人看不出
+    它只看到一半。
+    """
+    if len(text) <= _JIRA_DESCRIPTION_LIMIT:
+        return text
+    logger.warn("JIRA 描述有 %d 字元，截斷為 %d",
+                len(text), _JIRA_DESCRIPTION_LIMIT)
+    return text[:_JIRA_DESCRIPTION_LIMIT] + "\n…（描述已截斷）"
 
 
 def main():
@@ -161,20 +190,14 @@ def main():
     script_io.progress("取得程式碼差異…")
     mr_diff = _fetch_diff(repo, mr_iid)
 
-    jira_issue = None
-    if params["jira_key"]:
-        script_io.progress("取得 JIRA 內容…")
-        jira_issue = _fetch_jira(params["jira_key"])
-
-    logger.info("素材：diff %d 字元、JIRA %s",
-                len(mr_diff), jira_issue["key"] if jira_issue else "(無)")
+    logger.info("素材：diff %d 字元", len(mr_diff))
 
     script_io.progress("送交 AI 分析…")
 
     inputs = {
         "description": description,
         "mr_diff": mr_diff,
-        "jira_issue": jira_issue,
+        "fetch_jira": _fetch_jira,
         "jira_key": params["jira_key"],
         "jira_mode": params["jira_mode"],
         "ai_mode_name": params["ai_mode_name"],
