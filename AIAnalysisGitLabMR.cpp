@@ -37,8 +37,8 @@ const char *kListMergeRequestsScript =
         "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_list_merge_requests.py";
 const char *kDescriptionScript =
         "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_description.py";
-const char *kScriptSelectorScript =
-        "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_script_selector.py";
+const char *kMrInfoScript =
+        "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_info.py";
 const char *kSummaryScript =
         "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_summary.py";
 const char *kCodeReviewScript =
@@ -53,7 +53,7 @@ const int kFlowStepCount = 5;
 // 出問題時一眼看得出停在哪一步。
 const char *kStepArtifactName[kFlowStepCount] = {
     "01_description.md",
-    "02_script_info.json",
+    "02_mr_info.json",
     "03_summary.json",
     "04_code_review.md",
     "05_report.md"
@@ -62,6 +62,9 @@ const char *kStepArtifactName[kFlowStepCount] = {
 // 共用服務的設定鍵。注入為環境變數時一律取鍵名的全大寫形式 ——
 // 機械化的對應規則，不另外維護一張對照表。
 const char *kServiceKey[] = {
+    // device 不是憑證，但走同一條注入路徑：腳本只從環境變數讀，Qt 與 CI 對它來說
+    // 長得一模一樣。鍵名全大寫即為變數名，所以這裡是 PPS_Device -> PPS_DEVICE。
+    "PPS_Device",
     "Gitlab_Server_URL",
     "Gitlab_Access_Token",
     "Gitlab_Verify_SSL",
@@ -760,11 +763,6 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
                   workDir.absoluteFilePath(
                       QString::fromLatin1(kStepArtifactName[index])));
 
-    // 前面步驟的結果原樣轉送 —— 只挑欄位、改名、轉送，不解讀、不分支。
-    const QJsonObject scriptInfo = (done.size() > 1)
-            ? done.at(1).data.value(QString("script_info")).toObject()
-            : QJsonObject();
-
     switch (index) {
     case 0:
         step.label      = QString("步驟 1/5：取得 Merge Request 描述");
@@ -774,13 +772,15 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
 
     case 1:
         step.label      = QString("步驟 2/5：取得相關資訊");
-        step.scriptPath = QString(kScriptSelectorScript);
-        step.action     = QString("script_selector");
-        params.insert(QString("description"),
-                      done.at(0).data.value(QString("description")).toString());
-        // device 的來源尚未定案（見 design.md Open Questions）。參數照樣
-        // 宣告並傳空字串，腳本收下但本輪不使用。
-        params.insert(QString("device"), QString());
+        step.scriptPath = QString(kMrInfoScript);
+        step.action     = QString("mr_info");
+        // 這一步自己連 GitLab 取 MR —— 抽 JIRA key 的規則讀的是標題，而步驟 1
+        // 的產物只有描述本文，手動輸入編號時畫面上也沒有標題。
+        //
+        // 模式與手動輸入的值一併送出，由腳本決定採用哪一個；在這裡挑的話，CI
+        // 那一側就得再實作一次同樣的三個分支。
+        params.insert(QString("jira_mode"),       context.jiraMode);
+        params.insert(QString("jira_key_manual"), context.jiraKeyManual);
         break;
 
     case 2:
@@ -789,18 +789,16 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         step.action     = QString("ai_summary");
         params.insert(QString("description"),
                       done.at(0).data.value(QString("description")).toString());
-        params.insert(QString("script_info"), scriptInfo);
-        // AI 的三項走 params（不注入環境變數），因此不會出現在命令列上。
+        // 上一步解出來的 key。有效性由該 device 的鉤子判定，不在這裡也不在上一步。
+        params.insert(QString("jira_key"),
+                      done.at(1).data.value(QString("jira_key")).toString());
+        // 模式唯讀轉送，讓鉤子能分辨 key 是抽出來的還是使用者手填的。
+        params.insert(QString("jira_mode"), context.jiraMode);
+        // AI 的四項走 params（不注入環境變數），因此不會出現在命令列上。
         params.insert(QString("ai_mode_name"), context.aiModeName);
         params.insert(QString("ai_api_url"),   context.aiApiUrl);
         params.insert(QString("ai_api_key"),   context.aiApiKey);
         params.insert(QString("ai_model"),     context.aiModel);
-        // JIRA 的三個值一併送出，由腳本決定採用哪一個 —— 在這裡挑的話，
-        // CI 那一側就得再實作一次同樣的三個分支。
-        params.insert(QString("jira_mode"),        context.jiraMode);
-        params.insert(QString("jira_key_manual"),  context.jiraKeyManual);
-        params.insert(QString("jira_key_detected"),
-                      scriptInfo.value(QString("jira_key")).toString());
         break;
 
     case 3:

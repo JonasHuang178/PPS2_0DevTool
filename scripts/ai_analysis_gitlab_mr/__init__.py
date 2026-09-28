@@ -28,15 +28,25 @@ __all__ = [
     "render_original_description",
     "render_description_section",
     "render_ai_section",
+    "render_code_review_section",
+    "CODE_REVIEW_HEADING",
     "ANALYSIS_SCHEMA_VERSION",
     "AnalysisFormatError",
     "SCRIPT_NAME",
     "SCRIPT_VERSION",
     "render_footer",
-    "render_analysis",
+    "JIRA_STATE_OK",
+    "JIRA_STATE_NONE",
+    "JIRA_STATE_INVALID",
+    "JIRA_STATES",
+    "validate_analysis",
+    "wrap_analysis",
+    "plain",
+    "jira_url",
+    "fence_for",
     "MAX_FINDING_DIFF_BYTES",
     "finding",
-    "analysis_payload",
+    "analysis_body",
     "CredentialError",
     "gitlab_credentials",
     "describe_gitlab_error",
@@ -168,6 +178,14 @@ def resolve_json_input(params, key):
 DESCRIPTION_HEADING = "# Original Description"
 AI_HEADING = "# AI 分析結果"
 
+# 程式碼審閱那一段的標題。與 AI 分析**同層** —— 它在語意上是並列的一段，不是分析
+# 的子節。由這一步寫出所有段落的標題，「報告有哪幾節、各在第幾層」就只有一個地方
+# 決定；讓產生內容的步驟自帶標題的話，它無從知道自己會被放在哪一層。
+#
+# 它不是切段的邊界（那只有 AI_HEADING），因為它永遠在 AI 分析之後，切段時連同
+# AI 分析一起被丟掉。
+CODE_REVIEW_HEADING = "# 程式碼審閱"
+
 
 def _heading_pattern(*headings):
     """由標題常數**導出**寬鬆的比對式，不另外手寫一份字面文字。
@@ -287,7 +305,7 @@ def render_description_section(original):
     標題的話，那一行會跟著報告被貼回 MR 描述，下一輪再被讀進來 —— 雖然切得掉，但
     那是讓工具自己製造出要再清理的東西。
     """
-    body = _plain(original)
+    body = plain(original)
     if not body:
         return ""
     return "%s\n\n%s\n" % (DESCRIPTION_HEADING, body)
@@ -296,6 +314,14 @@ def render_description_section(original):
 def render_ai_section(summary):
     """步驟 5 接在原始描述後面的那一段。"""
     return "%s\n\n%s\n" % (AI_HEADING, summary.strip())
+
+
+def render_code_review_section(text):
+    """報告裡「程式碼審閱」那一段：標題加上內容。內容為空就回傳空字串。"""
+    body = plain(text)
+    if not body:
+        return ""
+    return "%s\n\n%s\n" % (CODE_REVIEW_HEADING, body)
 
 
 # --- GitLab 憑證與錯誤分流 --------------------------------------------------
@@ -404,13 +430,28 @@ def describe_gitlab_error(exc, repo):
 # 文字。渲染放在這裡而不是步驟 3：報告長什麼樣是「報告」這件事的決定，而步驟 3
 # 之後還會長出 prompt 組裝、重試、計費 —— 把排版也塞進去會讓兩件事都更難改。
 #
-# 放這個模組而不是直接寫在步驟 5 裡面，是為了與寫入側（日後的 analysis_payload()
+# 放這個模組而不是直接寫在步驟 5 裡面，是為了與寫入側（analysis_body()
 # 等建構函式）待在同一個畫面：欄位名散在兩邊時，改名漏一邊的症狀是 KeyError，
 # 或更糟，安靜地少一段。
 
 # 認得的結構版本。收到別的版本明確失敗，不猜 —— 猜錯的結果是一份看起來正常、
 # 實際上少了幾段的報告，而它會回報成功。
-ANALYSIS_SCHEMA_VERSION = 2
+#
+# 版本 3 相對於 2 多了三個 JIRA 欄位（jira_key / jira_state / jira_url）。
+ANALYSIS_SCHEMA_VERSION = 3
+
+
+# 一次分析的 JIRA 狀態。
+#
+#   ok       抽到（或使用者給了）一個通過檢查的 key
+#   none     這次不使用 JIRA
+#   invalid  抽到東西，但沒通過檢查 —— 原值保留在 jira_key 供報告顯示
+#
+# 三種要分得開：把 invalid 併進 none 的話，標題寫成 [WIP] 的那種錯誤就再也看不見了。
+JIRA_STATE_OK = "ok"
+JIRA_STATE_NONE = "none"
+JIRA_STATE_INVALID = "invalid"
+JIRA_STATES = (JIRA_STATE_OK, JIRA_STATE_NONE, JIRA_STATE_INVALID)
 
 
 class AnalysisFormatError(Exception):
@@ -427,9 +468,12 @@ class AnalysisFormatError(Exception):
         self.code = code
 
 
-def _plain(value):
-    """收斂成去掉頭尾空白的字串。None 與非字串都吃得下 —— AI 回來的 JSON 常有
-    null，直接丟進報告會印出 "None"。"""
+def plain(value):
+    """收斂成去掉頭尾空白的字串。None 與非字串都吃得下。
+
+    **這是 device 作者的公開 API。** AI 回來的 JSON 常有 null，不收斂的話報告上會
+    印出 "None"。device 自己寫渲染時請用這一支，不要自己 str()。
+    """
     if value is None:
         return ""
     text = value if isinstance(value, str) else str(value)
@@ -457,7 +501,7 @@ def _clip_diff(diff):
     不說的話，讀報告的人會以為那個 hunk 就到那裡為止 —— 而被截掉的往往正是後半段。
     以位元組計算（中文一個字三個位元組），errors="ignore" 丟掉切邊切破的半個字。
     """
-    text = _plain(diff)
+    text = plain(diff)
     encoded = text.encode("utf-8")
     if len(encoded) <= MAX_FINDING_DIFF_BYTES:
         return text
@@ -472,31 +516,153 @@ def finding(title, reason, diff_code=""):
     沒有 diff」，渲染時不會留下一個空的程式碼區塊。
     """
     return {
-        "title": _plain(title),
-        "reason": _plain(reason),
+        "title": plain(title),
+        "reason": plain(reason),
         "diffCode": _clip_diff(diff_code),
     }
 
 
-def analysis_payload(overview, model="", jira_url="", mr_diff=None):
-    """組出步驟 3 要落檔與回傳的完整結構。
+def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
+                  jira_url="", mr_diff=None):
+    """組出 analysis 的**內容**。
 
-    mrDiff 以檔案路徑為鍵，每個值是**那個檔案的 finding 清單**（沒有中間層）。
-    想寫「對整個檔案的一句話」時，把它放在清單的第一筆、不給 diffCode 即可 ——
-    渲染出來與任何一筆 finding 相同，所以不需要為它另設一層。
+    刻意不含 schema_version —— 版本由入口腳本蓋章。讓鉤子自己填，遲早有人複製範本時
+    忘了改，於是拿到一個聲稱是某版、實際是別的形狀的檔案。
 
-    dict 在 Python 3.7+ 與 json 模組兩側都保留插入順序，所以檔案在報告中的先後
-    就是這裡放進去的先後。
+    mrDiff 以檔案路徑為鍵，每個值是**那個檔案的 finding 清單**（沒有中間層）。想寫
+    「對整個檔案的一句話」時，把它放在清單的第一筆、不給 diffCode 即可 —— 渲染出來與
+    任何一筆 finding 相同，所以不需要為它另設一層。
+
+    dict 在 Python 3.7+ 與 json 模組兩側都保留插入順序，所以檔案在報告中的先後就是
+    這裡放進去的先後。
+
+    jira_state 的三個值見 JIRA_STATES。invalid 時 jira_key 請保留**被拒絕的原值** ——
+    報告要靠它告訴讀者「抽到的是 WIP」，只說「無效」等於要人自己猜。
+    """
+    return {
+        "model": plain(model),
+        "jira_key": plain(jira_key),
+        "jira_state": plain(jira_state) or JIRA_STATE_NONE,
+        "jira_url": plain(jira_url),
+        "overview": plain(overview),
+        "mrDiff": dict(mr_diff or {}),
+    }
+
+
+def wrap_analysis(body):
+    """把 analysis 的內容包成落檔與回傳用的完整結構，並蓋上版本號。
+
+    入口腳本用這一支 —— 鉤子只交內容，版本永遠由這裡填。
     """
     return {
         "schema_version": ANALYSIS_SCHEMA_VERSION,
-        "analysis": {
-            "model": _plain(model),
-            "jira_url": _plain(jira_url),
-            "overview": _plain(overview),
-            "mrDiff": dict(mr_diff or {}),
-        },
+        "analysis": body,
     }
+
+
+def validate_analysis(payload, source=""):
+    """驗證分析結構，通過就回傳 analysis 的內容；不通過丟 AnalysisFormatError。
+
+    兩個呼叫點共用這一份：AI 分析那一步**收到鉤子回傳的當下**，以及合併那一步渲染之前。
+    共用的理由很具體 —— 曾經有一次 summary 欄位變成巢狀物件，根因在 AI 分析那一步，
+    症狀卻爆在兩步之後的渲染，訊息是一句 "dict object has no attribute strip"，既沒說
+    是哪個檔案也沒說是哪個欄位。驗在產生它的那一步，訊息才點得出是誰寫壞的。
+
+    source 是給訊息用的前綴（例如 "device ssd 的 summary.py"）。AI 分析那一步知道是哪個
+    device，合併那一步不知道，所以它是選用的。
+    """
+    where = ("%s：" % source) if source else ""
+
+    if not isinstance(payload, dict):
+        raise AnalysisFormatError(
+            "%sAI 分析結果不是一個物件" % where,
+            "讀到的型別是 %s。" % type(payload).__name__,
+            "ANALYSIS_BAD_TYPE")
+
+    raw_version = payload.get("schema_version")
+    if _schema_version(raw_version) != ANALYSIS_SCHEMA_VERSION:
+        raise AnalysisFormatError(
+            "%s認不得的 AI 分析結果版本：%r" % (where, raw_version),
+            "這份實作認得的是 schema_version %d —— 數字與純數字字串都收"
+            "（%d、\"%d\"、\"%d.0\" 視為同一個版本）。\n"
+            "版本不合時不做猜測 —— 猜錯的結果是一份看起來正常、實際上少了幾段的"
+            "報告，而它會回報成功。"
+            % (ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION,
+               ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION),
+            "ANALYSIS_SCHEMA_UNSUPPORTED")
+
+    analysis = payload.get("analysis")
+    if not isinstance(analysis, dict):
+        raise AnalysisFormatError(
+            "%sAI 分析結果缺少 analysis 物件" % where,
+            "analysis 的型別是 %s。這個檔案目前有的欄位：%s"
+            % (type(analysis).__name__,
+               "、".join(sorted(payload.keys())) or "(無)"),
+            "ANALYSIS_MISSING_BODY")
+
+    state = analysis.get("jira_state")
+    if state not in JIRA_STATES:
+        raise AnalysisFormatError(
+            "%sAI 分析結果的 jira_state 不是認得的值：%r" % (where, state),
+            "認得的是 %s。\n"
+            "沒有要使用 JIRA 時填 \"%s\"；抽到東西但沒通過檢查時填 \"%s\"，"
+            "並把原值留在 jira_key。"
+            % ("、".join(JIRA_STATES), JIRA_STATE_NONE, JIRA_STATE_INVALID),
+            "ANALYSIS_JIRA_STATE_BAD")
+
+    # 型別檢查要在「沒給就當空的」之前 —— 反過來寫的話，一個打錯成 [] 的
+    # mrDiff 會因為空 list 是 falsy 而變成 {}，報告少了整批檔案卻回報成功。
+    mr_diff = analysis.get("mrDiff")
+    if mr_diff is None:
+        mr_diff = {}
+    if not isinstance(mr_diff, dict):
+        raise AnalysisFormatError(
+            "%sAI 分析結果的 mrDiff 不是物件" % where,
+            "mrDiff 的型別是 %s。它應該是以檔案路徑為鍵的物件。"
+            % type(mr_diff).__name__,
+            "ANALYSIS_MRDIFF_BAD_TYPE")
+
+    # 逐檔、逐筆走完。留到渲染才發現的話，訊息指的是合併那一步，而錯在上游。
+    for path, findings in mr_diff.items():
+        clean = plain(path)
+        if not isinstance(findings, list):
+            raise AnalysisFormatError(
+                "%sAI 分析結果中 %s 的內容不是清單" % (where, clean),
+                "讀到的型別是 %s。mrDiff 的每個值應該是一個 list，裡面每一筆是 "
+                "{title, reason, diffCode}。" % type(findings).__name__,
+                "ANALYSIS_FILE_BAD_TYPE")
+        for position, item in enumerate(findings, start=1):
+            if not isinstance(item, dict):
+                raise AnalysisFormatError(
+                    "%sAI 分析結果中 %s 的第 %d 筆不是物件"
+                    % (where, clean, position),
+                    "讀到的型別是 %s。每一筆應該是 {title, reason, diffCode} "
+                    "這樣的物件。" % type(item).__name__,
+                    "ANALYSIS_FINDING_BAD_TYPE")
+
+    return analysis
+
+
+def jira_url(jira_key):
+    """把 JIRA key 組成可點的網址。沒有 key 或沒設伺服器位址時回空字串。
+
+    **這是 device 作者的公開 API。**
+
+    伺服器位址走環境變數（工具端由 Qt 從設定檔的 Service.Jira_Server_URL 以全大寫
+    注入），與 GitLab 的憑證同一條路徑 —— 腳本端只有一種取值方式。
+
+    組不出網址時回空字串，而**不是**把這件事當成 key 無效：沒設 JIRA_SERVER_URL 是
+    設定問題，與 key 對不對無關。混在一起的話，一個完全正確的 key 會因為別人沒設
+    伺服器位址而被標成 invalid。
+    """
+    key = plain(jira_key)
+    if not key:
+        return ""
+    server = os.environ.get("JIRA_SERVER_URL", "").strip().rstrip("/")
+    if not server:
+        logger.debug("未設定 JIRA_SERVER_URL，jira_url 留空")
+        return ""
+    return "%s/browse/%s" % (server, key)
 
 
 # --- 渲染（讀取側）----------------------------------------------------------
@@ -538,8 +704,10 @@ def _schema_version(value):
     return None
 
 
-def _fence_for(code):
+def fence_for(code):
     """挑一個不會被內容提前關掉的圍籬。
+
+    **這是 device 作者的公開 API。** 自己寫渲染時務必用它算圍籬長度。
 
     diff 的內容若自己含有三個反引號（改到 markdown 檔就會），固定用 ``` 會讓程式碼
     區塊在半路結束，後面的內容變成一般文字 —— 而報告仍然「成功」產出。數出內容裡
@@ -559,175 +727,6 @@ def _fence_for(code):
 
 # 條目內的縮排。理由與 diff 都縮在 bullet 底下，讓它們在視覺上屬於那一筆，而不是
 # 平鋪在檔案標題下的另一段。兩格是 markdown 認得的清單延續縮排。
-_ENTRY_INDENT = "  "
-
-
-def _indent(text):
-    """把每一行縮排。空行不補空白 —— 那只會留下看不見的行尾空格。"""
-    return "\n".join(_ENTRY_INDENT + line if line else ""
-                      for line in text.split("\n"))
-
-
-def _entry_block(item, path, position):
-    """一筆 finding，組成報告裡的一個條目。
-
-    形狀：
-
-        - <標題>
-          <理由>
-          <details>
-
-          ```diff
-          <diff>
-          ```
-          </details>
-
-    理由緊接在 bullet 下一行、縮排兩格。GitLab 會把它併進同一段（markdown 的清單
-    延續），結果視窗是純文字則如實顯示成兩行縮排 —— 兩邊都讀得下去。
-
-    diff 包在 <details> 裡收合：一筆 finding 的 diff 可能幾十行，攤開來會把整份報告
-    的可讀性吃掉，而讀的人多半先看標題與理由、需要時才展開。<details> 之後必須空一行，
-    否則 GitLab 不會把裡面的內容當 markdown 解析，圍籬會原樣印出來。
-
-    整段縮排兩格是為了讓它留在該筆 bullet 之內；markdown 會把圍籬的縮排從內容行一併
-    扣掉，所以 diff 本身不會多出兩格。
-    """
-    if not isinstance(item, dict):
-        raise AnalysisFormatError(
-            "AI 分析結果中 %s 的第 %d 筆不是物件" % (path, position),
-            "讀到的型別是 %s。每一筆應該是 {title, reason, diffCode} 這樣的物件。"
-            % type(item).__name__,
-            "ANALYSIS_FINDING_BAD_TYPE")
-
-    title = _plain(item.get("title"))
-    reason = _plain(item.get("reason"))
-    code = _plain(item.get("diffCode"))
-
-    lines = []
-    if title:
-        lines.append("- %s" % title)
-    if reason:
-        # 沒有標題時理由自己當 bullet —— 否則會是一段縮排卻沒有歸屬的文字。
-        lines.append(_indent(reason) if title else "- %s" % reason)
-
-    if code:
-        fence = _fence_for(code)
-        block = "%s%sdiff\n%s\n%s%s" % (
-            "<details>\n\n", fence, code, fence, "\n</details>")
-        # 有 bullet 才縮排；沒有的話縮排會變成一段無主的內容。
-        lines.append(_indent(block) if lines else block)
-
-    return "\n".join(lines)
-
-
-def _file_body(path, findings):
-    """一個檔案底下的內容（不含 `### N. 路徑` 那一行）。
-
-    回傳空清單代表這個檔案沒有任何可呈現的內容 —— 呼叫端據此整個略過它，不留下一個
-    底下什麼都沒有的標題，編號也不會跳號。
-    """
-    if not isinstance(findings, list):
-        raise AnalysisFormatError(
-            "AI 分析結果中 %s 的內容不是清單" % path,
-            "讀到的型別是 %s。mrDiff 的每個值應該是一個 list，裡面每一筆是 "
-            "{title, reason, diffCode}。" % type(findings).__name__,
-            "ANALYSIS_FILE_BAD_TYPE")
-
-    body = []
-    for position, item in enumerate(findings, start=1):
-        block = _entry_block(item, path, position)
-        if block:
-            body.append(block)
-    return body
-
-
-def render_analysis(payload):
-    """把步驟 3 的結構化分析渲染成報告裡「AI 分析結果」底下的內容。
-
-    回傳的是接在 AI_HEADING 底下的那一段 —— 標題由 render_ai_section() 加上，因為
-    那個字串同時是下一輪切段的邊界，只能有一個來源。
-
-    版面：
-
-        ## Summary
-        <overview>
-
-        ## Code Changes
-        ### 1. <檔案路徑>
-        - <標題>
-        <理由>
-        <理由>
-        ```diff
-        <diff>
-        ```
-
-    空的欄位整段不放：一個只有標題、底下什麼都沒有的區塊會讓人以為內容漏掉了。
-    整個 mrDiff 為空時連 "## Code Changes" 都不出現。
-    """
-    if not isinstance(payload, dict):
-        raise AnalysisFormatError(
-            "AI 分析結果不是一個物件",
-            "讀到的型別是 %s。" % type(payload).__name__,
-            "ANALYSIS_BAD_TYPE")
-
-    raw_version = payload.get("schema_version")
-    if _schema_version(raw_version) != ANALYSIS_SCHEMA_VERSION:
-        raise AnalysisFormatError(
-            "認不得的 AI 分析結果版本：%r" % (raw_version,),
-            "這份實作認得的是 schema_version %d —— 數字與純數字字串都收"
-            "（%d、\"%d\"、\"%d.0\" 視為同一個版本）。\n"
-            "版本不合時不做猜測 —— 猜錯的結果是一份看起來正常、實際上少了幾段的"
-            "報告，而它會回報成功。"
-            % (ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION,
-               ANALYSIS_SCHEMA_VERSION, ANALYSIS_SCHEMA_VERSION),
-            "ANALYSIS_SCHEMA_UNSUPPORTED")
-
-    analysis = payload.get("analysis")
-    if not isinstance(analysis, dict):
-        raise AnalysisFormatError(
-            "AI 分析結果缺少 analysis 物件",
-            "analysis 的型別是 %s。這個檔案目前有的欄位：%s"
-            % (type(analysis).__name__,
-               "、".join(sorted(payload.keys())) or "(無)"),
-            "ANALYSIS_MISSING_BODY")
-
-    blocks = []
-
-    overview = _plain(analysis.get("overview"))
-    if overview:
-        blocks.append("## Summary")
-        blocks.append(overview)
-
-    # 型別檢查要在「沒給就當空的」之前 —— 反過來寫的話，一個打錯成 [] 的
-    # mrDiff 會因為空 list 是 falsy 而變成 {}，報告少了整批檔案卻回報成功。
-    mr_diff = analysis.get("mrDiff")
-    if mr_diff is None:
-        mr_diff = {}
-    if not isinstance(mr_diff, dict):
-        raise AnalysisFormatError(
-            "AI 分析結果的 mrDiff 不是物件",
-            "mrDiff 的型別是 %s。它應該是以檔案路徑為鍵的物件。"
-            % type(mr_diff).__name__,
-            "ANALYSIS_MRDIFF_BAD_TYPE")
-
-    files = []
-    index = 0
-    for path, findings in mr_diff.items():
-        clean = _plain(path)
-        body = _file_body(clean, findings)
-        if not body:
-            continue
-        index += 1
-        files.append("### %d. `%s`" % (index, clean))
-        files.extend(body)
-    if files:
-        blocks.append("## Code Changes")
-        blocks.extend(files)
-
-    return "\n\n".join(blocks)
-
-
-
 # --- 報告末尾的出處資訊 ------------------------------------------------------
 #
 # 一份報告被貼到 MR 討論串之後就脫離了產生它的環境。半年後有人問「這段分析是哪來的、
@@ -783,32 +782,72 @@ def _tool_origin():
     return ("%s %s" % (name, version)).strip()
 
 
-def render_footer(ai_mode=""):
+def _jira_label(analysis):
+    """出處資訊裡 JIRA 的那一段。
+
+    依狀態而異：
+
+        ok       印 key；有網址就做成連結
+        none     印 NONE
+        invalid  印**被拒絕的原值**加 (invalid)
+
+    印原值而不是 NONE 是刻意的：看到 `JIRA: WIP (invalid)` 就知道標題的第一個方括號放
+    的是 WIP，直接指出怎麼修；只印 NONE 的話只知道失敗了。
+
+    狀態由產生分析的那一步判定並隨結構帶過來，**這裡不重新判定** —— 重判就會有第二份
+    規則，兩份必然漂移。
+    """
+    if not isinstance(analysis, dict):
+        return ""
+
+    state = plain(analysis.get("jira_state")) or JIRA_STATE_NONE
+    key = plain(analysis.get("jira_key"))
+
+    if state == JIRA_STATE_OK and key:
+        return "JIRA: %s" % _link(key, plain(analysis.get("jira_url")))
+    if state == JIRA_STATE_INVALID:
+        return "JIRA: %s (invalid)" % (key or "(空值)")
+    return "JIRA: NONE"
+
+
+def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     """報告最後那一段出處資訊。
 
     形狀：
 
         ---
 
-        MR Summary Script v1.0(Open AI)
+        Script: v1.0 | Device: ssd v1.2 | AI Mode: Open AI | JIRA: WIP (invalid)
         Gitlab Pipeline #1000 | Commit e456d23
 
-    第二行依環境而定：CI 裡是 pipeline 與 commit，從工具跑是工具名稱與版本，兩者都
-    沒有（命令列直接執行）就整行不出現。**腳本版本那一行永遠都在** —— 它是這整段
-    存在的理由。
+    每個值前面都有名字。沒有標籤的話（例如 `(Open AI / ssd v1.2)`）兩個版本號並列時
+    讀的人分不出哪一個是腳本的、哪一個是 device 的。
 
-    CI 優先於工具：兩者同時存在時（例如在 CI 容器裡開工具，實務上不會發生）pipeline
-    與 commit 指得更精確。
+    `Script` 是入口腳本與契約的版本，`Device` 是那個 device 自己的。分開標示的理由是
+    同一份 MR 用不同 device 跑出來的報告不一樣 —— 只有一個全域版本號的話，兩份不同的
+    報告會帶同一個版本。
 
-    分隔線之前必須空一行，否則 markdown 會把上一行文字當成 setext 標題，`---` 變成
-    底線而不是分隔線。
+    第二行依環境而定：CI 裡是 pipeline 與 commit，從工具跑是工具名稱與版本，兩者都沒有
+    （命令列直接執行）就整行不出現。**第一行永遠都在** —— 它是這整段存在的理由。
+
+    分隔線之前必須空一行，否則 markdown 會把上一行文字當成 setext 標題。
     """
-    head = "%s v%s" % (SCRIPT_NAME, SCRIPT_VERSION)
-    mode = _plain(ai_mode)
-    if mode:
-        head += "(%s)" % mode
+    parts = ["Script: v%s" % SCRIPT_VERSION]
 
-    lines = [head]
+    name = plain(device_name)
+    if name:
+        version = plain(device_version)
+        parts.append("Device: %s" % (("%s v%s" % (name, version)) if version else name))
+
+    mode = plain(ai_mode)
+    if mode:
+        parts.append("AI Mode: %s" % mode)
+
+    jira = _jira_label(analysis)
+    if jira:
+        parts.append(jira)
+
+    lines = [" | ".join(parts)]
     origin = _ci_origin() or _tool_origin()
     if origin:
         lines.append(origin)

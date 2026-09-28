@@ -31,6 +31,7 @@ import ai_analysis_gitlab_mr
 import script_io
 from script_utils import file_utils
 from script_utils import json_utils
+from ai_analysis_gitlab_mr import device
 from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
@@ -64,28 +65,25 @@ def _read_required(path, what):
     return file_utils.read_file(path)
 
 
-def _summary_text(payload, path):
-    """從 AI 分析結果檔取出要接進報告的那一段 markdown。
+def _analysis_section(payload, path, inputs):
+    """把 AI 分析結果變成報告裡「AI 分析結果」標題底下的那一段。
 
     吃兩種形狀：
 
-        結構化（schema_version / analysis）  交給 render_analysis() 渲染
+        結構化（schema_version / analysis）  驗證後交給 device 的 merge_to_md 鉤子
         整份就是一段文字，或 summary 是字串  原樣採用
 
-    第二種是為了讓還沒改寫的步驟 3 與既有的產物檔照樣跑得動。版本欄位存在的意義
-    就是同時支援多種形狀，而不是改一邊就讓另一邊爆掉。
+    第二種是相容用的：版本欄位存在的意義就是同時支援多種形狀，而不是改一邊就讓另一邊
+    爆掉。
 
-    取到的東西不是文字也不是認得的結構時**回 FAIL 而不是硬轉**。硬轉的下場是把
-    Python 的 repr（`{'mrDiff': {...}}` 這種）原樣印進報告裡，那份報告看起來是成功
-    產出的，交出去才被發現中間夾了一段程式碼；在這裡攔下來，訊息直接說出型別與
-    檔案位置。
+    回傳 (那一段的內容, analysis 或 None)。analysis 給 footer 用 —— JIRA 的狀態記在
+    裡面，由產生它的那一步判定，這一步不重新判。
 
-    這一條是真的踩過：步驟 3 改寫之後 summary 變成巢狀物件，而當時這裡直接對它
-    呼叫 .strip()，錯誤是一句 "dict object has no attribute strip" —— 那句話既沒說
-    是哪個檔案，也沒說是哪個欄位。
+    取到的東西不是文字也不是認得的結構時**回 FAIL 而不是硬轉**。硬轉的下場是把 Python
+    的 repr 原樣印進報告裡，那份報告看起來是成功產出的。
     """
     if isinstance(payload, str):
-        return payload
+        return payload, None
 
     if not isinstance(payload, dict):
         script_io.reply_fail(
@@ -97,17 +95,31 @@ def _summary_text(payload, path):
     # 後者會讓一個打錯的欄位名安靜地走進渲染路徑。
     if "schema_version" in payload or "analysis" in payload:
         try:
-            return ai_analysis_gitlab_mr.render_analysis(payload)
+            analysis = ai_analysis_gitlab_mr.validate_analysis(payload)
         except ai_analysis_gitlab_mr.AnalysisFormatError as exc:
+            script_io.reply_fail("%s（檔案：%s）" % (exc, path),
+                                 detail=exc.detail, code=exc.code)
+
+        try:
+            hook, owner = device.load_hook("merge_to_md")
+        except device.DeviceError as exc:
+            script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+
+        try:
+            section = hook.render(dict(inputs, analysis=analysis, device=owner))
+        except Exception as exc:                    # noqa: BLE001
             script_io.reply_fail(
-                "%s（檔案：%s）" % (exc, path),
-                detail=exc.detail, code=exc.code)
+                "device %s 的 merge_to_md.py 執行失敗" % owner,
+                detail="%s: %s" % (exc.__class__.__name__, exc),
+                code="DEVICE_HOOK_RUNTIME_ERROR")
+
+        return ai_analysis_gitlab_mr.plain(section), analysis
 
     value = payload.get("summary")
     if value is None or value == "":
-        return ""
+        return "", None
     if isinstance(value, str):
-        return value
+        return value, None
 
     script_io.reply_fail(
         "AI 分析結果檔的 summary 欄位不是文字：%s" % path,
@@ -160,11 +172,20 @@ def main():
     script_io.progress("合併為 markdown…")
 
     # --- 讀入三段內容 ---
+    #
+    # 順序有意義：AI 分析那一段交給 device 的鉤子渲染，而鉤子的輸入包含描述與
+    # 審閱報告（唯讀參考），所以那兩段要先讀好。
     description = ""
     if _is_given(params["ori_md_file_path"]):
         description = _read_required(params["ori_md_file_path"], "MR 描述檔")
 
+    code_review = ""
+    if _is_given(params["code_review_md_file_path"]):
+        code_review = _read_required(params["code_review_md_file_path"],
+                                     "程式碼審閱報告檔")
+
     summary = ""
+    analysis = None
     if _is_given(params["mr_summary_json_file_path"]):
         path = params["mr_summary_json_file_path"]
         raw = _read_required(path, "AI 分析結果檔")
@@ -174,12 +195,12 @@ def main():
             script_io.reply_fail(
                 "AI 分析結果檔不是合法的 JSON：%s" % path,
                 detail=str(exc), code="MERGE_SUMMARY_NOT_JSON")
-        summary = _summary_text(payload, path)
-
-    code_review = ""
-    if _is_given(params["code_review_md_file_path"]):
-        code_review = _read_required(params["code_review_md_file_path"],
-                                     "程式碼審閱報告檔")
+        summary, analysis = _analysis_section(payload, path, {
+            "description": description,
+            "code_review": code_review,
+            "repo": repo,
+            "mr_iid": mr_iid,
+        })
 
     if not (description or summary or code_review):
         # 三段全空代表呼叫端什麼都沒給，或前面幾步全部沒有產出。產一份只有標題的
@@ -214,11 +235,29 @@ def main():
             ai_analysis_gitlab_mr.render_ai_section(summary).strip())
 
     if code_review.strip():
-        sections.append(code_review.strip())
+        # 標題由這一步寫出，步驟 4 只負責內容 —— 讓它自帶標題的話，它無從知道
+        # 自己會被放在哪一層，結果是縮在 AI 分析底下。
+        sections.append(
+            ai_analysis_gitlab_mr.render_code_review_section(
+                code_review).strip())
 
     # 出處資訊永遠都在：報告被貼到 MR 討論串之後就脫離了產生它的環境，這一段是
     # 「這份分析是哪一版腳本、在哪裡跑出來的」唯一的答案。
-    sections.append(ai_analysis_gitlab_mr.render_footer(params["ai_mode"]))
+    # device 的名稱與版本由這一步自己讀環境變數取得 —— 它本來就要讀那個變數來
+    # 載入自己的鉤子，不必經參數、也不必動 schema。
+    device_name = ""
+    device_ver = ""
+    try:
+        device_name = device.resolve_name()
+        device_ver = device.device_version(device_name)
+    except device.DeviceError as exc:
+        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+
+    sections.append(ai_analysis_gitlab_mr.render_footer(
+        ai_mode=params["ai_mode"],
+        device_name=device_name,
+        device_version=device_ver,
+        analysis=analysis))
 
     markdown = "\n\n".join(sections) + "\n"
 

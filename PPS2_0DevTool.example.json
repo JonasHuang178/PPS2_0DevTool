@@ -25,6 +25,7 @@
       "AI Analysis GitLab MR": {
         "Visible": "true",
         "Program": "python",
+        "PPS_Device": "",
         "Repo_List": [
           "Jonas_Huang/lw-os",
           "Jonas_Huang/Test_Submodule"
