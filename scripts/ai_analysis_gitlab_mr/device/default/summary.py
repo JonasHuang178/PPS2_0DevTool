@@ -129,6 +129,41 @@ _JIRA_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 # 以下是接線，通常不用改
 # ===========================================================================
 
+class PromptError(Exception):
+    """樣板本身有問題（佔位符打錯、大括號沒跳脫）。
+
+    與「素材有問題」分開：素材是每次執行都不一樣的東西，樣板是改了就每次都壞。訊息
+    要直接指出改哪裡，而不是丟一個 KeyError 讓人自己對。
+    """
+
+
+def _fill(name, template, **values):
+    """把值代進樣板，並且在樣板寫壞時給一個講得清楚的錯誤。
+
+    str.format() 對樣板裡的每一個大括號都當佔位符看待，所以 prompt 裡只要有 JSON
+    範例、C 的程式碼片段或 {變數} 這種東西，就會冒出一個 KeyError 說某個名字不存在
+    —— 而那個名字往往就是使用者剛貼進去的內容的一部分，完全看不出是跳脫的問題。
+
+    這三種都轉成同一句話：要原樣印出大括號就疊成兩層。
+    """
+    try:
+        return template.format(**values)
+    except KeyError as exc:
+        raise PromptError(
+            u"%s 裡有認不得的佔位符 {%s}。可用的是：%s。\n"
+            u"如果那對大括號是你要原樣印出來的內容（JSON 範例、程式碼片段），"
+            u"請寫成兩層：{{ 與 }}。"
+            % (name, exc.args[0], u"、".join(sorted(values))))
+    except IndexError:
+        raise PromptError(
+            u"%s 裡有一個空的 {}。要原樣印出大括號請寫成兩層：{{ 與 }}。" % name)
+    except ValueError as exc:
+        # 單獨一個 { 或 }（format() 會說 Single '{' encountered…）。
+        raise PromptError(
+            u"%s 的大括號不成對（%s）。要原樣印出大括號請寫成兩層：{{ 與 }}。"
+            % (name, exc))
+
+
 def _jira_block(issue):
     """JIRA 那一段。沒有 issue 就回空字串，整段不出現在 prompt 裡。
 
@@ -138,13 +173,13 @@ def _jira_block(issue):
     if not issue:
         return ""
 
-    return JIRA_TEMPLATE.format(
-        key=contract.plain(issue.get("key")),
-        summary=contract.plain(issue.get("summary")),
-        status=contract.plain(issue.get("status")) or u"（未知）",
-        type=contract.plain(issue.get("type")) or u"（未知）",
-        description=contract.plain(issue.get("description")) or NO_DESCRIPTION,
-    )
+    return _fill("JIRA_TEMPLATE", JIRA_TEMPLATE,
+                 key=contract.plain(issue.get("key")),
+                 summary=contract.plain(issue.get("summary")),
+                 status=contract.plain(issue.get("status")) or u"（未知）",
+                 type=contract.plain(issue.get("type")) or u"（未知）",
+                 description=(contract.plain(issue.get("description"))
+                              or NO_DESCRIPTION))
 
 
 def build_prompt(inputs):
@@ -159,7 +194,8 @@ def build_prompt(inputs):
     JIRA 那一段吃 inputs["jira_issue"]，那是 analyze() 在確認 key 有效之後才取回來
     放進去的（見底下）。單獨呼叫這一支時自己塞一個 dict 或 None 即可。
     """
-    return PROMPT_TEMPLATE.format(
+    return _fill(
+        "PROMPT_TEMPLATE", PROMPT_TEMPLATE,
         role=ROLE_PROMPT.strip(),
         repo=contract.plain(inputs.get("repo")) or u"（未指定）",
         mr_iid=contract.plain(inputs.get("mr_iid")) or u"?",

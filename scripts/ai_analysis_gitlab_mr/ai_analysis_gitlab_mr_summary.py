@@ -26,6 +26,7 @@ mr_diff 與 jira_issue），它只決定怎麼把那些素材排進 prompt。
 
 import os
 import sys
+import traceback
 
 # 見其他入口腳本的說明：這一行不能刪。
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,6 +37,7 @@ from ai_analysis_gitlab_mr import device
 from script_utils import ai_utils
 from script_utils import gitlab_utils
 from script_utils import jira_utils
+from script_utils import json_utils
 from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
@@ -51,7 +53,19 @@ _JIRA_FIELDS = ("summary", "description", "status", "issuetype")
 _JIRA_DESCRIPTION_LIMIT = 8000
 
 
-def _fetch_diff(repo, mr_iid):
+def _fail(debug_dir, message, detail="", code=""):
+    """回報失敗，並且在除錯目錄留下同一筆紀錄。
+
+    成功才寫 log 的話，最需要那份紀錄的時候剛好沒有 —— 而「這次為什麼沒成功」正是
+    事後唯一想查的事。detail 通常是 traceback，一併寫進去。
+    """
+    ai_analysis_gitlab_mr.write_debug_log(
+        debug_dir, "FAIL [%s] %s%s" % (code or "-", message,
+                                       ("\n" + detail) if detail else ""))
+    script_io.reply_fail(message, detail=detail, code=code)
+
+
+def _fetch_diff(repo, mr_iid, debug_dir):
     """取得這支 MR 的 unified diff。
 
     失敗就讓整步失敗：沒有 diff 的「程式碼分析」只能靠描述瞎猜，而它會回報成功。
@@ -59,7 +73,7 @@ def _fetch_diff(repo, mr_iid):
     try:
         server_url, token, verify_ssl = ai_analysis_gitlab_mr.gitlab_credentials()
     except ai_analysis_gitlab_mr.CredentialError as exc:
-        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+        _fail(debug_dir, str(exc), exc.detail, exc.code)
 
     try:
         project_id = gitlab_utils.get_repo_id(server_url, token, repo,
@@ -71,7 +85,7 @@ def _fetch_diff(repo, mr_iid):
     except gitlab_utils.GitLabError as exc:
         message, detail, code = ai_analysis_gitlab_mr.describe_gitlab_error(
             exc, repo)
-        script_io.reply_fail(message, detail=detail, code=code)
+        _fail(debug_dir, message, detail, code)
 
 
 def _fetch_jira(jira_key):
@@ -177,7 +191,7 @@ def main():
     try:
         hook, owner = device.load_hook("summary")
     except device.DeviceError as exc:
-        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
 
     where = "device %s 的 summary.py" % owner
     logger.info("AI 分析：device=%s mode=%s model=%s jira_key=%s",
@@ -189,7 +203,7 @@ def main():
     # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
     # 把一個連線問題講成腳本寫壞了。
     script_io.progress("取得程式碼差異…")
-    mr_diff = _fetch_diff(repo, mr_iid)
+    mr_diff = _fetch_diff(repo, mr_iid, params["debug_dir"])
 
     logger.info("素材：diff %d 字元", len(mr_diff))
 
@@ -228,22 +242,23 @@ def main():
         body = hook.analyze(inputs)
     except ai_analysis_gitlab_mr.CredentialError as exc:
         # 設定沒填完，不是鉤子寫壞了。
-        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
     except ai_utils.AiError as exc:
         # AI 服務那一端的問題。這一條要在通用的 except 之前 —— 否則一個 429 會被
         # 報成「device X 的 summary.py 執行失敗」，把限流講成腳本寫壞了，而使用者
         # 的下一步（稍後再試 vs 去改腳本）完全不同。
-        script_io.reply_fail(
-            str(exc),
-            detail="端點：%s\n重試已經做過（見 stderr 的警告）。"
-                   % (exc.url or "(未知)"),
-            code=exc.code)
+        _fail(params["debug_dir"], str(exc),
+              "端點：%s\n重試已經做過（見 stderr 的警告）。" % (exc.url or "(未知)"),
+              exc.code)
     except Exception as exc:                        # noqa: BLE001
         # 鉤子是使用者寫的，任何東西都可能從這裡冒出來。訊息要指得出是哪一支。
-        script_io.reply_fail(
-            "%s 執行失敗" % where,
-            detail="%s: %s" % (exc.__class__.__name__, exc),
-            code="DEVICE_HOOK_RUNTIME_ERROR")
+        #
+        # detail 放完整的 traceback：鉤子裡出錯最常見的是改壞了 prompt 樣板或解析，
+        # 而「哪一行」是唯一真正有用的資訊。一行 "KeyError: xxx" 指不出位置。
+        _fail(params["debug_dir"],
+              "%s 執行失敗：%s" % (where, exc),
+              traceback.format_exc(),
+              "DEVICE_HOOK_RUNTIME_ERROR")
 
     # 版本由入口蓋章，鉤子不填 —— 讓它自己填，遲早有人複製範本時忘了改。
     payload = ai_analysis_gitlab_mr.wrap_analysis(body)
@@ -251,7 +266,12 @@ def main():
     try:
         ai_analysis_gitlab_mr.validate_analysis(payload, source=where)
     except ai_analysis_gitlab_mr.AnalysisFormatError as exc:
-        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+        # 鉤子回了一個形狀不對的結構。把它整份寫進除錯目錄 —— 光看訊息說「某個欄位
+        # 型別不對」，還是得看到實際長什麼樣才改得動。
+        ai_analysis_gitlab_mr.write_debug_file(
+            params["debug_dir"], "bad_analysis.json",
+            json_utils.dump(payload))
+        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], payload)
     ai_analysis_gitlab_mr.write_debug_log(
