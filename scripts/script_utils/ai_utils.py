@@ -6,13 +6,12 @@
 
     from script_utils import ai_utils
 
-    text = ai_utils.ask(url, key, model, prompt)              # 原始回覆
-    data = ai_utils.ask_json(url, key, model, prompt)         # 解析過的 JSON
+    text = ai_utils.ask(api_url, prompt)              # 原始回覆
+    data = ai_utils.ask_json(api_url, prompt)         # 解析過的 JSON
 
-落地模型的封包形狀集中在 **_build_payload() 與 _extract_reply()** 兩支。要換供應商、
-或改成自家的請求格式，改那兩支即可；重試、退避、逾時與錯誤分類都與封包形狀無關，
-不必跟著動。目前預設的是 OpenAI 相容的 /chat/completions 形狀，因為那是多數地端服務
-與代理都提供的介面。
+**這個模組是為特定一家地端服務寫的，不是通用的多供應商客戶端。** 請求形狀集中在
+_build_payload()，回應的取值集中在 _extract_reply()，要換服務改那兩支即可；重試、
+退避、逾時與錯誤分類都與封包形狀無關，不必跟著動。
 
 **為什麼不用 curl 子行程**：金鑰與 prompt 不能上命令列（Windows 的命令列上限是 32767
 字元，一份 diff 輕易就超過），而 curl 的失敗要靠解析 exit code 分類。走 requests 的話
@@ -31,6 +30,7 @@ from script_utils import http_utils
 from script_utils import logger
 
 __all__ = ["AiError", "ask", "ask_json", "as_json", "strip_fence",
+           "split_share_code", "ROLE_USER",
            "DEFAULT_TIMEOUT", "MAX_RETRIES"]
 
 
@@ -47,12 +47,19 @@ MAX_BACKOFF_SECONDS = 30.0
 
 # 重試有意義的狀態碼。408 是請求逾時、429 是限流、5xx 是伺服器端的暫時狀況。
 #
-# 其餘的 4xx 一律不重試：401 是金鑰錯、404 是端點或模型名打錯、413 是 prompt 太長、
-# 400 多半是封包形狀不對。這些重試三次結果完全一樣，只是把同一個錯誤等三倍時間。
+# 其餘的 4xx 一律不重試：401 是憑證錯、404 是端點打錯、413 是 prompt 太長、400 多半是
+# 封包形狀不對。這些重試三次結果完全一樣，只是把同一個錯誤等三倍時間。
 RETRY_STATUS = (408, 429, 500, 502, 503, 504)
 
 # 回覆不符預期時，追加在 prompt 尾端再問一次的提示。
 REASK_HINT = "\n\n只回覆結果本身，不要任何開場白、說明或註解。"
+
+# previousMessage 裡的 role 編號。
+#
+# ⚠️ 只確定 0 是這個服務接受的值（來自實際可用的 payload 範例），還不知道它代表
+# 「使用者」還是「系統」，也不知道其他編號有哪些。查清楚之後把常數補齊，呼叫端就能
+# 用名字而不是數字 —— 一個裸的 0 散在各處，改的時候找不完。
+ROLE_USER = 0
 
 
 class AiError(http_utils.HttpError):
@@ -75,68 +82,143 @@ class AiError(http_utils.HttpError):
 
 
 # ---------------------------------------------------------------------------
-# 封包形狀 —— 換供應商只要動這一段
+# URL 與 shareCode
 # ---------------------------------------------------------------------------
 
-def _build_payload(model, prompt, system, options):
+def split_share_code(api_url):
+    """把設定檔的 Api_URL 拆成 (url, share_code)。
+
+    設定檔裡的寫法是把 shareCode 以冒號黏在位址後面：
+
+        https://ai.example.com/v1/chat:ABC123
+        →  ("https://ai.example.com/v1/chat", "ABC123")
+
+    **不能直接用 split(":")，也不能無條件用 rsplit**：一個位址裡至少有一個冒號
+    （`https:`），而且可能還有連接埠（`host:8080`）。切錯的下場是把整個路徑當成
+    shareCode 送出去，而伺服器只會回一個看不出原因的 400。
+
+    這裡用的規則是「**最後一個斜線之後**的冒號才算分隔」：
+
+        https://host:8080/v1/chat          最後一個 / 之後沒有冒號 → 沒有 shareCode
+        https://host:8080/v1/chat:ABC      → ("https://host:8080/v1/chat", "ABC")
+        https://host/v1/chat:ABC:DEF       → (".../chat:ABC", "DEF")  取最後一個
+
+    找不到 shareCode 時 share_code 是空字串，由呼叫端決定那是不是錯誤。
+    """
+    url = (api_url or "").strip()
+    if not url:
+        return "", ""
+
+    tail_start = url.rfind("/") + 1
+    sep = url.rfind(":")
+    if sep < tail_start:
+        # 冒號在最後一個斜線之前 —— 那是 scheme 或連接埠，不是分隔符。
+        return url, ""
+
+    return url[:sep], url[sep + 1:]
+
+
+# ---------------------------------------------------------------------------
+# 封包形狀 —— 換服務只要動這一段
+# ---------------------------------------------------------------------------
+
+def _build_payload(prompt, share_code, history, file_ids):
     """組出請求的 body。
 
-    目前是 OpenAI 相容的 /chat/completions 形狀：
+        {
+          "shareCode": "...",
+          "prompt": "...",
+          "previousMessage": [{"role": 0, "message": ""}],
+          "files": [{"fileID": 1}]
+        }
 
-        {"model": ..., "messages": [{"role": "system"|"user", "content": ...}]}
+    history 是 [(role, message), ...] 或 [{"role": ..., "message": ...}, ...]，
+    兩種都收 —— 呼叫端用 tuple 比較省事，而從 JSON 讀回來的會是 dict。
 
-    落地模型若是別的形狀（例如只吃 {"prompt": ...}），改這裡。`options` 是呼叫端
-    傳進來的額外欄位（temperature、max_tokens 之類），原樣合併進去 —— 哪些欄位有效
-    是供應商的事，這一層不篩。
+    **沒有 history 時送一筆 message 為空字串的紀錄**，而不是空陣列：那是實際可用的
+    payload 範例裡的寫法，也就是我們唯一確定這個服務會接受的形狀。空陣列或省略這個
+    鍵都沒驗證過，不拿正式流程去賭。
+
+    files 預設是空陣列。範例裡的 `{"fileID": 1}` 是示意用的 —— 那個編號指向某個真實
+    檔案，預設送出去等於替呼叫端引用了一份它沒要求的東西。
     """
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    return {
+        "shareCode": share_code,
+        "prompt": prompt,
+        "previousMessage": _history_payload(history),
+        "files": [{"fileID": one} for one in (file_ids or [])],
+    }
 
-    payload = {"model": model, "messages": messages}
-    if options:
-        payload.update(options)
-    return payload
+
+def _history_payload(history):
+    """把 history 正規化成服務要的形狀。"""
+    if not history:
+        return [{"role": ROLE_USER, "message": ""}]
+
+    items = []
+    for entry in history:
+        if isinstance(entry, dict):
+            items.append({"role": entry.get("role", ROLE_USER),
+                          "message": entry.get("message", "")})
+        else:
+            role, message = entry
+            items.append({"role": role, "message": message})
+    return items
+
+
+# 回應裡可能放答案的欄位名，依序試。
+#
+# ⚠️ 這個服務實際回什麼還沒確認，所以先容許幾種常見的寫法。確認之後把這一段換成單一
+# 欄位 —— 依序猜會讓「欄位改名了」變成一個安靜的行為改變，而不是一個錯誤。
+_REPLY_KEYS = ("message", "response", "answer", "result", "content", "text")
 
 
 def _extract_reply(body, url):
     """從回應裡取出模型講的那段話。
 
-    目前是 OpenAI 相容的 choices[0].message.content。落地模型若把答案放在別的欄位，
-    改這裡。
-
-    取不到時**回報實際拿到的鍵**：這個錯誤最常見的成因就是封包形狀猜錯，而「解析
-    不到回覆」這五個字幫不上任何忙。
+    取不到時**列出實際拿到的鍵**：這個錯誤最常見的成因就是回應形狀跟預期不同，而
+    「解析不到回覆」這五個字幫不上任何忙。第一次接上真的服務時，這個訊息就是你需要
+    的那份資料。
     """
-    if not isinstance(body, dict):
-        raise AiError("AI 回應不是物件（收到 %s）" % type(body).__name__, url=url)
+    if isinstance(body, str):
+        # 有些服務直接回一段文字而不是 JSON 物件。
+        return body
 
-    choices = body.get("choices")
-    if isinstance(choices, list) and choices:
-        message = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(message, dict):
-            content = message.get("content")
-            if isinstance(content, str):
-                return content
-        # 有些相容實作把答案放在 choices[0].text（舊的 completions 形狀）。
-        text = choices[0].get("text") if isinstance(choices[0], dict) else None
-        if isinstance(text, str):
-            return text
+    if not isinstance(body, dict):
+        error = AiError("AI 回應不是物件也不是文字（收到 %s）"
+                        % type(body).__name__, url=url)
+        raise error
+
+    for key in _REPLY_KEYS:
+        value = body.get(key)
+        if isinstance(value, str) and value.strip():
+            logger.debug("回覆取自欄位 %r", key)
+            return value
+
+    # data 底下再找一層 —— 把結果包一層 data 的服務很常見。
+    inner = body.get("data")
+    if isinstance(inner, (dict, str)):
+        return _extract_reply(inner, url)
 
     raise AiError(
-        "解析不出 AI 的回覆內容",
+        "解析不出 AI 的回覆內容。回應的頂層欄位：%s"
+        % ("、".join(sorted(body.keys())) or "(沒有欄位)"),
         url=url)
 
 
-def _auth_headers(api_key):
-    """認證標頭。
+def _headers(api_key):
+    """請求標頭。
 
-    落地模型若用別的標頭（例如 `api-key` 或自家的名稱），改這裡。金鑰只進標頭，
-    絕不進 URL query —— query 會被伺服器與代理記進存取紀錄。
+    這個服務以 payload 裡的 shareCode 辨識呼叫者，**沒有認證標頭**。設定檔的 Api_Key
+    有填時才額外加上 Bearer —— 為了讓「服務改成要金鑰」不必動這個模組，但沒填時不送
+    多餘的標頭（有些閘道看到不認得的 Authorization 會直接擋掉）。
+
+    金鑰只進標頭，絕不進 URL query：query 會被伺服器與代理記進存取紀錄。
     """
-    return {"Authorization": "Bearer %s" % api_key,
-            "Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = "Bearer %s" % api_key
+    return headers
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +244,7 @@ def _retry_after(response):
 def _describe(response, url):
     """把失敗的回應轉成一個訊息講得清楚的 AiError。
 
-    訊息按「使用者的下一步」分開寫：換金鑰、改設定檔、縮短 prompt、稍後再試，
+    訊息按「使用者的下一步」分開寫：換憑證、改設定檔、縮短 prompt、稍後再試，
     這四件事完全不一樣。
     """
     status = response.status_code
@@ -173,11 +255,11 @@ def _describe(response, url):
 
     if status in (401, 403):
         error = AiError(
-            "AI 服務拒絕了這次請求，請檢查 API 金鑰",
+            "AI 服務拒絕了這次請求，請檢查 Api_URL 尾端的 shareCode",
             status_code=status, url=url)
     elif status == 404:
         error = AiError(
-            "AI 端點不存在（404），請檢查設定檔的 Api_URL 與 Model",
+            "AI 端點不存在（404），請檢查設定檔的 Api_URL",
             status_code=status, url=url)
     elif status == 413:
         error = AiError(
@@ -216,8 +298,11 @@ def _call_once(session, url, payload, timeout, verify_ssl):
     try:
         body = response.json()
     except ValueError:
-        # 回應本身壞掉（截斷的 JSON、代理插進來的 HTML 錯誤頁）—— 重試有機會。
-        error = AiError("AI 回應不是合法的 JSON（HTTP %d）" % response.status_code,
+        # 不是 JSON 也可能是正常的（有些服務直接回文字），交給 _extract_reply 判斷。
+        text = (response.text or "").strip()
+        if text:
+            return _extract_reply(text, url)
+        error = AiError("AI 回應是空的（HTTP %d）" % response.status_code,
                         status_code=response.status_code, url=url)
         error.retryable = True
         raise error
@@ -233,22 +318,34 @@ def _sleep(seconds, attempt, why, on_retry):
     函式進來即可，使用者才不會對著一個兩分鐘沒動靜的對話框。
     """
     logger.warn("AI 呼叫失敗（%s），%.1f 秒後重試（第 %d 次）", why, seconds, attempt)
-    if on_retry:
-        try:
-            on_retry(attempt, why)
-        except Exception:                           # noqa: BLE001
-            # 回呼只是報進度，它自己壞掉不該讓整次分析失敗。
-            logger.debug("on_retry 回呼失敗，忽略")
+    _notify(on_retry, attempt, why)
     time.sleep(seconds)
 
 
-def ask(api_url, api_key, model, prompt, system="", timeout=DEFAULT_TIMEOUT,
-        retries=MAX_RETRIES, on_retry=None, verify_ssl=True, options=None,
-        parse=None, reask=0, reask_hint=REASK_HINT):
+def _notify(on_retry, attempt, why):
+    """呼叫進度回呼。它自己壞掉不該讓整次分析失敗。"""
+    if not on_retry:
+        return
+    try:
+        on_retry(attempt, why)
+    except Exception:                               # noqa: BLE001
+        logger.debug("on_retry 回呼失敗，忽略")
+
+
+def ask(api_url, prompt, history=None, file_ids=None, api_key="",
+        timeout=DEFAULT_TIMEOUT, retries=MAX_RETRIES, on_retry=None,
+        verify_ssl=True, parse=None, reask=0, reask_hint=REASK_HINT):
     """問一次 AI，回傳它講的那段話。
+
+    `api_url` 直接收設定檔 Service.AI_Mode_List 裡的 Api_URL，shareCode 黏在尾端
+    也沒關係 —— 這裡會拆（見 split_share_code）。呼叫端不必自己處理那個冒號。
 
     參數攤開而不是收一個 inputs 字典 —— 與 gitlab_utils、jira_utils 同一個慣例，
     這個模組因此不認得任何一個功能的參數形狀。
+
+    **沒有 model 參數**：這個服務的 payload 裡沒有模型欄位，模型是由 shareCode 那一端
+    決定的。設定檔的 Model 仍然有用，但那是報告出處要印的資訊，不是請求的一部分 ——
+    收一個送不出去的參數只會讓人以為換了它就會換模型。
 
     兩種重試，界線不同：
 
@@ -263,25 +360,33 @@ def ask(api_url, api_key, model, prompt, system="", timeout=DEFAULT_TIMEOUT,
     ValueError。JSON 只是它的一個特例（見 ask_json），自製格式寫一支自己的 parse
     傳進來即可，兩種格式共用同一套重試。
 
-    **prompt 與金鑰都不進 log。** prompt 裡有整份 diff，印出來會把 log 撐爆，也把
-    原始碼落到磁碟上。
+    **prompt 與 shareCode 都不進 log。** prompt 裡有整份 diff，印出來會把 log 撐爆，
+    也把原始碼落到磁碟上。
     """
     http_utils.require_requests(AiError)
 
-    if not api_url:
-        raise AiError("未指定 AI 端點（Api_URL）")
-    if not model:
-        raise AiError("未指定 AI 模型（Model）")
+    url, share_code = split_share_code(api_url)
 
-    session = http_utils.new_session(_auth_headers(api_key))
-    logger.info("送交 AI：model=%s prompt=%d 字元 timeout=%ds",
-                model, len(prompt or ""), timeout)
+    if not url:
+        raise AiError("未指定 AI 端點（設定檔的 Api_URL 是空的）")
+
+    if not share_code:
+        # 這是設定錯誤而不是服務問題，訊息要直接講出正確的寫法 —— 否則使用者只會
+        # 看到伺服器回的 400，完全猜不到是少了尾端那一段。
+        raise AiError(
+            "Api_URL 沒有帶 shareCode",
+            url=url)
+
+    session = http_utils.new_session(_headers(api_key))
+    logger.info("送交 AI：prompt=%d 字元 timeout=%ds files=%d",
+                len(prompt or ""), timeout, len(file_ids or []))
 
     # 內容層的迴圈在外：重問是換一份 prompt 重新走完整套連線層重試。
     for round_no in range(reask + 1):
-        text = _ask_raw(session, api_url, model,
+        text = _ask_raw(session, url, share_code,
                         prompt if round_no == 0 else prompt + reask_hint,
-                        system, timeout, retries, on_retry, verify_ssl, options)
+                        history, file_ids, timeout, retries, on_retry,
+                        verify_ssl)
 
         if parse is None:
             return text
@@ -290,30 +395,24 @@ def ask(api_url, api_key, model, prompt, system="", timeout=DEFAULT_TIMEOUT,
             return parse(text)
         except ValueError as exc:
             if round_no >= reask:
-                raise AiError(
-                    "AI 的回覆不是預期的格式：%s" % exc,
-                    url=api_url)
+                raise AiError("AI 的回覆不是預期的格式：%s" % exc, url=url)
             logger.warn("AI 回覆格式不符（%s），重問一次", exc)
-            if on_retry:
-                try:
-                    on_retry(round_no + 1, "回覆格式不符")
-                except Exception:                   # noqa: BLE001
-                    logger.debug("on_retry 回呼失敗，忽略")
+            _notify(on_retry, round_no + 1, "回覆格式不符")
 
 
-def _ask_raw(session, api_url, model, prompt, system, timeout, retries,
-             on_retry, verify_ssl, options):
+def _ask_raw(session, url, share_code, prompt, history, file_ids, timeout,
+             retries, on_retry, verify_ssl):
     """連線層：送出、失敗就退避重試，回傳原始回覆文字。"""
-    payload = _build_payload(model, prompt, system, options)
+    payload = _build_payload(prompt, share_code, history, file_ids)
     last = None
 
     for attempt in range(retries + 1):
         try:
-            return _call_once(session, api_url, payload, timeout, verify_ssl)
+            return _call_once(session, url, payload, timeout, verify_ssl)
         except AiError as exc:
             last = exc
 
-            # 不值得重試的錯誤立刻拋 —— 金鑰錯重試三次還是金鑰錯，封包形狀猜錯
+            # 不值得重試的錯誤立刻拋 —— 憑證錯重試三次還是憑證錯，封包形狀猜錯
             # 也一樣。判斷由拋出的那一方給（見 AiError.retryable）。
             if not exc.retryable:
                 raise
@@ -331,7 +430,7 @@ def _ask_raw(session, api_url, model, prompt, system, timeout, retries,
                 raise AiError(
                     "AI 服務要求等待 %.0f 秒後再試，超過上限 %.0f 秒"
                     % (wait, MAX_BACKOFF_SECONDS),
-                    status_code=exc.status_code, url=api_url)
+                    status_code=exc.status_code, url=url)
 
             _sleep(wait, attempt + 1, str(exc), on_retry)
 
@@ -382,8 +481,7 @@ def as_json(text, require=()):
     return data
 
 
-def ask_json(api_url, api_key, model, prompt, system="", require=(),
-             reask=1, **kwargs):
+def ask_json(api_url, prompt, require=(), reask=1, **kwargs):
     """問一次 AI 並把回覆解析成 dict。
 
     `require` 列出一定要有的頂層鍵；缺了就當成回覆格式不符，觸發重問。
@@ -391,6 +489,6 @@ def ask_json(api_url, api_key, model, prompt, system="", require=(),
     預設 `reask=1`：模型偶爾會在 JSON 前面加一句話，或回一段根本不是 JSON 的東西，
     重問一次通常就對了。不想付那次錢的話傳 reask=0。
     """
-    return ask(api_url, api_key, model, prompt, system=system,
+    return ask(api_url, prompt,
                parse=lambda text: as_json(text, require),
                reask=reask, **kwargs)

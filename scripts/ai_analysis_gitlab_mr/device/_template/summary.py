@@ -56,9 +56,13 @@ def analyze(inputs):
 
         url, key, model = contract.ai_credentials(inputs)
         overview, mr_diff = ai_utils.ask(
-            url, key, model, my_prompt,
+            url, my_prompt, api_key=key,
             parse=lambda text: my_parse(ai_utils.as_json(text)),
             reask=1)
+
+    `url` 直接傳設定檔的 Api_URL，shareCode 黏在尾端也沒關係 —— ai_utils 會拆。`model`
+    **不進請求**（模型由 shareCode 那一端決定），它只是報告出處要印的資訊，所以拿到之後
+    是交給 contract.analysis_body(model=...)，不是交給 ask()。
 
     parse 把原始回覆轉成你要的東西，格式不對就丟 ValueError —— ai_utils 會追加一句
     「只回覆結果本身」重問一次。**JSON 解析與結構檢查要串在同一個 parse 裡**，分兩段

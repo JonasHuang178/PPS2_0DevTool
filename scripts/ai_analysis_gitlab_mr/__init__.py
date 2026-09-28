@@ -424,8 +424,16 @@ def ai_credentials(inputs):
     與另外兩個不同，AI 的四項走 **params 而不是環境變數**（見步驟 3 的入口腳本）——
     因此它們從 inputs 進來，不從 os.environ 讀。
 
-    金鑰本身**不檢查**：有些地端服務根本不要認證，空字串是合法的。位址與模型名缺了
-    就沒得問，那才是錯誤。
+    只有 **api_url 是必要的**，另外兩項都可以是空的：
+
+      金鑰    這個服務以 Api_URL 尾端的 shareCode 辨識呼叫者，沒有認證標頭。
+              Api_Key 有填才會多送一個 Bearer（見 ai_utils._headers）。
+
+      模型名  **不進請求。** 模型是由 shareCode 那一端決定的，這裡的 Model 只是
+              報告出處要印的資訊。把它列為必填會讓一個純粹的顯示欄位擋住整個流程。
+
+    shareCode 本身不在這裡檢查：那是 Api_URL 的一部分，怎麼拆、缺了算不算錯，都由
+    ai_utils 決定 —— 檢查跟著解析走，才不會兩邊對格式的理解分岔。
 
     放在契約層而不是 ai_utils：認得 inputs 的形狀是這個功能的事，script_utils 底下的
     模組不該知道任何一個功能的參數長什麼樣。
@@ -439,12 +447,6 @@ def ai_credentials(inputs):
             "未指定 AI 端點",
             "設定檔 Service.AI_Mode_List 裡所選模式的 Api_URL 是空的。",
             "AI_API_URL_MISSING")
-
-    if not model:
-        raise CredentialError(
-            "未指定 AI 模型",
-            "設定檔 Service.AI_Mode_List 裡所選模式的 Model 是空的。",
-            "AI_MODEL_MISSING")
 
     return api_url, api_key, model
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """default device 的步驟 3 鉤子：AI 分析。
 
-這一支要改的地方集中在**最上面那幾個字串常數**：SYSTEM_PROMPT、PROMPT_TEMPLATE、
+這一支要改的地方集中在**最上面那幾個字串常數**：ROLE_PROMPT、PROMPT_TEMPLATE、
 JIRA_TEMPLATE、OUTPUT_SPEC。想換問法、加一段規則、改輸出格式，改字串就好，底下的
 程式不用動。
 
@@ -32,7 +32,11 @@ from script_utils import logger
 # 要改的東西都在這一段
 # ===========================================================================
 
-SYSTEM_PROMPT = u"""\
+# 角色與語氣。
+#
+# 這一段放在 prompt 最前面，而不是另一個 system 欄位 —— 這個服務的 payload 只有一個
+# prompt 欄位（見 ai_utils._build_payload），角色設定沒有別的地方可去。
+ROLE_PROMPT = u"""\
 你是一位資深的韌體工程師，正在審閱一份 Merge Request。
 你的讀者是同組的工程師，他們熟悉這個專案，不需要基礎概念的解釋。
 只指出真正值得注意的地方；沒有問題的檔案就不要提。
@@ -44,6 +48,7 @@ SYSTEM_PROMPT = u"""\
 #
 # diff 裡的大括號不會被當成佔位符 —— format() 只解析樣板本身，代入的值原樣放進去。
 PROMPT_TEMPLATE = u"""\
+{role}
 請審閱以下 Merge Request，並依照最後指定的格式回覆。
 
 ## Merge Request
@@ -148,6 +153,7 @@ def build_prompt(inputs):
     這樣改完 prompt 可以先印出來確認，不必真的打一次 AI。
     """
     return PROMPT_TEMPLATE.format(
+        role=ROLE_PROMPT.strip(),
         repo=contract.plain(inputs.get("repo")) or u"（未指定）",
         mr_iid=contract.plain(inputs.get("mr_iid")) or u"?",
         description=contract.plain(inputs.get("description")) or NO_DESCRIPTION,
@@ -290,8 +296,8 @@ def analyze(inputs):
     # 分兩段寫的話，第二段跑在 ask() 之外，重問就永遠觸發不到 —— 而「JSON 合法但
     # 結構不對」恰好是模型最常見的失手方式。
     overview, mr_diff = ai_utils.ask(
-        api_url, api_key, model, prompt,
-        system=SYSTEM_PROMPT,
+        api_url, prompt,
+        api_key=api_key,
         parse=lambda text: parse_reply(ai_utils.as_json(text)),
         reask=1,
         on_retry=_on_retry(inputs.get("progress")))

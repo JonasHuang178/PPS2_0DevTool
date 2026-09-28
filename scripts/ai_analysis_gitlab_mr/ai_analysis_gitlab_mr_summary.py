@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ai_analysis_gitlab_mr
 import script_io
 from ai_analysis_gitlab_mr import device
+from script_utils import ai_utils
 from script_utils import gitlab_utils
 from script_utils import jira_utils
 from script_utils import logger
@@ -194,6 +195,18 @@ def main():
 
     try:
         body = hook.analyze(inputs)
+    except ai_analysis_gitlab_mr.CredentialError as exc:
+        # 設定沒填完，不是鉤子寫壞了。
+        script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
+    except ai_utils.AiError as exc:
+        # AI 服務那一端的問題。這一條要在通用的 except 之前 —— 否則一個 429 會被
+        # 報成「device X 的 summary.py 執行失敗」，把限流講成腳本寫壞了，而使用者
+        # 的下一步（稍後再試 vs 去改腳本）完全不同。
+        script_io.reply_fail(
+            str(exc),
+            detail="端點：%s\n重試已經做過（見 stderr 的警告）。"
+                   % (exc.url or "(未知)"),
+            code=exc.code)
     except Exception as exc:                        # noqa: BLE001
         # 鉤子是使用者寫的，任何東西都可能從這裡冒出來。訊息要指得出是哪一支。
         script_io.reply_fail(
