@@ -365,7 +365,7 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
 | 步 | 腳本 | 產物 |
 |---|---|---|
 | 1 | `..._description.py` | MR 描述 |
-| 2 | `..._script_selector.py` | `script_info`（狀態、裝置、JIRA key、處理方式） |
+| 2 | `..._info.py` | `jira_key`（自行連 GitLab 取 MR，再交給 device 的鉤子抽） |
 | 3 | `..._summary.py` | AI 分析結果 |
 | 4 | `..._code_review.py` | 程式碼審閱報告 |
 | 5 | `..._merge_to_md.py` | 合併後的 markdown |
@@ -375,8 +375,8 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
 腳本能被 CI/CD 的 shell 直接串接 —— 分支若寫在 Qt 端，CI 那側就成為第二份編排
 實作，兩份必然漂移。
 
-**腳本路徑固定寫死在 C++**，不取自任何步驟的回傳資料。第 2 步回傳的 `handler`
-原樣往下傳給第 3 步，由那支腳本自己解讀（第 5 步目前沒有地方會讀它，所以不傳）。
+**腳本路徑固定寫死在 C++**，不取自任何步驟的回傳資料。哪一段運算因 device 而異，
+由環境變數 `PPS_DEVICE` 決定（見下面的 device 一節），同樣不取自回傳資料。
 
 **任一步失敗即停**，以一個錯誤訊息框指出第幾步與該步腳本寫的原因，畫面不變。
 
@@ -413,7 +413,7 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
 
 ---
 
-MR Summary Script v1.0(Open AI)
+Script: v1.0 | Device: default v1.0 | AI Mode: Open AI | JIRA: PPS-1234
 PPS 2.0 DevTool v2.0.0
 ````
 
@@ -447,9 +447,11 @@ PPS 2.0 DevTool v2.0.0
 
 ````json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "analysis": {
     "model": "gpt-4o",
+    "jira_key": "PPS-1234",
+    "jira_state": "ok",
     "jira_url": "https://jira.example.com/browse/PPS-1234",
     "overview": "本次修改把重試上限從 3 調高到 10。",
     "mrDiff": {
@@ -463,13 +465,100 @@ PPS 2.0 DevTool v2.0.0
 
 - 每個檔案**直接對一個 finding 清單**，中間沒有包一層。要講整個檔案就放清單的第一筆、
   不給 `diffCode`
-- `model` 與 `jira_url` 留在資料裡供其他消費者使用，**不進報告**
+- `jira_state` 是 `ok` / `none` / `invalid` 三選一。`invalid` 時 `jira_key` 留的是
+  **被拒絕的原值**，報告會印成 `JIRA: WIP (invalid)` —— 一眼看出標題的第一個方括號
+  放錯了東西
+- `model` 留在資料裡供其他消費者使用，**不進報告**
 - 某個檔案的清單為空時，該檔案整個不出現，編號也只算實際出現的檔案
-- `schema_version` 比對時寬鬆：`2`、`"2"`、`"2.0"` 是同一個版本；`"2.5"` 與 `true` 不收
-- 建構用 `ai_analysis_gitlab_mr` 的 `finding()` 與 `analysis_payload()`，不要自己寫
+- `schema_version` 比對時寬鬆：`3`、`"3"`、`"3.0"` 是同一個版本；`"3.5"` 與 `true` 不收
+- 建構用 `ai_analysis_gitlab_mr` 的 `finding()` 與 `analysis_body()`，不要自己寫
   dict literal —— 欄位名散在寫入側與讀取側兩邊，改名漏一邊就是安靜地少一段
+- `schema_version` **由入口腳本蓋章**，device 的鉤子只回 `analysis` 的內容。入口收到
+  之後會立刻驗證，不符合就在**產生它的那一步**失敗，訊息點名是哪個 device
 
 舊的 `{"summary": "一段文字"}` 仍然收得下，渲染時原樣接上。
+
+
+### device：讓每條產品線有自己的分析邏輯
+
+一個 MR 該怎麼分析，會因為它屬於哪一條產品線而不同 —— SD 與 SSD 要問 AI 的問題不一樣，
+報告要怎麼排也不一樣。所以流程中**三個步驟**的業務運算可以按 device 客製：
+
+| 步驟 | 鉤子 | device 決定 |
+|---|---|---|
+| 2 | `jira_key.py` | 怎麼從 MR 抽出 JIRA key |
+| 3 | `summary.py` | 問 AI 什麼、怎麼解析、組出什麼分析內容 |
+| 5 | `merge_to_md.py` | AI 分析那一段的版面 |
+
+步驟 1（取得描述）與步驟 4（程式碼審閱）不因 device 而異。
+
+```
+scripts/ai_analysis_gitlab_mr/device/
+  default/          未指定時用這一份，也是所有 device 的後備
+  _template/        範本（底線開頭，不是 device）
+  ssd/              只放想覆寫的鉤子
+```
+
+**哪一個 device 由環境變數 `PPS_DEVICE` 決定。** 工具端由 Qt 從設定檔的 `PPS_Device`
+注入，CI 由 runner 自行設定 —— 腳本端只有一條取值路徑，兩個呼叫端對它來說長得一模一樣
+（跟憑證同一個作法）。
+
+```
+PPS_DEVICE 未設定或空白  ->  default
+PPS_DEVICE = ssd         ->  device/ssd/ 必須存在
+PPS_DEVICE = sdd         ->  失敗，訊息列出目前認得哪些
+```
+
+**未知的 device 是錯誤，不是退回 default。** 指定一個不存在的名字代表打錯字或忘記部署，
+靜默改用通用邏輯會產出一份用錯邏輯、而每一步都回報成功的報告。
+
+**回退是逐鉤子的，不是逐 device。** `device/ssd/` 只放 `merge_to_md.py` 是合法的，
+缺的鉤子自動用 `default` 的 —— 只想改報告版面的 device 不必複製一整支 summary，
+而那份複本會跟著 default 漂移。
+
+認得哪些 device 由**掃目錄**決定，沒有註冊表：放一個目錄進去就是新增一個 device。
+
+### 新增一個 device
+
+複製範本，改成你的 device 名稱：
+
+```
+cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_mr/device/ssd
+```
+
+**目錄名就是 device 名，而它會被當成模組名 import**，所以必須是合法的 Python 識別字：
+小寫英數與底線、不以數字開頭。`ssd_gen4` 可以，`ssd-gen4` 不行。比對時不分大小寫，
+設定檔寫 `SSD` 也找得到 `ssd`。
+
+三個鉤子都是選用的，只放你要覆寫的。但 `__init__.py` 的 `VERSION` **一定要有** ——
+沒宣告會直接失敗。那個版本會印在報告末尾（`Device: ssd v1.2`），**改了產出方式就把它
+往上加**；不加的話，用舊邏輯與新邏輯產生的兩份報告會帶同一個版本號。
+
+寫鉤子時請用這些共用函式，不要自己重寫：
+
+| | |
+|---|---|
+| `contract.plain(value)` | `None` 與非字串收斂成字串。不用的話報告會印出 `None` |
+| `contract.fence_for(code)` | 算程式碼圍籬的長度 |
+| `contract.finding(...)` / `contract.analysis_body(...)` | 組分析結構 |
+| `contract.jira_url(key)` | 組 JIRA 網址 |
+| `contract.MAX_FINDING_DIFF_BYTES` | 單筆 diff 的位元組上限 |
+
+`fence_for()` 特別重要：寫死三個反引號的話，內容本身含反引號的 diff（改到 markdown 檔
+就會）會讓程式碼區塊提前結束，而報告仍然「成功」產出。
+
+**`# AI 分析結果` 那一行不歸 device 管。** `merge_to_md` 的鉤子只回傳「那個標題底下的
+內容」，標題本身、原始描述那一段、分隔線與末尾的出處都由入口腳本寫出。原因是那一行
+同時是下一輪切出原始描述的邊界 —— 某個 device 把它寫成別的字，下一輪就找不到邊界，
+整份舊報告被當成原始描述，於是每跑一次疊一段，而每一步都回報成功。
+
+> **`device/default/` 每次建置會被覆蓋。** 它在 repo 裡，而 `scripts/` 的複製是無條件
+> 覆蓋。要客製就**新增自己的目錄**，不要改 default —— 你自己加的目錄因為 repo 裡沒有
+> 同名檔案，不會被覆蓋也不會被刪除。
+
+開發流程是：在執行檔旁的 `scripts/ai_analysis_gitlab_mr/device/` 寫、按按鈕測（每一步
+都是獨立的 Python 行程，改完立刻生效，不必重建），完成後把目錄提交進 repo —— CI 也就
+跟著有了。
 
 
 ### 除錯分析檔
@@ -482,7 +571,7 @@ PPS 2.0 DevTool v2.0.0
 ```
 gitlab_mr_result_lw-os_123_20260912_143012/
   01_description.md
-  02_script_info.json
+  02_mr_info.json
   03_summary.json
   04_code_review.md
   05_report.md
@@ -519,12 +608,9 @@ JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
 - 流程被取消時，已經建立的除錯目錄不會被清掉（規格明文：流程不保證外部副作用的
   原子性）。目錄名含時間戳，不會互相覆蓋。
 - 取消發生在 AI 那一步時，已送出的請求可能照樣計費，而畫面完全不變。
-- 程式碼審閱那一段目前沒有自己的 H1 —— 步驟 5 把它原樣接上，而 stub 寫的是
-  `## 程式碼審閱報告`，會縮在 `# AI 分析結果` 底下。Qt 現在固定
-  `fetch_code_review=false`，所以還看不到；真要開啟時，讓步驟 5 自己寫出那段標題
-  （與它處理 AI 分析那一段的方式相同）。
-- 步驟 5 收不到 `script_info` —— 它目前沒有地方會讀 `merge_to_md.handler`。等
-  handler 的 dispatch 真的實作時，在 `buildStep()` 的 `case 4` 加一行即可。
+- device 的鉤子是使用者寫的，所以它可能壞掉。載入或執行失敗時訊息會指出是哪一個
+  device 的哪一個鉤子（含語法錯誤的檔名與行號）；回傳的結構不對則在**產生它的那
+  一步**就失敗，而不是兩步之後的渲染。
 
 ---
 ## 設定檔
