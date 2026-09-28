@@ -166,59 +166,81 @@ def _history_payload(history):
     return items
 
 
-# 回應裡可能放答案的欄位名，依序試。
-#
-# ⚠️ 這個服務實際回什麼還沒確認，所以先容許幾種常見的寫法。確認之後把這一段換成單一
-# 欄位 —— 依序猜會讓「欄位改名了」變成一個安靜的行為改變，而不是一個錯誤。
-_REPLY_KEYS = ("message", "response", "answer", "result", "content", "text")
+# 業務層成功的 status 值。HTTP 200 不代表這次問成功 —— 服務會以 200 回一個
+# status 不是 success 的結果，把它當成回覆就會拿到 None 往下走。
+STATUS_SUCCESS = "success"
 
 
 def _extract_reply(body, url):
     """從回應裡取出模型講的那段話。
 
-    取不到時**列出實際拿到的鍵**：這個錯誤最常見的成因就是回應形狀跟預期不同，而
-    「解析不到回覆」這五個字幫不上任何忙。第一次接上真的服務時，這個訊息就是你需要
-    的那份資料。
-    """
-    if isinstance(body, str):
-        # 有些服務直接回一段文字而不是 JSON 物件。
-        return body
+    回應的形狀：
 
+        {"status": "success", "statusCode": ..., "content": <AI 回的 JSON>}
+
+    content 可能是字串，也可能已經被服務解析成物件。**兩種都收，一律回字串** ——
+    這個函式對外的約定是「回一段文字」，下游統一用 as_json() 解析。在這裡就分岔的話，
+    呼叫端每次都要先問「這次拿到的是字串還是 dict」。
+
+    status 不是 success 時拋錯而不是回內容：那是服務明確說這次失敗，而 content 在
+    那種情況下通常是錯誤說明，硬拿去當分析會產出一份看起來正常的報告。
+    """
     if not isinstance(body, dict):
-        error = AiError("AI 回應不是物件也不是文字（收到 %s）"
-                        % type(body).__name__, url=url)
+        raise AiError("AI 回應不是物件（收到 %s）" % type(body).__name__, url=url)
+
+    status = body.get("status")
+    code = body.get("statusCode")
+
+    if status is not None and str(status).strip().lower() != STATUS_SUCCESS:
+        error = AiError(
+            "AI 服務回報失敗：status=%s statusCode=%s%s"
+            % (status, code, _content_hint(body.get("content"))),
+            url=url)
+        # statusCode 若是 HTTP 風格的碼，沿用同一組重試判斷；不是的話不重試 ——
+        # 猜一個不認得的錯誤碼值不值得重試，只會把失敗拖長三倍。
+        error.retryable = isinstance(code, int) and code in RETRY_STATUS
         raise error
 
-    for key in _REPLY_KEYS:
-        value = body.get(key)
-        if isinstance(value, str) and value.strip():
-            logger.debug("回覆取自欄位 %r", key)
-            return value
+    content = body.get("content")
 
-    # data 底下再找一層 —— 把結果包一層 data 的服務很常見。
-    inner = body.get("data")
-    if isinstance(inner, (dict, str)):
-        return _extract_reply(inner, url)
+    if isinstance(content, str):
+        return content
 
-    raise AiError(
-        "解析不出 AI 的回覆內容。回應的頂層欄位：%s"
-        % ("、".join(sorted(body.keys())) or "(沒有欄位)"),
-        url=url)
+    if isinstance(content, (dict, list)):
+        # 服務已經幫忙解析過了。轉回字串讓下游只有一條路徑；ensure_ascii=False 是
+        # 為了讓解析失敗時的錯誤訊息印得出中文，而不是一串 \\uXXXX。
+        return json.dumps(content, ensure_ascii=False)
+
+    if content is None:
+        raise AiError(
+            "AI 回應沒有 content 欄位。回應的頂層欄位：%s"
+            % ("、".join(sorted(body.keys())) or "(沒有欄位)"),
+            url=url)
+
+    raise AiError("AI 回應的 content 不是文字也不是物件（收到 %s）"
+                  % type(content).__name__, url=url)
+
+
+def _content_hint(content):
+    """失敗時把 content 的開頭附在訊息後面 —— 服務的錯誤說明通常在那裡。"""
+    if not content:
+        return ""
+    text = content if isinstance(content, str) else json.dumps(
+        content, ensure_ascii=False)
+    text = text.strip().replace("\n", " ")
+    return "：%s" % (text[:200] + "…" if len(text) > 200 else text)
 
 
 def _headers(api_key):
     """請求標頭。
 
-    這個服務以 payload 裡的 shareCode 辨識呼叫者，**沒有認證標頭**。設定檔的 Api_Key
-    有填時才額外加上 Bearer —— 為了讓「服務改成要金鑰」不必動這個模組，但沒填時不送
-    多餘的標頭（有些閘道看到不認得的 Authorization 會直接擋掉）。
+    這個服務以 X-Api-Key 認證，不是 Authorization: Bearer。金鑰空著也照送 —— 服務端
+    會回 401，而那比在這裡自己判斷「空金鑰一定不行」準確：能不能免金鑰是它的規則。
 
     金鑰只進標頭，絕不進 URL query：query 會被伺服器與代理記進存取紀錄。
     """
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = "Bearer %s" % api_key
-    return headers
+    return {"Content-Type": "application/json",
+            "X-Api-Key": api_key or ""}
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +277,7 @@ def _describe(response, url):
 
     if status in (401, 403):
         error = AiError(
-            "AI 服務拒絕了這次請求，請檢查 Api_URL 尾端的 shareCode",
+            "AI 服務拒絕了這次請求，請檢查 Api_Key 與 Api_URL 尾端的 shareCode",
             status_code=status, url=url)
     elif status == 404:
         error = AiError(
@@ -298,12 +320,14 @@ def _call_once(session, url, payload, timeout, verify_ssl):
     try:
         body = response.json()
     except ValueError:
-        # 不是 JSON 也可能是正常的（有些服務直接回文字），交給 _extract_reply 判斷。
-        text = (response.text or "").strip()
-        if text:
-            return _extract_reply(text, url)
-        error = AiError("AI 回應是空的（HTTP %d）" % response.status_code,
-                        status_code=response.status_code, url=url)
+        # 這個服務一律回 JSON，所以不是 JSON 就是出事了 —— 截斷的回應，或代理插進來
+        # 的 HTML 錯誤頁。兩者都可能是暫時的，值得重試；訊息帶一小段實際內容，否則
+        # 「不是合法的 JSON」看不出到底收到什麼。
+        head = (response.text or "").strip()[:200]
+        error = AiError(
+            "AI 回應不是合法的 JSON（HTTP %d）：%s"
+            % (response.status_code, head or "(沒有內容)"),
+            status_code=response.status_code, url=url)
         error.retryable = True
         raise error
 
