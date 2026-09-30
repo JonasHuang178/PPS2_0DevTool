@@ -693,22 +693,38 @@ print(load_hook('summary')[0].build_prompt({
   "summary": "整體變更的摘要",
   "code_changes": {
     "檔案路徑": [
-      { "title": "...", "reason": "...", "hunkHeader": "相關的那幾行 diff" }
+      { "title": "...", "reason": "...", "hunkHeader": "@@ -12,7 +12,7 @@" }
     ]
   }
 }
 ```
 
 對應到產出：`summary` → `overview`、`code_changes[檔名]` → `mrDiff[檔名]`、
-`hunkHeader` → `diffCode`。兩邊各自命名是刻意的 —— 回覆格式是那個服務的事，產出格式
-是報告的事。
+`hunkHeader` → **在 diff 裡定位**，切出來的那個 hunk 成為 `diffCode`。兩邊各自命名是
+刻意的 —— 回覆格式是那個服務的事，產出格式是報告的事。
+
+**模型只回位置，不回程式碼。** `hunkHeader` 要的是 diff 裡那一行 `@@` 標頭，程式碼由
+`contract.hunk_of()` 從入口備好的那份 diff 切出來。三個理由，第三個是主要的：
+
+1. AI 的回覆是一份 JSON，而 JSON 的字串必須跳脫換行與反斜線。要模型把一段含 `\n`、
+   `\d`、`C:\path` 的 diff 塞進字串欄位，是在要求它做一件它偶爾會做錯、而做錯就**整份
+   解析不開**的事 —— 標頭那一行沒有這個問題。
+2. 回程少掉整份 diff 的複本，省 token 也省時間。
+3. **報告裡的程式碼保證與 GitLab 上的一致。** 讓模型複述 diff，它可以抄錯一個字元而
+   沒有任何一步會發現，而那份報告看起來是完整的。
+
+標頭的比對收得寬：只回那一行、連後面的函式名一起回、把整個 hunk 連內容一起回來，三種
+都取得到同一個標頭。但**只在該檔案之內找**，不跨檔搜尋 —— 同一行 `@@ -12,7 +12,7 @@`
+在不同檔案裡各有一個是常態，跨過去取就是把別的檔案的程式碼貼進這一筆發現。
+
+對不上時那一筆**沒有 diff、但標題與理由照常呈現**，並在 stderr 記一筆警告點名是哪一筆。
+刻意不回退成「用模型給的原文」—— 那會把上面三件事又放回來，而且是安靜地放回來。
 
 `code_changes` **物件與「單鍵物件的陣列」兩種都收**。規格有歧義的時候模型也會兩種都產，
 只認一種的話另一種會變成「缺少必要欄位」，而那訊息指不到真正的原因。
 
 `hunkHeader` 即使已經交代不要加圍籬，解析時仍會**再剝一次** —— 模型對否定指令的服從度
-不高，而多餘的圍籬會落在報告自己的 ```` ```diff ```` 裡面，把 markdown 弄壞，症狀出現
-在報告上、離這裡很遠。
+不高，而一行 ```` ```diff\n@@ …\n``` ```` 抽不出標頭，會白白變成「對不上」。
 
 #### 重問
 
@@ -931,6 +947,8 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 |---|---|
 | `contract.plain(value)` | `None` 與非字串收斂成字串。不用的話報告會印出 `None` |
 | `contract.fence_for(code)` | 算程式碼圍籬的長度 |
+| `contract.hunk_of(diff, path, header)` | 依 AI 給的 `@@` 標頭，從 diff 切出那個 hunk |
+| `contract.hunk_header_of(text)` | 從一段文字裡抽出 `@@` 標頭並正規化 |
 | `contract.finding(...)` / `contract.analysis_body(...)` | 組分析結構 |
 | `contract.jira_url(key)` | 組 JIRA 網址 |
 | `contract.MAX_FINDING_DIFF_BYTES` | 單筆 diff 的位元組上限 |

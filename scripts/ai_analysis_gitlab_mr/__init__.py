@@ -56,6 +56,8 @@ __all__ = [
     "plain",
     "jira_url",
     "fence_for",
+    "hunk_header_of",
+    "hunk_of",
     "MAX_FINDING_DIFF_BYTES",
     "MAX_PROMPT_DIFF_BYTES",
     "finding",
@@ -757,6 +759,129 @@ def _clip_diff(diff):
         return text
     return (encoded[:MAX_FINDING_DIFF_BYTES].decode("utf-8", "ignore")
             + _DIFF_TRUNCATED)
+
+
+# --- 從 diff 裡取出指定的 hunk ----------------------------------------------
+#
+# 步驟 3 讓 AI 只回 hunk 的**標頭**（那一行 @@），程式碼本身由這裡從入口備好的
+# diff 切出來。三個理由，第三個是主要的：
+#
+#   1. AI 的回覆是一份 JSON，而 JSON 的字串必須跳脫換行與反斜線。讓模型把一段含
+#      \n（C 的字串）、\d（正則）、C:\path（Windows 路徑）的 diff 塞進字串欄位，
+#      是在要求它做一件它偶爾會做錯、而做錯就整份解析不開的事。標頭那一行沒有這
+#      個問題。
+#   2. 回程少掉整份 diff 的複本，省 token 也省時間。
+#   3. **報告裡的程式碼保證與 GitLab 上的一致。** 讓模型複述 diff，它可以抄錯一個
+#      字元而沒有任何一步會發現 —— 那份報告看起來是完整的。
+#
+# 對不上時回空字串，由呼叫端決定怎麼辦。**不回退成「用模型給的原文」** —— 那會把
+# 上面三件事又放回來，而且是安靜地放回來。
+
+# 一個 hunk 的標頭。git 會在 @@ 之後接上所在的函式名，比對時不看那一段。
+_HUNK_HEAD_RE = re.compile(r"@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@")
+
+# unified diff 的檔案分界。gitlab_utils.get_mr_plain_diff() 一定會寫出這一行
+# （檔頭三行是它自己補的），所以認得它就夠了。
+_DIFF_FILE_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
+
+
+def hunk_header_of(text):
+    """從一段文字裡抽出第一個 hunk 標頭，正規化成 `@@ -a,b +c,d @@`。找不到回空字串。
+
+    **這是 device 作者的公開 API。**
+
+    收得寬是刻意的：模型可能只回那一行、可能連後面的函式名一起回、也可能把整個
+    hunk 連內容一起回來。三種都取得到同一個標頭；只認第一種的話，另外兩種會變成
+    「對不上」，而那個訊息指不到真正的原因 —— 模型其實指對了位置。
+    """
+    match = _HUNK_HEAD_RE.search(plain(text))
+    return match.group(0) if match else ""
+
+
+def _clean_path(value):
+    return plain(value).replace("\\", "/").strip("\"'").strip("/")
+
+
+def _strip_ab(path):
+    """去掉 git 慣用的 a/ b/ 前綴。"""
+    for prefix in ("a/", "b/", "./"):
+        if path.startswith(prefix):
+            return path[len(prefix):]
+    return path
+
+
+def _same_path(candidate, wanted):
+    """兩個路徑指的是不是同一個檔案。
+
+    先原樣比，再去掉 a/ b/ 前綴比，最後才以 / 為界比對結尾 —— 模型有時只寫檔名，
+    有時多帶一層目錄。以 / 為界是關鍵：直接 endswith 的話 `b/x.cpp` 會對上
+    `ab/x.cpp`。
+
+    寬鬆比對的風險是對到另一個同名的檔案，那是可接受的：找到的標頭還必須在那個
+    檔案裡真的存在（見 hunk_of），兩道一起錯的機會很低。
+    """
+    left, right = _clean_path(candidate), _clean_path(wanted)
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    left, right = _strip_ab(left), _strip_ab(right)
+    return (left == right
+            or left.endswith("/" + right)
+            or right.endswith("/" + left))
+
+
+def _file_sections(diff_text):
+    """把 unified diff 依檔案切開，逐段產生 ((舊路徑, 新路徑), 內容行)。"""
+    head = None
+    lines = []
+    for line in plain(diff_text).splitlines():
+        match = _DIFF_FILE_RE.match(line)
+        if match:
+            if head is not None:
+                yield head, lines
+            head, lines = (match.group(1), match.group(2)), []
+        elif head is not None:
+            lines.append(line)
+    if head is not None:
+        yield head, lines
+
+
+def _hunks(lines):
+    """把一個檔案的內容切成一個個 hunk（含標頭那一行）。"""
+    current = None
+    for line in lines:
+        if line.startswith("@@"):
+            if current is not None:
+                yield current
+            current = [line]
+        elif current is not None:
+            current.append(line)
+    if current is not None:
+        yield current
+
+
+def hunk_of(diff_text, path, hunk_header):
+    """從 diff 裡取出 path 這個檔案中、標頭為 hunk_header 的那一個 hunk。
+
+    **這是 device 作者的公開 API。** 檔名對不上、標頭對不上、或根本沒給標頭，一律
+    回空字串 —— 呼叫端據此決定要不要記警告。
+
+    **只在對上的那個檔案裡找標頭，不跨檔搜尋。** 同一行 `@@ -12,7 +12,7 @@` 在不同
+    檔案裡各有一個是常態，跨過去取就是把另一個檔案的程式碼貼進這一筆發現，而每一步
+    都會回報成功。
+    """
+    wanted = hunk_header_of(hunk_header)
+    if not wanted:
+        return ""
+
+    for (old_path, new_path), lines in _file_sections(diff_text):
+        if not (_same_path(new_path, path) or _same_path(old_path, path)):
+            continue
+        for hunk in _hunks(lines):
+            if hunk_header_of(hunk[0]) == wanted:
+                return "\n".join(hunk)
+    return ""
 
 
 def finding(title, reason, diff_code=""):

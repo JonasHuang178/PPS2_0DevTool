@@ -87,8 +87,12 @@ JIRA_TEMPLATE = u"""
 # JSON 裡不合法；這裡用物件，因為它與最終產出的 mrDiff 形狀一致，少一層轉換。
 # 但 parse_reply() 兩種都收 —— 規格有歧義的時候模型也會兩種都產。
 #
-# hunkHeader 特別交代不要加圍籬：報告會自己把它包進 ```diff，裡面再有一層圍籬會把
-# markdown 的解析弄壞，而症狀出現在報告上而不是這裡。
+# hunkHeader 要的是 diff 裡那一行 @@ **標頭**，不是那一段程式碼 —— 程式碼由
+# contract.hunk_of() 從入口備好的 diff 切出來（為什麼不讓模型回內容，見那一支的
+# 說明）。這裡只要一個位置，欄位名也因此終於名副其實。
+#
+# 「不要加圍籬」的交代留著：模型仍然可能把那一行包進 ```diff。剝除在 parse_reply()，
+# 因為模型對否定指令的服從度不高。
 OUTPUT_SPEC = u"""\
 ## 回覆格式
 只回覆一個 JSON 物件，不要有任何開場白、說明或 markdown 圍籬。
@@ -100,12 +104,16 @@ OUTPUT_SPEC = u"""\
       {
         "title": "一句話講完這個發現",
         "reason": "為什麼值得注意，兩三句",
-        "hunkHeader": "相關的那幾行 diff，git diff 格式，不要加上 ``` 圍籬"
+        "hunkHeader": "@@ -12,7 +12,7 @@"
       }
     ]
   }
 }
 
+hunkHeader 只填上面 diff 裡那一行 @@ 開頭的標頭，一字不差地照抄。
+**不要**填 diff 的內容，也不要加 ``` 圍籬 —— 程式碼會由工具自己從 diff 取出，
+你填在這裡的程式碼不會被使用。
+一個發現對應一個 hunk；同一個檔案有多處要講就分成多筆。
 檔名要與上面 diff 裡出現的一致。沒有值得注意之處的檔案不要放進 code_changes。
 """
 
@@ -241,7 +249,7 @@ def _file_pairs(code_changes):
                      % type(code_changes).__name__)
 
 
-def parse_reply(data):
+def parse_reply(data, diff_text=""):
     """把 AI 回的 JSON 轉成 (summary, mrDiff)。
 
     ⚠️ 與 OUTPUT_SPEC 是同一件事的兩面，改格式要一起改。
@@ -251,7 +259,12 @@ def parse_reply(data):
         summary                     → 報告的 ## Summary
         code_changes[檔名][*].title  → finding 的標題
         code_changes[檔名][*].reason → finding 的理由
-        code_changes[檔名][*].hunkHeader → finding 的 diffCode
+        code_changes[檔名][*].hunkHeader → 在 diff_text 裡定位，切出的那個 hunk
+                                           成為 finding 的 diffCode
+
+    diff_text 是入口備好的那份 diff（inputs["mr_diff"]）。**程式碼一律從它切出來，
+    不採用模型回的內容** —— 模型只負責指位置。沒給 diff_text 時每一筆都對不上，
+    findings 只會有標題與理由；單獨測解析邏輯時這樣就夠了。
 
     格式不對時丟 ValueError —— ai_utils 收到 ValueError 會重問一次（見 ask 的 reask）。
     拿回一個半殘的結構硬湊比重問糟得多：湊出來的報告看起來是完整的。
@@ -262,6 +275,7 @@ def parse_reply(data):
     pairs = _file_pairs(code_changes) if code_changes else []
 
     mr_diff = {}
+    missed = []
     for path, findings in pairs:
         clean = contract.plain(path)
         if not clean:
@@ -280,19 +294,32 @@ def parse_reply(data):
                 raise ValueError("%s 底下有一筆發現不是物件，而是 %s"
                                  % (clean, type(item).__name__))
 
-            # 圍籬還是剝一次。OUTPUT_SPEC 已經交代不要加，但模型對「不要加圍籬」的
-            # 服從度不高，而一層多餘的圍籬會出現在報告自己的 ```diff 裡面，把 markdown
-            # 的解析弄壞 —— 症狀出現在報告上，離這裡很遠。
-            hunk = ai_utils.strip_fence(contract.plain(item.get("hunkHeader")))
+            # 圍籬還是剝一次。OUTPUT_SPEC 已經交代不要加，但模型對否定指令的服從度
+            # 不高 —— 一行 ```diff\n@@ …\n``` 抽不出標頭，會白白變成「對不上」。
+            ref = ai_utils.strip_fence(contract.plain(item.get("hunkHeader")))
+
+            # 程式碼從入口備好的 diff 切出來，不用模型回的內容。
+            code = contract.hunk_of(diff_text, clean, ref)
+
+            # 指不到就沒有 diff，但標題與理由仍然有價值 —— 不讓一筆對不上的引用
+            # 毀掉整份分析。**但不能安靜地少一段**：收集起來一次警告，那正是這個
+            # 做法要觀察的東西（模型抄標頭的準度）。
+            if ref and not code:
+                missed.append("%s %s"
+                              % (clean, contract.hunk_header_of(ref) or repr(ref)))
 
             items.append(contract.finding(
                 title=contract.plain(item.get("title")),
                 reason=contract.plain(item.get("reason")),
-                diff_code=hunk))
+                diff_code=code))
 
         if items:
             # 空的檔案整個不放：一個底下什麼都沒有的標題會讓人以為內容漏掉了。
             mr_diff[clean] = items
+
+    if missed:
+        logger.warn("有 %d 筆 hunk 標頭在 diff 裡找不到，那幾筆沒有程式碼：%s",
+                    len(missed), "；".join(missed))
 
     if not summary and not mr_diff:
         # 訊息帶上實際收到的鍵。這個分支最常見的成因是模型用了別的欄位名，而
@@ -424,7 +451,8 @@ def analyze(inputs):
         # 重問成功會把失敗的那次蓋掉，而失敗的那次才是線索。
         attempt[0] += 1
         debug_write("ai_reply_%d.txt" % attempt[0], text)
-        return parse_reply(ai_utils.as_json(text))
+        return parse_reply(ai_utils.as_json(text),
+                           contract.plain(inputs.get("mr_diff")))
 
     summary, mr_diff = ai_utils.ask(
         api_url, prompt,
