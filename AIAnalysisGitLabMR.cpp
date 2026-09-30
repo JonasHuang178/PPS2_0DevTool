@@ -55,7 +55,9 @@ const char *kStepArtifactName[kFlowStepCount] = {
     "01_description.md",
     "02_mr_info.json",
     "03_summary.json",
-    "04_code_review.md",
+    // 結構而非排好版的 markdown：報告要印出附件的日期、作者與連結，而那三個值只有
+    // 步驟 4 拿得到，步驟 5 收到的只是這個路徑。渲染在步驟 5，與 03_summary.json 同理。
+    "04_code_review.json",
     "05_report.md"
 };
 
@@ -65,6 +67,9 @@ const char *kServiceKey[] = {
     // device 不是憑證，但走同一條注入路徑：腳本只從環境變數讀，Qt 與 CI 對它來說
     // 長得一模一樣。鍵名全大寫即為變數名，所以這裡是 PPS_Device -> PPS_DEVICE。
     "PPS_Device",
+    // code review 附件的檔名前綴，同上那條注入路徑。沒有預設值 —— 沒設定時步驟 4
+    // 直接失敗並點名這個鍵，因為給了預設值會讓漏設的人靜默用到一個他沒選的前綴。
+    "PPS_Scripts_CodeReview_File_StartsWith",
     "Gitlab_Server_URL",
     "Gitlab_Access_Token",
     "Gitlab_Verify_SSL",
@@ -812,9 +817,19 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         step.label      = QString("步驟 4/5：取得程式碼審閱報告");
         step.scriptPath = QString(kCodeReviewScript);
         step.action     = QString("fetch_code_review");
-        // 這一步永遠執行。「要不要真的去抓」由腳本看這個參數決定，Qt 端不跳過
-        // 任何步驟 —— 見 design.md 決策十三。來源尚未定案，本輪固定為 false。
-        params.insert(QString("fetch_code_review"), false);
+        // 這一步永遠執行，Qt 端不跳過任何步驟 —— 見 design.md 決策十三。
+        //
+        // 「要不要真的去抓」由 key 與它的狀態決定，**不另設布林開關** —— 那樣會出現
+        // 「開關為真但沒有 key」這種自相矛盾的狀態。
+        //
+        // key 來自步驟 2，狀態來自步驟 3：有效性是該 device 的政策、由它的鉤子在
+        // 步驟 3 判定，所以那個結論住在分析結構裡。這一步只是原樣轉送，Qt 不重判 ——
+        // 重判就會有第二份規則，而兩份必然漂移。
+        params.insert(QString("jira_key"),
+                      done.at(1).data.value(QString("jira_key")).toString());
+        params.insert(QString("jira_state"),
+                      done.at(2).data.value(QString("analysis")).toObject()
+                              .value(QString("jira_state")).toString());
         break;
 
     case 4:
@@ -828,7 +843,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
                            workDir, kStepArtifactName[0]);
         insertArtifactPath(params, QString("mr_summary_json_file_path"),
                            workDir, kStepArtifactName[2]);
-        insertArtifactPath(params, QString("code_review_md_file_path"),
+        insertArtifactPath(params, QString("code_review_json_file_path"),
                            workDir, kStepArtifactName[3]);
         // 報告末尾的出處資訊要印出使用者選的 AI 模式。這一步本身不做 AI 分析，
         // 所以它只是被轉送過來、原樣印出，與 repo / mr_iid 同一類。

@@ -17,15 +17,21 @@ def render(inputs):
 
     inputs 是一個 dict：
 
-        analysis        分析內容（已驗證過的結構）
-        description     原始描述那一段的內容
-        code_review     程式碼審閱報告；沒有就是空字串
-        repo            專案，namespace/project
-        mr_iid          編號
-        device          這個 device 的名稱
+        analysis          分析內容（已驗證過的結構）
+        description       原始描述那一段的內容
+        code_review       風險評估總表的 markdown；沒有就是空字串
+        code_review_info  程式碼審閱的完整結構（附件檔名／上傳時間／作者／網址／
+                          總表／失敗訊息），沒有那一段時是 None
+        repo              專案，namespace/project
+        mr_iid            編號
+        device            這個 device 的名稱
 
     description 與 code_review 給你**唯讀參考**（例如想讓分析對照描述的哪幾點），
     但它們各自的區段由入口腳本輸出，你回傳的內容不該重複它們。
+
+    code_review_info 是 code_review 的來源，多給的 —— 想在分析裡提到「總表是哪一份
+    附件」時從那裡取檔名或連結。程式碼審閱**那一段本身**（標題、日期／作者／連結三行、
+    總表）一律由入口腳本寫出，不因 device 而異，你改不到也不必管。
 
     回傳一個字串。
 

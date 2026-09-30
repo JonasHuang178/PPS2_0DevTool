@@ -133,7 +133,7 @@ PPS2_0DevTool/
 │   │   ├── ai_analysis_gitlab_mr_description.py   1/5 取得 MR 描述
 │   │   ├── ai_analysis_gitlab_mr_info.py          2/5 取得相關資訊（jira_key、mr_type）
 │   │   ├── ai_analysis_gitlab_mr_summary.py       3/5 AI 分析
-│   │   ├── ai_analysis_gitlab_mr_code_review.py   4/5 程式碼審閱（stub）
+│   │   ├── ai_analysis_gitlab_mr_code_review.py   4/5 程式碼審閱（自 JIRA 附件）
 │   │   ├── ai_analysis_gitlab_mr_merge_to_md.py   5/5 合併為 markdown
 │   │   └── device/           各產品線自己的分析邏輯（見下面的 device 一節）
 │   │       ├── __init__.py   解析 PPS_DEVICE 與種類、掃目錄、逐鉤子回退
@@ -336,9 +336,9 @@ Windows 更新執行檔後，檔案總管有時仍顯示舊圖示，那是系統
 在工具裡瀏覽某個 GitLab 專案的 Merge Request，挑一筆交給 AI 分析，結果以
 markdown 呈現在結果視窗。
 
-> **目前的狀態**：只有第 4 步「取得程式碼審閱報告」還是 stub —— 它回傳固定內容，
-> 不連線任何外部服務，來源尚未定案。其餘都是真的：第 1、2 步連 GitLab，第 3 步連
-> GitLab（取差異）、JIRA（取議題內容）與 AI 服務，第 5 步沒有外部依賴。
+> **目前的狀態**：五個步驟都已連上真正的來源。第 1、2 步連 GitLab；第 3 步連
+> GitLab（取差異）、JIRA（取議題內容）與 AI 服務；第 4 步連 JIRA（取附件）；
+> 第 5 步沒有外部依賴。
 >
 > 沒設定 AI 端點時第 3 步不會失敗，而是產出替代內容，並在首行言明未經過 AI ——
 > 開發期還沒有端點時整條流程仍要能跑完才驗得到。
@@ -388,13 +388,18 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
 | 1 | `..._description.py` | MR 描述 |
 | 2 | `..._info.py` | `jira_key` 與 `mr_type`（自行連 GitLab 取 MR 一次，兩個鉤子各自抽） |
 | 3 | `..._summary.py` | AI 分析結果 |
-| 4 | `..._code_review.py` | 程式碼審閱報告 |
+| 4 | `..._code_review.py` | 風險評估總表（自 JIRA 議題的附件擷取） |
 | 5 | `..._merge_to_md.py` | 合併後的 markdown |
 
 **五步全部執行，Qt 端不跳過任何一步。**「要不要真的做事」由腳本看參數決定
-（例如第 4 步收到 `fetch_code_review=false` 就回空報告並成功）。這是為了讓同一批
-腳本能被 CI/CD 的 shell 直接串接 —— 分支若寫在 Qt 端，CI 那側就成為第二份編排
-實作，兩份必然漂移。
+（例如第 4 步收到的 `jira_key` 為空、或 `jira_state` 不是 `ok` 時就不發任何請求、
+回報成功且不落檔）。這是為了讓同一批腳本能被 CI/CD 的 shell 直接串接 —— 分支若寫在
+Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
+
+**第 4 步刻意沒有「要不要取」的布林開關。** 由 `jira_key` 與 `jira_state` 兩個值同時
+承載「要不要做」與「對誰做」，就不會出現「開關為真但沒有 key」這種自相矛盾的狀態。
+`jira_state` 來自第 3 步 —— key 的有效性是那個 device 的政策、由它的鉤子判定，Qt 只是
+原樣轉送，不重判。
 
 **腳本路徑固定寫死在 C++**，不取自任何步驟的回傳資料。哪一段運算因 device 而異，
 由環境變數 `PPS_DEVICE` 決定（見下面的 device 一節），同樣不取自回傳資料。
@@ -437,6 +442,18 @@ repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那�
   ```
   </details>
 
+# Code Review 報告
+
+>日期: 2026-09-10
+>作者: Jonas
+>連結: [CodeReview_20260910_092900.md](https://jira.example.com/secure/attachment/12345/CodeReview_20260910_092900.md)
+
+## 風險評估表
+
+| 類別 | 風險等級 | 數量 |
+|---|---|---|
+| 記憶體 | 高 | 2 |
+
 ---
 
 Script: v1.0 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: PPS-1234
@@ -445,8 +462,34 @@ PPS 2.0 DevTool v2.0.0
 
 幾個不是隨手決定的地方：
 
-**兩個 `#` 標題都由步驟 5 寫出**，步驟 1 的產物是 GitLab 原文、不冠標題。標題屬於
-報告不屬於描述 —— 冠在步驟 1 的產物上，那一行會跟著報告被貼回描述，下一輪再讀進來。
+**三個 `#` 標題都由步驟 5 寫出**，步驟 1 與步驟 4 的產物都不冠標題。標題屬於
+報告不屬於描述 —— 冠在步驟 1 的產物上，那一行會跟著報告被貼回描述，下一輪再讀進來；
+而步驟 4 自帶標題的話，它無從知道自己會被放在哪一層。
+
+**`# Code Review 報告` 與 `# AI 分析結果` 同層。** AI 分析那一段的**內容**用的是 `##`
+（`## Summary`、`## Code Changes`），所以 code review 若也用 `##`，在畫面上就會跟那些
+內容並列，讀起來像是分析的一部分 —— 而它在語意上與分析並列，不從屬於它。
+
+**Code Review 那一段刻意只放總表。** 全文留在 JIRA 上那份附件裡，靠 `>連結:` 那一行
+回去看。三行資訊裡值為空的那一行整行不印；日期只取到日，不做時區換算（印出的就是
+上傳者當時看到的那一天）。
+
+**取不到總表時那一段仍然出現**，內容換成一行 `⚠️` 訊息，而日期／作者／連結**照樣印**
+—— 那時連結的價值最高，讀者點進去就能自己看全文。只有「沒有 JIRA key」「key 無效」
+「議題上沒有符合的附件」三種情況才整段不出現，因為那些是「這筆本來就沒有」而不是
+「取失敗了」。
+
+**搜尋用與渲染用是三個各自獨立的常數**（都在 `ai_analysis_gitlab_mr/__init__.py`）：
+
+| 常數 | 用途 | device 可覆寫 |
+|---|---|---|
+| `CODE_REVIEW_SOURCE_HEADING` | 在**附件那份文件**裡找總表那一節（預設 `## 風險評估表總表`） | ✅ |
+| `CODE_REVIEW_HEADING` | 寫進**報告**的段落標題 | ❌ |
+| `CODE_REVIEW_TABLE_HEADING` | 寫進**報告**的總表小標題 | ❌ |
+
+不合成一份是刻意的：改我們報告的小標題不該影響去別人文件裡搜尋什麼，反之亦然。
+這與 `AI_HEADING` 剛好相反 —— 那一個同時是「寫出去」與「切回來」的同一個邊界，所以
+**必須**只有一份來源。
 
 **`# AI 分析結果` 同時是切段的邊界。** 步驟 1 靠它把上一輪的分析從描述裡切掉，所以
 「寫出去的字串」與「切掉用的字串」只有一份來源（`__init__.py` 的 `AI_HEADING`），
@@ -509,6 +552,39 @@ PPS 2.0 DevTool v2.0.0
   之後會立刻驗證，不符合就在**產生它的那一步**失敗，訊息點名是哪個 device
 
 舊的 `{"summary": "一段文字"}` 仍然收得下，渲染時原樣接上。
+
+### `04_code_review.json` 的格式
+
+步驟 4 的產物同樣是結構、不是排好版的文字，渲染由步驟 5 負責 —— 與 `03_summary.json`
+同一個理由。這裡多了一層必要性：報告要印出附件的日期、作者與連結，而那三個值**只有
+步驟 4 拿得到**（步驟 5 收到的只是一個檔案路徑）。
+
+```json
+{
+  "schema_version": 1,
+  "code_review": {
+    "filename": "CodeReview_20260910_092900.md",
+    "created": "2026-09-10T09:29:00.000+0800",
+    "author": "Jonas",
+    "url": "https://jira.example.com/secure/attachment/12345/CodeReview_...md",
+    "risk_table": "| 類別 | 風險等級 | 數量 |\n|---|---|---|\n| 記憶體 | 高 | 2 |",
+    "error": ""
+  }
+}
+```
+
+- 六個欄位都是字串。空字串合法（代表沒有那一項），但**型別不對就明確失敗** —— 一個
+  dict 被 `str()` 起來會變成 `{'a': 1}` 然後原樣印進報告
+- `risk_table` 是**原樣**的表格，不對齊、不排序、不改欄序。欄位名稱因 device 而異，
+  任何正規化都可能弄壞某一個 device 的表格
+- `error` 有值時 `risk_table` 通常是空的，但**前四個欄位照樣填** —— 報告要靠那三行
+  讓讀者自己點連結去看全文
+- `schema_version` 由**入口腳本蓋章**，與 `ANALYSIS_SCHEMA_VERSION` **各自獨立編號**
+  （兩者是不同的產物，共用一個號碼會讓其中一邊改版莫名其妙地讓另一邊的舊檔失效）
+- 比對與 `03_summary.json` 一樣寬鬆：`1` 與 `"1"` 是同一個版本，`"1.5"` 與 `true` 不收
+- 建構用 `code_review_body()` 與 `wrap_code_review()`，不要自己寫 dict literal
+- 這一步取不到東西時**整份檔案不會產生**（不是產生一份空的）。Qt 的
+  `insertArtifactPath()` 檔案不存在就不放那個鍵，步驟 5 因此整段略過
 
 
 ### 呼叫 AI
@@ -660,7 +736,17 @@ print(load_hook('summary')[0].build_prompt({
 | 3 | `summary.py` | 問 AI 什麼、怎麼解析、組出什麼分析內容 | **是** |
 | 5 | `merge_to_md.py` | AI 分析那一段的版面 | **是** |
 
-步驟 1（取得描述）與步驟 4（程式碼審閱）不因 device 而異。
+步驟 1（取得描述）不因 device 而異。
+
+步驟 4（程式碼審閱）的**運算與版面**也不因 device 而異 —— 它只讀一個 device **宣告**：
+
+| 宣告 | device 決定 |
+|---|---|
+| `CODE_REVIEW_SOURCE_HEADING` | 在附件那份文件裡找哪一節才找得到總表 |
+
+**那是一個宣告，不是第五個鉤子。** 步驟 4 不會載入或執行任何 device 的程式碼，所以它
+不會出現「哪一個 device 的鉤子壞了」這類失敗，擷取的演算法也只有一份、不會每個 device
+各長一份慢慢漂移。會因產品線而異的是**別人的工具產出什麼格式**，不是本工具的處理方式。
 
 「種類」是第二個軸，見下面的 type 一節。前兩支不因種類而異，因為它們在種類被決定
 **之前**執行 —— `mr_type.py` 就是決定它的那一支。
@@ -823,8 +909,9 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 （`Device: ssd v1.2`），**改了產出方式就把它往上加**；不加的話，用舊邏輯與新邏輯產生的
 兩份報告會帶同一個版本號。
 
-`__init__.py` 裡還有哪些可宣告的（目前只有 `STRICT_TYPE`），範本已經以註解列好，不必
-翻文件。
+`__init__.py` 裡還有哪些可宣告的（目前是 `STRICT_TYPE` 與 `CODE_REVIEW_SOURCE_HEADING`），
+範本已經以註解列好，不必翻文件。兩者都是選填，未宣告就落到預設值 —— 所以 `default/`
+刻意兩個都不宣告（在那裡重複一次預設值，日後改預設值就有兩個地方要改）。
 
 寫鉤子時請用這些共用函式，不要自己重寫：
 
@@ -869,14 +956,25 @@ gitlab_mr_result_lw-os_123_20260912_143012/
   01_description.md
   02_mr_info.json
   03_summary.json
-  04_code_review.md
+  04_code_review.json
+  04_code_review_src.md  自 JIRA 下載回來的原始附件（沒取到附件時不會有）
   05_report.md
   ai_prompt.txt        實際送給 AI 的完整 prompt
   ai_reply_1.txt       AI 的原始回覆（每次嘗試各一個檔）
   ai_reply_2.txt       重問過才會有
   bad_analysis.json    鉤子回傳的結構沒通過驗證時才會有
+  bad_code_review.json 步驟 4 的結構沒通過驗證時才會有
   debug.log
 ```
+
+`04_code_review_src.md` **是原始附件、不是擷取結果** —— 擷取到的總表在
+`04_code_review.json` 裡。留著它的理由是「擷取對不對」只能拿原文比對；而它自動只在
+勾選除錯時存在，因為工作目錄那時**就是**除錯目錄（未勾選時是流程結束後會被整個移除
+的暫存目錄），不需要任何額外判斷。
+
+它的檔名固定，**不取自附件本身的檔名** —— 那是上傳者打的字，拿它組路徑與規格禁止
+「device 名稱用來組成檔案路徑」是同一類風險，順帶也解決 JIRA 允許同名多筆附件的
+覆蓋問題。
 
 **調 prompt 就是看 `ai_prompt.txt` 與 `ai_reply_1.txt`。** 這兩份都不進 log ——
 prompt 含整份 diff（也就是原始碼），回覆動輒幾萬字元。除錯檔是唯一看得到它們的地方。
@@ -899,6 +997,26 @@ GitLab 與 JIRA 的端點與權杖放在設定檔的 `Service`，由功能注入
 GITLAB_SERVER_URL    GITLAB_ACCESS_TOKEN    GITLAB_VERIFY_SSL
 JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
 ```
+
+同一條注入路徑上還有兩個不是憑證的值（都在 `Function` 底下、不在 `Service`，因為它們
+只屬於這個功能）：
+
+```
+PPS_DEVICE                               <- PPS_Device
+PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH   <- PPS_Scripts_CodeReview_File_StartsWith
+```
+
+`PPS_Scripts_CodeReview_File_StartsWith` 是第 4 步用來篩選 JIRA 附件的**檔名前綴**
+（例如 `CodeReview_`）。它**沒有預設值** —— 沒設定時第 4 步直接失敗並同時點名環境變數
+與設定鍵，整條流程結束。給它預設值的話，漏設時會靜默改用一個部署者沒選的前綴，而症狀
+是「議題上明明掛著附件，報告裡卻沒有那一段」。
+
+比對**區分大小寫**、只認 `.md`、只認**開頭**（不是包含）。副檔名寫死在腳本裡不可配置：
+可配置的話有人會指到 `.docx` 或 `.zip`，於是二進位內容被貼進報告，而每一步都回報成功。
+
+> **注意這是每個部署只會撞一次的成本。** 第 4 步跑在第 3 步之後，所以設定檔少這個鍵時，
+> 使用者是**付完 AI 費用、等完那兩分鐘之後**才看到錯誤訊息，而那一次沒有報告。檢查刻意
+> 只留在腳本那一道（一個地方一個真相），代價寫在 design.md。
 
 **腳本只從環境變數讀這些值，不從 `config` 讀。** 這樣 CI/CD 設定同名的環境變數
 就能執行同一批腳本，腳本端只有一條取值路徑。AI 的端點、金鑰與模型名則走 `params`。
@@ -927,6 +1045,15 @@ JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
 - device 的鉤子是使用者寫的，所以它可能壞掉。載入或執行失敗時訊息會指出是哪一個
   device 的哪一個鉤子（含語法錯誤的檔名與行號）；回傳的結構不對則在**產生它的那
   一步**就失敗，而不是兩步之後的渲染。
+- **第 4 步取不到 code review 時不會讓流程失敗**，而是把原因寫成報告裡那一段的內容。
+  只有「缺設定鍵」與「缺 JIRA 端點或權杖」這兩種部署缺漏才結束流程 —— 分界是「能不能
+  在本機判定」，理由見 design.md 決策五。
+- **附件檔名的大小寫打錯會安靜地沒有那一段。** 比對區分大小寫，而「沒有符合的附件」
+  走的是「這筆本來就沒有」那條路（整段不出現、沒有訊息），所以它與「議題上真的沒掛
+  review」在報告上長得一模一樣。唯一的診斷路徑是開啟 `Debug_Mode` 後看 `debug.log`
+  裡那一行「看到哪些附件、篩掉哪些」。
+- **人工上傳的附件可能與當前程式碼不同步。** 規則就是取最新一筆，不做時間差警告；
+  報告印出上傳日期，讀者自行判斷。
 
 ---
 ## 設定檔
@@ -976,6 +1103,15 @@ GitLab、JIRA 這類會被多個功能共用的端點與憑證放在 `Service`�
 > **不要把整包 `config` log 出來。** 合併後它含有權杖，而 `Debug_Mode` 開啟時
 > 那一行會出現在 console 上。範本裡示範的 `logger.debug("設定 =%r", cfg)` 是
 > 給沒有憑證的功能看的，有憑證時請只印出你真正需要的那幾個鍵。
+
+**升級到含 code review 的版本後要手動補一個鍵。** 既有的設定檔不會被建置覆蓋，所以
+`AI Analysis GitLab MR` 區塊底下不會自動長出
+`PPS_Scripts_CodeReview_File_StartsWith`，而第 4 步會因此失敗並點名它。對照
+`PPS2_0DevTool.example.json` 補上即可：
+
+```json
+"PPS_Scripts_CodeReview_File_StartsWith": "CodeReview_"
+```
 
 `AI_Mode_List` 是一個清單，畫面上的 AI Mode 下拉選單就是用每一筆的 `Name` 填的：
 

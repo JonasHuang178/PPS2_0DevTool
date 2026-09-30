@@ -30,6 +30,17 @@ __all__ = [
     "render_ai_section",
     "render_code_review_section",
     "CODE_REVIEW_HEADING",
+    "CODE_REVIEW_TABLE_HEADING",
+    "CODE_REVIEW_SOURCE_HEADING",
+    "CODE_REVIEW_SCHEMA_VERSION",
+    "ACCEPTED_CODE_REVIEW_VERSIONS",
+    "MAX_CODE_REVIEW_BYTES",
+    "CodeReviewFormatError",
+    "extract_risk_table",
+    "RiskTableError",
+    "code_review_body",
+    "wrap_code_review",
+    "validate_code_review",
     "ANALYSIS_SCHEMA_VERSION",
     "ACCEPTED_SCHEMA_VERSIONS",
     "AnalysisFormatError",
@@ -52,6 +63,7 @@ __all__ = [
     "CredentialError",
     "gitlab_credentials",
     "jira_credentials",
+    "code_review_keyword",
     "ai_credentials",
     "ai_verify_ssl",
     "describe_gitlab_error",
@@ -226,7 +238,27 @@ AI_HEADING = "# AI 分析結果"
 #
 # 它不是切段的邊界（那只有 AI_HEADING），因為它永遠在 AI 分析之後，切段時連同
 # AI 分析一起被丟掉。
-CODE_REVIEW_HEADING = "# 程式碼審閱"
+CODE_REVIEW_HEADING = "# Code Review 報告"
+
+# 報告裡總表的小標題，低於 CODE_REVIEW_HEADING 一層。
+CODE_REVIEW_TABLE_HEADING = "## 風險評估表"
+
+# 在**別人的文件**裡找總表那一節時用的標題，也就是附件（工程師用 AI code review
+# 工具產出的那份 markdown）裡的節名。
+#
+# **這一個與上面兩個是不同的東西，不要合成一份。** 上面兩個是我們報告的版面，這一個
+# 是搜尋別人文件的依據；改我們的小標題不該影響去別人文件裡找什麼，反之亦然。名字裡
+# 的 SOURCE_ 前綴就是在講這件事。
+#
+# 這與 AI_HEADING 的情況剛好**相反**：那一個同時是「寫出去」與「切回來」的同一個
+# 邊界，所以必須只有一份來源。這兩者之間沒有那種關係，合成一個只會製造一條不存在
+# 的耦合。
+#
+# 各條產品線的 code review 工具產出格式不同，那一節不一定叫同一個名字，所以這個值
+# **可由 device 覆寫**（見 device.code_review_source_heading()）。會變的是別人工具
+# 的產出格式，不是本工具的處理方式 —— 所以變的只有這個字串，擷取的演算法與報告的
+# 版面都只有一份。
+CODE_REVIEW_SOURCE_HEADING = "## 風險評估表總表"
 
 
 def _heading_pattern(*headings):
@@ -253,6 +285,15 @@ def _heading_pattern(*headings):
 
 _DESCRIPTION_RE = _heading_pattern(DESCRIPTION_HEADING)
 _AI_RE = _heading_pattern(AI_HEADING)
+
+# CODE_REVIEW_HEADING 與 CODE_REVIEW_SOURCE_HEADING **刻意不在這裡**。
+#
+# 切段的邊界只有 AI_HEADING：程式碼審閱那一段永遠在 AI 分析之後，所以切在 AI 分析的
+# 標題上時它連同被丟掉，貼回描述再重跑也不會累積。多認一個邊界只會讓「AI 分析之後、
+# 程式碼審閱之前」那一段內容找不到歸屬。
+#
+# CODE_REVIEW_SOURCE_HEADING 更不屬於這裡 —— 它是拿去搜尋**別人的文件**的，與 MR 描述
+# 的切段完全無關（見 extract_risk_table()）。
 
 
 def _heading_positions(lines):
@@ -358,12 +399,56 @@ def render_ai_section(summary):
     return "%s\n\n%s\n" % (AI_HEADING, summary.strip())
 
 
-def render_code_review_section(text):
-    """報告裡「程式碼審閱」那一段：標題加上內容。內容為空就回傳空字串。"""
-    body = plain(text)
-    if not body:
+def render_code_review_section(body):
+    """報告裡「Code Review 報告」那一段，由步驟 4 的結構渲染。
+
+    版面：段落標題、附件的日期／作者／連結三行、總表的小標題、表格本身。兩個標題都由
+    **這裡**寫出 —— 產生內容的步驟不自帶標題，因為它無從知道自己會被放在哪一層。
+
+    三行資訊中值為空的那一行整行不印。日期只取到日，不做時區換算 —— 印出的就是上傳者
+    當時看到的那一天。
+
+    取得失敗時（error 有值）三行**照樣印**，並在其後加一行說明。那時連結的價值最高：
+    讀者點進去就能自己看全文，而這正是這一段設計的目的（報告只放總表，全文靠連結）。
+
+    表格與 error 都沒有時回傳空字串 —— 一個只有標題的空區塊會讓人以為內容漏掉了。
+    """
+    if not isinstance(body, dict):
         return ""
-    return "%s\n\n%s\n" % (CODE_REVIEW_HEADING, body)
+
+    table = plain(body.get("risk_table"))
+    error = plain(body.get("error"))
+    if not table and not error:
+        return ""
+
+    parts = [CODE_REVIEW_HEADING, ""]
+
+    meta = []
+    created = plain(body.get("created"))
+    if created:
+        meta.append(">日期: %s" % created[:10])
+    author = plain(body.get("author"))
+    if author:
+        meta.append(">作者: %s" % author)
+    filename = plain(body.get("filename"))
+    url = plain(body.get("url"))
+    if filename:
+        meta.append(">連結: %s" % _link(_escape_link_text(filename), url))
+    if meta:
+        parts.extend(meta)
+        parts.append("")
+
+    if error:
+        parts.append("⚠️ 無法取得程式碼審閱報告：%s" % error)
+        parts.append("")
+
+    if table:
+        parts.append(CODE_REVIEW_TABLE_HEADING)
+        parts.append("")
+        parts.append(table)
+        parts.append("")
+
+    return "\n".join(parts).rstrip("\n") + "\n"
 
 
 # --- GitLab 憑證與錯誤分流 --------------------------------------------------
@@ -455,6 +540,29 @@ def jira_credentials():
             "JIRA_ACCESS_TOKEN_MISSING")
 
     return base_url, token
+
+
+def code_review_keyword():
+    """自環境變數取出 code review 附件的檔名前綴。未設定時拋 CredentialError。
+
+    **沒有預設值是刻意的。** 給它一個預設值會讓設定鍵變成裝飾 —— 使用者漏設時靜默套用
+    一個他沒選的前綴，而症狀是「議題上明明有附件，報告裡卻沒有那一段」。與 device 的
+    VERSION 同一個判斷：沒有合理預設值的項目就該必填。
+
+    訊息同時點名環境變數與設定檔的鍵。只說環境變數沒設，使用者會去設系統環境變數，而
+    真正該改的是執行檔旁那份 JSON。
+    """
+    keyword = os.environ.get("PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH", "").strip()
+    if not keyword:
+        raise CredentialError(
+            "未設定環境變數 PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH",
+            "設定檔 Function 底下本功能區塊的 "
+            "PPS_Scripts_CodeReview_File_StartsWith 會由工具注入為這個環境變數"
+            "（例如值為 \"CodeReview_\"）；以命令列或 CI 執行時請自行設定。\n"
+            "這一項沒有預設值：若給了預設值，漏設時會靜默改用一個你沒選的前綴，而"
+            "症狀是議題上明明有附件、報告裡卻沒有那一段。",
+            "CODE_REVIEW_FILE_STARTSWITH_MISSING")
+    return keyword
 
 
 def ai_credentials(inputs):
@@ -882,8 +990,295 @@ def fence_for(code):
     return "`" * max(3, longest + 1)
 
 
-# 條目內的縮排。理由與 diff 都縮在 bullet 底下，讓它們在視覺上屬於那一筆，而不是
-# 平鋪在檔案標題下的另一段。兩格是 markdown 認得的清單延續縮排。
+# --- 步驟 4 的程式碼審閱：擷取、結構與渲染 ------------------------------------
+#
+# 來源是**別人的文件** —— 工程師用 AI code review 工具產出、以附件掛在 JIRA 議題上的
+# 一份 markdown。我們只要其中的風險評估總表，全文靠報告裡那個連結回去看。
+#
+# 與步驟 3 同一套分工：步驟 4 交出**結構**，由步驟 5 渲染。那份結構必須帶著附件的
+# 日期、作者與網址，因為只有步驟 4 拿得到它們 —— 步驟 5 收到的只是一個檔案路徑。
+
+# 這份結構的版本。與 ANALYSIS_SCHEMA_VERSION 各自獨立編號：兩者是不同的產物，讓它們
+# 共用一個號碼會使其中一邊的改版莫名其妙地讓另一邊的舊檔失效。
+CODE_REVIEW_SCHEMA_VERSION = 1
+ACCEPTED_CODE_REVIEW_VERSIONS = (1,)
+
+# 總表內容的位元組上限。
+#
+# 這一份會整段進報告 → 進回應的 data → 經 stdout 回到 Qt → 進結果視窗，所以要有界。
+# 但它不進 prompt、不花 token，因此可以比 MAX_PROMPT_DIFF_BYTES 寬鬆。
+#
+# 一份人看得完的總表大約幾 KB，取十倍以上是刻意的：上限要大到**正常使用永遠不會觸發**，
+# 因為一個經常出現的截斷記號會被讀者習慣性忽略，那時它就不再是警告了。
+#
+# 同一個數字用在兩個地方 —— 下載前依議題系統回報的大小先擋，以及讀進來之後再截斷。
+# 兩道用不同的數字只會讓人問為什麼不一樣。
+MAX_CODE_REVIEW_BYTES = 200000
+
+_CODE_REVIEW_TRUNCATED = "\n\n… （內容已截斷）"
+
+# 任何以 # 開頭、後面不是 # 的行都算一個 ATX 標題，因此都是擷取範圍的終點。
+#
+# 比 "#{1,6}\s" 寬：_heading_pattern() 容許 "##風險評估表總表" 這種沒有空格的寫法，
+# 所以範圍的終點也必須認得同樣的寫法，否則下一節的標題會被當成內容而讓範圍過長。
+_ATX_RE = re.compile(r"^#{1,6}(?!#)")
+
+# 表格的分隔列：每一格只有連字號，前後可有對齊用的冒號。
+_SEPARATOR_CELL_RE = re.compile(r"^:?-+:?$")
+
+
+class RiskTableError(Exception):
+    """總表擷取不到。
+
+    與 AnalysisFormatError 同一個形狀（message / detail / code），但**用途不同**：
+    這一個不會變成 reply_fail，而是被寫進結構的 error 欄位、顯示在報告裡。
+
+    理由：擷取不到屬於「別人的文件不合約定」，而這一步跑在 AI 分析之後 —— 讓它結束
+    流程會把一份已經完成、已經付費的分析整份丟掉。
+    """
+
+    def __init__(self, message, detail="", code="CODE_REVIEW_TABLE_NOT_FOUND"):
+        super(RiskTableError, self).__init__(message)
+        self.detail = detail
+        self.code = code
+
+
+class CodeReviewFormatError(Exception):
+    """程式碼審閱結構不符。這一個**會**變成 reply_fail。
+
+    與 RiskTableError 的分界即失敗三分類的分界：結構壞掉是我們自己寫壞的（或讀到一份
+    不認得版本的產物），不是別人的文件的問題。
+    """
+
+    def __init__(self, message, detail, code):
+        super(CodeReviewFormatError, self).__init__(message)
+        self.detail = detail
+        self.code = code
+
+
+def _is_separator_row(line):
+    """這一行是不是表格的分隔列（|---|---|）。"""
+    cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+    return bool(cells) and all(_SEPARATOR_CELL_RE.match(c) for c in cells)
+
+
+def _clip_code_review(text):
+    """把過長的總表截斷，並在尾端明著說它被截斷了。
+
+    與 _clip_diff() 同一個作法：不說的話，讀報告的人會以為表格就到那裡為止。
+    """
+    body = plain(text)
+    encoded = body.encode("utf-8")
+    if len(encoded) <= MAX_CODE_REVIEW_BYTES:
+        return body
+    return (encoded[:MAX_CODE_REVIEW_BYTES].decode("utf-8", "ignore")
+            + _CODE_REVIEW_TRUNCATED)
+
+
+def extract_risk_table(text, heading):
+    """自 code review 報告中擷取風險評估總表，回傳表格的 markdown。
+
+    只回傳**表格本身**，不含任何標題 —— 標題由步驟 5 寫出（與其他段落一致，產生內容
+    的步驟無從知道自己會被放在哪一層）。
+
+    heading 是要找的那一節的標題，由呼叫端傳入（預設值是 CODE_REVIEW_SOURCE_HEADING，
+    但 device 可以宣告自己的）。比對式由它導出，不另外手寫字面文字。
+
+    擷取不到時丟 RiskTableError —— 呼叫端把它寫進結構的 error 欄位，不結束流程。
+
+    演算法有三個地方是刻意的：
+
+    1. **範圍限定在下一個標題之前。** 這是整支函式最重要的一條。若只是「從標題往下找
+       第一個表格」，那一節恰好沒有總表時會抓到**下一節的表格** —— 於是一張看起來完全
+       合理的錯誤表格被貼進報告，標題還寫著風險評估表。抓不到必須是抓不到。
+
+    2. **圍籬區塊內的標題與表格都不算。** AI 產出的報告裡出現程式碼區塊的機率很高，
+       區塊內若有假標題或假表格，不追蹤圍籬就會抓錯。
+
+    3. **形狀檢查（表頭 + 分隔列）而不檢查欄位名稱。** 各 device 的報告連欄位名稱都
+       不保證相同，所以沒有可用的預設值；但「是不是一張 markdown 表格」不因 device
+       而異。這道檢查擋掉「那一節只有散文」與「來源少了分隔列」—— 後者原樣貼進報告
+       不會被渲染成表格。
+    """
+    wanted = plain(heading)
+    if not wanted:
+        raise RiskTableError(
+            "沒有指定總表那一節的標題",
+            "這是呼叫端的問題，不是來源文件的問題。",
+            "CODE_REVIEW_HEADING_NOT_GIVEN")
+
+    pattern = _heading_pattern(wanted)
+    lines = (text or "").splitlines()
+
+    # --- 第一趟：找標題，並定出範圍的終點 ---
+    fence = None
+    start = None
+    end = len(lines)
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            continue
+        if fence is not None:
+            continue
+
+        if start is None:
+            if pattern.match(stripped):
+                start = index
+            continue
+
+        # 標題之後的第一個 ATX 標題就是範圍的終點。
+        if _ATX_RE.match(stripped):
+            end = index
+            break
+
+    if start is None:
+        raise RiskTableError(
+            "來源文件中找不到「%s」這一節" % wanted,
+            "認得的標題是「%s」（階層與行首行尾空白可以不同）。\n"
+            "若該 device 的 code review 報告用的是別的節名，請在 device 的 "
+            "__init__.py 宣告 CODE_REVIEW_SOURCE_HEADING。" % wanted,
+            "CODE_REVIEW_SECTION_NOT_FOUND")
+
+    # --- 第二趟：範圍內找表格 ---
+    fence = None
+    rows = []
+
+    for line in lines[start + 1:end]:
+        stripped = line.strip()
+
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            # 表格已經開始又遇到圍籬，那張表格到此為止。
+            if rows:
+                break
+            continue
+        if fence is not None:
+            continue
+
+        if stripped.startswith("|"):
+            rows.append(stripped)
+            continue
+
+        # 表格開始之後的第一個非表格行就是終點；還沒開始的話繼續找
+        # （標題與表格之間可能有空行或一兩句說明）。
+        if rows:
+            break
+
+    if not rows:
+        raise RiskTableError(
+            "「%s」這一節底下沒有表格" % wanted,
+            "找過該節到下一個標題之間的每一行，沒有以 | 開頭的表格。\n"
+            "注意沒有前後 | 的表格寫法不被支援 —— 那種偵測會把說明文字裡的任何一個 "
+            "| 當成表格的開始。",
+            "CODE_REVIEW_TABLE_NOT_FOUND")
+
+    if len(rows) < 2 or not _is_separator_row(rows[1]):
+        raise RiskTableError(
+            "「%s」這一節底下的內容不是一張完整的表格" % wanted,
+            "一張 markdown 表格至少要有表頭與分隔列（|---|---|）兩行；讀到的是 %d 行，"
+            "而第二行不是分隔列。\n"
+            "缺分隔列的內容原樣貼進報告不會被渲染成表格。" % len(rows),
+            "CODE_REVIEW_TABLE_MALFORMED")
+
+    return "\n".join(rows)
+
+
+def code_review_body(risk_table="", filename="", created="", author="",
+                     url="", error=""):
+    """組出程式碼審閱結構的**內容**。
+
+    刻意不含 schema_version —— 版本由入口腳本蓋章，與 analysis_body() 同一個理由。
+
+    error 與 risk_table 可以同時有值也可以只有一邊：取得失敗時 error 有值而表格為空，
+    而**附件資訊仍然要填** —— 那時連結的價值最高，讀者點進去就能自己看全文。
+    """
+    return {
+        "filename": plain(filename),
+        "created": plain(created),
+        "author": plain(author),
+        "url": plain(url),
+        "risk_table": _clip_code_review(risk_table),
+        "error": plain(error),
+    }
+
+
+def wrap_code_review(body):
+    """把內容包成落檔與回傳用的完整結構，並蓋上版本號。"""
+    return {
+        "schema_version": CODE_REVIEW_SCHEMA_VERSION,
+        "code_review": body,
+    }
+
+
+def validate_code_review(payload, source=""):
+    """驗證程式碼審閱結構，通過就回傳內容；不通過丟 CodeReviewFormatError。
+
+    與 validate_analysis() 同一個形狀與同一個理由：驗在讀得到它的每一個邊界，訊息才
+    指得出是哪個欄位。版本的比對共用 _schema_version()，所以「數字或純數字字串都收、
+    非整數不收」的規則只有一份。
+    """
+    where = ("%s：" % source) if source else ""
+
+    if not isinstance(payload, dict):
+        raise CodeReviewFormatError(
+            "%s程式碼審閱結果不是一個物件" % where,
+            "讀到的型別是 %s。" % type(payload).__name__,
+            "CODE_REVIEW_BAD_TYPE")
+
+    raw_version = payload.get("schema_version")
+    if _schema_version(raw_version) not in ACCEPTED_CODE_REVIEW_VERSIONS:
+        raise CodeReviewFormatError(
+            "%s認不得的程式碼審閱結果版本：%r" % (where, raw_version),
+            "這份實作讀得懂的是 schema_version %s —— 數字與純數字字串都收。\n"
+            "版本不合時不做猜測：猜錯的結果是一份看起來正常、實際上少了一段的報告。"
+            % "、".join(str(v) for v in ACCEPTED_CODE_REVIEW_VERSIONS),
+            "CODE_REVIEW_SCHEMA_UNSUPPORTED")
+
+    body = payload.get("code_review")
+    if not isinstance(body, dict):
+        raise CodeReviewFormatError(
+            "%s程式碼審閱結果缺少 code_review 物件" % where,
+            "code_review 的型別是 %s。這個檔案目前有的欄位：%s"
+            % (type(body).__name__,
+               "、".join(sorted(payload.keys())) or "(無)"),
+            "CODE_REVIEW_MISSING_BODY")
+
+    # 六個欄位都必須是字串。空字串是合法的（沒有那一項），但型別不對就明確失敗 ——
+    # 一個 dict 被 str() 起來會變成 "{'a': 1}" 然後原樣印進報告。
+    for key in ("filename", "created", "author", "url", "risk_table", "error"):
+        value = body.get(key, "")
+        if not isinstance(value, str):
+            raise CodeReviewFormatError(
+                "%s程式碼審閱結果的 %s 不是字串：%r" % (where, key, value),
+                "讀到的型別是 %s。沒有這一項時請填空字串。"
+                % type(value).__name__,
+                "CODE_REVIEW_FIELD_BAD_TYPE")
+
+    return body
+
+
+def _escape_link_text(text):
+    """把檔名轉義成安全的 markdown 連結文字。
+
+    檔名是**上傳者打的字**，其中的方括號或圓括號會讓那一行的連結失效。
+    """
+    out = plain(text)
+    for char in ("\\", "[", "]", "(", ")"):
+        out = out.replace(char, "\\" + char)
+    return out
+
+
 # --- 報告末尾的出處資訊 ------------------------------------------------------
 #
 # 一份報告被貼到 MR 討論串之後就脫離了產生它的環境。半年後有人問「這段分析是哪來的、

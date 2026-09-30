@@ -54,6 +54,7 @@ __all__ = [
     "known_types",
     "normalize_type",
     "strict_type",
+    "code_review_source_heading",
     "load_hook",
     "device_version",
 ]
@@ -250,6 +251,40 @@ def strict_type(device=None):
             "（不要加引號）。" % type(value).__name__,
             "DEVICE_STRICT_TYPE_INVALID")
     return value
+
+
+def code_review_source_heading(device=None, default=""):
+    """這個 device 的 code review 報告裡，總表那一節叫什麼。未宣告時回 default。
+
+    各條產品線的 code review 工具是各自的，產出格式不保證相同 —— 那一節不一定叫同一個
+    名字。所以這個字串掛在 device 上。
+
+    **這是一個宣告，不是鉤子。** 步驟 4 不會因此載入或執行任何 device 的程式碼：擷取的
+    演算法與報告的版面都只有一份，變的只有「要找哪一節」這個字串。因此那一步不會出現
+    「哪一個 device 的鉤子壞了」這類失敗。
+
+    default 由呼叫端明著傳入（入口腳本傳 ai_analysis_gitlab_mr.CODE_REVIEW_SOURCE_HEADING）
+    而不是在這裡讀。這個模組是 ai_analysis_gitlab_mr 的子套件，反過來 import 母套件會
+    形成一個沒必要的循環；而預設值屬於報告契約那一層，與另外兩個標題常數放在一起才不會
+    走散。
+
+    與 STRICT_TYPE 同樣**不是必填**：設成必填會讓每一個既有的 device 立刻失效，而它有
+    一個明確的預設值。型別不對時明確失敗，不靜默 str() —— 一個寫錯成清單的宣告會讓比對
+    永遠對不上，而那個症狀（報告說找不到那一節）指不出真正的原因。
+    """
+    name = resolve_name() if device is None else device
+    module = _import("%s.%s" % (__name__, name), name, "__init__.py")
+
+    value = getattr(module, "CODE_REVIEW_SOURCE_HEADING", None)
+    if value is None:
+        return default
+    if not isinstance(value, str) or not value.strip():
+        raise DeviceError(
+            "device %s 的 CODE_REVIEW_SOURCE_HEADING 不是非空字串" % name,
+            "收到的型別是 %s。請寫成 CODE_REVIEW_SOURCE_HEADING = \"## 節名\"，"
+            "或整行拿掉以沿用預設值。" % type(value).__name__,
+            "DEVICE_CODE_REVIEW_HEADING_INVALID")
+    return value.strip()
 
 
 def _import(module_name, device, what):

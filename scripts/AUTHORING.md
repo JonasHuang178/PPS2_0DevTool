@@ -314,6 +314,11 @@ Jira_Server_URL       ->   JIRA_SERVER_URL
 | `GITLAB_VERIFY_SSL` | `true` / `false`，**未設定視為 `false`**（不驗證） | 視為不驗證 |
 | `JIRA_SERVER_URL` | JIRA 的位址 | 需要時回傳失敗並點名 |
 | `JIRA_ACCESS_TOKEN` | JIRA 的存取權杖 | 同上 |
+| `PPS_DEVICE` | 要用哪一個 device 的鉤子（AI Analysis GitLab MR 專用） | 視為 `default` |
+| `PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH` | code review 附件的檔名前綴，例如 `CodeReview_`（AI Analysis GitLab MR 步驟 4 專用） | **回傳失敗並點名** —— 這一項沒有預設值 |
+
+最後一項刻意沒有預設值：給了預設值的話，漏設時會靜默改用一個部署者沒選的前綴，而症狀
+是「JIRA 議題上明明掛著附件，報告裡卻沒有那一段」。點名失敗至少指得出要去改哪裡。
 
 布林值記得自己轉換 —— `bool("false")` 在 Python 裡是 `True`：
 

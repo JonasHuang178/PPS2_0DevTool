@@ -5,9 +5,13 @@
 本身 —— 它的工作就是「把這幾份檔案接起來」，命令列直接呼叫時的用法與 Qt 完全
 相同。
 
-產出是要顯示給人看的報告：原始描述那一段原樣保留，後面接上這一輪的 AI 分析。
-不加報告標題、也不加產生時間 —— 使用者要看的就是這兩段內容本身。工具不會把
-它寫回 GitLab。
+產出是要顯示給人看的報告：原始描述那一段原樣保留，後面接上這一輪的 AI 分析，
+再接上程式碼審閱那一段。不加報告標題、也不加產生時間 —— 使用者要看的就是這幾段
+內容本身。工具不會把它寫回 GitLab。
+
+AI 分析與程式碼審閱兩段收到的都是**結構**而不是排好版的 markdown，渲染在這一步。
+程式碼審閱那一段因此印得出附件的日期、作者與連結 —— 那三個值只有步驟 4 拿得到，
+而這一步收到的只是一個檔案路徑。**報告只放總表，全文靠那個連結回去看。**
 
     python ai_analysis_gitlab_mr_merge_to_md.py --help
     python ai_analysis_gitlab_mr_merge_to_md.py --dump-config > run.json
@@ -46,6 +50,17 @@ def _is_given(path):
     （script_io 對缺漏的參數回填預設值，而預設值是空字串），兩種都要收。
     """
     return isinstance(path, str) and path.strip() != ""
+
+
+def _code_review_text(body):
+    """給 device 鉤子的 code_review 值：總表的 markdown，沒有就是空字串。
+
+    鉤子拿到的維持是**字串**（它原本就是），所以既有的鉤子簽章不因這次改動而失效。
+    完整的結構另外以 code_review_info 交出去 —— 想印出附件檔名或連結的鉤子從那裡取。
+    """
+    if not isinstance(body, dict):
+        return ""
+    return ai_analysis_gitlab_mr.plain(body.get("risk_table"))
 
 
 def _read_required(path, what):
@@ -152,8 +167,9 @@ def main():
             script_io.arg("mr_summary_json_file_path", default="",
                           help="AI 分析結果的 JSON 檔（取其中的 summary 欄位）；"
                                "null 表示沒有這一段"),
-            script_io.arg("code_review_md_file_path", default="",
-                          help="程式碼審閱報告的 markdown 檔；null 表示沒有這一段"),
+            script_io.arg("code_review_json_file_path", default="",
+                          help="程式碼審閱結果的 JSON 檔（步驟 4 的產物）；"
+                               "null 表示沒有這一段"),
             script_io.arg("out_path", default="",
                           help="額外把報告寫到這個檔案；null 表示不落檔"),
 
@@ -188,10 +204,24 @@ def main():
     if _is_given(params["ori_md_file_path"]):
         description = _read_required(params["ori_md_file_path"], "MR 描述檔")
 
-    code_review = ""
-    if _is_given(params["code_review_md_file_path"]):
-        code_review = _read_required(params["code_review_md_file_path"],
-                                     "程式碼審閱報告檔")
+    # 程式碼審閱是一份**結構**而不是排好版的 markdown，渲染由這一步負責 —— 與
+    # 03_summary.json 同一套。報告要印出附件的日期、作者與連結，而那三個值只有步驟 4
+    # 拿得到；這一步收到的只是一個檔案路徑。
+    code_review = None
+    if _is_given(params["code_review_json_file_path"]):
+        path = params["code_review_json_file_path"]
+        raw = _read_required(path, "程式碼審閱結果檔")
+        try:
+            payload = json_utils.load_data(raw)
+        except ValueError as exc:
+            script_io.reply_fail(
+                "程式碼審閱結果檔不是合法的 JSON：%s" % path,
+                detail=str(exc), code="MERGE_CODE_REVIEW_NOT_JSON")
+        try:
+            code_review = ai_analysis_gitlab_mr.validate_code_review(
+                payload, source="檔案 %s" % path)
+        except ai_analysis_gitlab_mr.CodeReviewFormatError as exc:
+            script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
 
     summary = ""
     analysis = None
@@ -206,22 +236,28 @@ def main():
                 detail=str(exc), code="MERGE_SUMMARY_NOT_JSON")
         summary, analysis = _analysis_section(payload, path, {
             "description": description,
-            "code_review": code_review,
+            # 維持既有的型別（字串，沒有就是空字串）—— device 作者的鉤子簽章不因這次
+            # 改動而變。完整的結構另外以 code_review_info 給出去，是加法式的。
+            "code_review": _code_review_text(code_review),
+            "code_review_info": code_review,
             "repo": repo,
             "mr_iid": mr_iid,
         })
 
-    if not (description or summary or code_review):
+    code_review_section = ai_analysis_gitlab_mr.render_code_review_section(
+        code_review)
+
+    if not (description or summary or code_review_section):
         # 三段全空代表呼叫端什麼都沒給，或前面幾步全部沒有產出。產一份只有標題的
         # 報告等於把問題往下游丟。
         script_io.reply_fail(
             "沒有任何可合併的內容",
             detail="ori_md_file_path、mr_summary_json_file_path 與 "
-                   "code_review_md_file_path 都沒有給，或內容都是空的。",
+                   "code_review_json_file_path 都沒有給，或內容都是空的。",
             code="MERGE_NOTHING_TO_DO")
 
     logger.info("合併報告：描述 %d、分析 %d、審閱 %d 字元",
-                len(description), len(summary), len(code_review))
+                len(description), len(summary), len(code_review_section))
 
     # --- 組報告 ---
     #
@@ -243,12 +279,10 @@ def main():
         sections.append(
             ai_analysis_gitlab_mr.render_ai_section(summary).strip())
 
-    if code_review.strip():
-        # 標題由這一步寫出，步驟 4 只負責內容 —— 讓它自帶標題的話，它無從知道
-        # 自己會被放在哪一層，結果是縮在 AI 分析底下。
-        sections.append(
-            ai_analysis_gitlab_mr.render_code_review_section(
-                code_review).strip())
+    if code_review_section.strip():
+        # 段落標題與總表的小標題都由這一步寫出，步驟 4 只負責內容 —— 讓它自帶標題的
+        # 話，它無從知道自己會被放在哪一層，結果是縮在 AI 分析底下。
+        sections.append(code_review_section.strip())
 
     # 出處資訊永遠都在：報告被貼到 MR 討論串之後就脫離了產生它的環境，這一段是
     # 「這份分析是哪一版腳本、在哪裡跑出來的」唯一的答案。
