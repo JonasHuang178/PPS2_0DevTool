@@ -558,17 +558,25 @@ def render_code_review_section(body):
 
     parts = [CODE_REVIEW_HEADING, ""]
 
+    # 三行各自是引言裡的一個**清單項目**，不是三行連著的文字。
+    #
+    # 連著寫的話 markdown 會把它們併成同一段 —— 換行在段落內是「軟換行」，轉譯後變成
+    # 一個空白，三行於是擠成一行。以實際的轉譯器驗過，不是推論。
+    #
+    # 選清單而不是「行尾兩個空白」或「中間空一行」：行尾空白是看不見的，編輯器與
+    # linter 會把它清掉，而這一段的正確性就靠那兩個空白；中間空一行則會變成三個段落，
+    # 多出來的間距與「三行一組的註記」不符。清單本來就是這三個欄位的形狀。
     meta = []
     created = plain(body.get("created"))
     if created:
-        meta.append(">日期: %s" % created[:10])
+        meta.append("> - 日期: %s" % created[:10])
     author = plain(body.get("author"))
     if author:
-        meta.append(">作者: %s" % author)
+        meta.append("> - 作者: %s" % author)
     filename = plain(body.get("filename"))
     url = plain(body.get("url"))
     if filename:
-        meta.append(">連結: %s" % _link(_escape_link_text(filename), url))
+        meta.append("> - 連結: %s" % _link(_escape_link_text(filename), url))
     if meta:
         parts.extend(meta)
         parts.append("")
@@ -1895,7 +1903,7 @@ def _escape_link_text(text):
 # 這支腳本的名稱與版本。**改了報告的產出方式就把版本往上加** —— 那是這一行存在的
 # 唯一理由，不加的話舊報告與新報告在外觀上分不出來。
 SCRIPT_NAME = "MR Summary Script"
-SCRIPT_VERSION = "1.2"
+SCRIPT_VERSION = "1.3"
 
 
 def _link(text, url):
@@ -1977,7 +1985,7 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
 
         ---
 
-        Script: v1.2 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid) | Coverage: 3/21 檔案（MR 共 90）
+        Script: v1.3 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid) | Coverage: 3/21 檔案（MR 共 90）
         Gitlab Pipeline #1000 | Commit e456d23
 
     每個值前面都有名字。沒有標籤的話（例如 `(Open AI / ssd v1.2)`）兩個版本號並列時
@@ -2021,6 +2029,11 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     lines = [" | ".join(parts)]
     origin = _ci_origin() or _tool_origin()
     if origin:
+        # 兩行之間空一行，兩者才會是**兩個段落**。只放一個換行的話 markdown 會把它們
+        # 併成同一段（段落內的換行是軟換行，轉譯後變成一個空白），出處就擠成一行。
+        #
+        # 這裡用空行而不是清單：兩行各自是一句完整的出處敘述，不是一組欄位。
+        lines.append("")
         lines.append(origin)
 
     return "---\n\n" + "\n".join(lines)
