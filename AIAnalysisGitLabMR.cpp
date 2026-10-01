@@ -602,8 +602,19 @@ void AIAnalysisGitLabMR::applyMrHeaderLayout()
     header->setSectionResizeMode(ColumnCreated, QHeaderView::Fixed);
 
     m_widgets.mrView->setColumnWidth(ColumnIid,     60);
-    m_widgets.mrView->setColumnWidth(ColumnState,   70);
-    m_widgets.mrView->setColumnWidth(ColumnAuthor,  110);
+
+    // Status 容得下最寬的那個狀態。GitLab 的狀態只有 opened / closed / merged /
+    // locked 四種，最寬的是 merged；原本的 70 會把它與 opened 都截成 `open…`。
+    // 多留一些是給別的字型與 DPI 的餘裕 —— 這幾個值是在這個容器的字型下量出來的，
+    // Windows 上的字型不同。
+    m_widgets.mrView->setColumnWidth(ColumnState,   85);
+
+    // Author 容得下「名 姓」這種常見長度（`Jonas Huang` 量到 114，原本的 110 差一點點，
+    // 於是每一列都是 `Jonas Hua…`）。
+    //
+    // **不追求容得下所有名字** —— 再長的名字一定存在，而這一欄每多一像素，會伸縮的
+    // 標題欄就少一像素。截斷的那幾筆由提示文字補上（見填資料的那一段）。
+    m_widgets.mrView->setColumnWidth(ColumnAuthor,  150);
     // Created 比它顯示的字串寬一截，是因為那一欄現在固定帶著排序指示器的箭頭
     // （見底下的預設排序）。維持 90 的話 `2026-09-30` 會被截成 `2026-0…`。
     m_widgets.mrView->setColumnWidth(ColumnCreated, 115);
@@ -1160,6 +1171,9 @@ void AIAnalysisGitLabMR::onRefreshClicked()
 
                 QStandardItem *authorItem = new QStandardItem(author);
                 authorItem->setData(author, kSortRole);
+                // 欄寬容得下常見的名字，但不可能容得下全部。截斷的那幾筆靠這個提示
+                // 文字才看得到全名 —— 否則「這一欄放不下」就等於「這個資訊看不到」。
+                authorItem->setToolTip(author);
                 row[ColumnAuthor] = authorItem;
 
                 // 顯示絕對日期，排序依完整的時間戳 —— 「3 天前」這種相對
