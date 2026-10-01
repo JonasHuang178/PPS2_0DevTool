@@ -1081,13 +1081,23 @@ void AIAnalysisGitLabMR::onRefreshClicked()
                 createdItem->setToolTip(created);
                 row[ColumnCreated] = createdItem;
 
-                // 每一欄都置中，且只設一次 —— 逐欄分開設的話，之後加一欄就會
-                // 漏掉，而漏掉的症狀是一欄靠左、其餘置中，看起來像是沒對齊。
+                // 對齊只在這裡設一次，規則寫成一個條件式而不是逐欄分開設 ——
+                // 逐欄設的話，之後加一欄就會漏掉，而漏掉的症狀是那一欄靠左、
+                // 其餘置中，看起來像是沒對齊，不像是少寫了一行。新增的欄位
+                // 因此自動取得置中，那是四個短欄位的共同需求。
+                //
+                // 標題欄例外，靠左。它是唯一的長文字欄：置中的話每一列的起點
+                // 隨標題長短而異，一整排讀下來是跳的；而這一欄正是使用者用來
+                // 掃視、挑出想分析的那一筆的。過長時從右側截斷，靠左才讓每一列
+                // 都從同一個位置開始。
                 //
                 // 表頭不必設：QHeaderView 的水平表頭預設就是置中。
                 for (int c = 0; c < row.size(); ++c) {
                     row.at(c)->setEditable(false);
-                    row.at(c)->setTextAlignment(Qt::AlignCenter);
+                    row.at(c)->setTextAlignment(
+                                c == ColumnTitle
+                                ? (Qt::AlignLeft | Qt::AlignVCenter)
+                                : Qt::AlignCenter);
                 }
 
                 m_mrModel->appendRow(row);
