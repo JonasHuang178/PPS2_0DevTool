@@ -531,7 +531,22 @@ void AIAnalysisGitLabMR::applyMrHeaderLayout()
     m_widgets.mrView->setColumnWidth(ColumnIid,     60);
     m_widgets.mrView->setColumnWidth(ColumnState,   70);
     m_widgets.mrView->setColumnWidth(ColumnAuthor,  110);
-    m_widgets.mrView->setColumnWidth(ColumnCreated, 90);
+    // Created 比它顯示的字串寬一截，是因為那一欄現在固定帶著排序指示器的箭頭
+    // （見底下的預設排序）。維持 90 的話 `2026-09-30` 會被截成 `2026-0…`。
+    m_widgets.mrView->setColumnWidth(ColumnCreated, 115);
+
+    // 預設排序：建立日期由新到舊。
+    //
+    // 與欄寬同一個理由寫在這裡 —— clear() 之後連排序指示器也回到預設（第 0 欄遞增），
+    // 所以每次重建都要重設。而這裡正是「每次重建」唯一會經過的地方。
+    //
+    // 在資料塞進來**之前**設定是對的：proxy 開著 dynamicSortFilter，之後插入的列會
+    // 自動落到正確的位置。
+    //
+    // 排序依的是 kSortRole 放的完整時間戳（畫面上只顯示到日），所以同一天的多筆也排得開。
+    // 使用者之後可以自己點欄位改排序，那個選擇會留到下一次重新整理為止 —— 重新整理是
+    // 一批新資料，回到預設才是可預期的。
+    m_widgets.mrView->sortByColumn(ColumnCreated, Qt::DescendingOrder);
 }
 
 // 空白的兩種狀態在畫面上長得一樣，但使用者該做的下一步不同。訊息列以整列
