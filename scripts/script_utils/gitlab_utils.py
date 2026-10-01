@@ -59,6 +59,7 @@ __all__ = [
     "get_all_mr",
     "get_mr_info",
     "get_mr_plain_diff",
+    "get_mr_diff_detail",
 ]
 
 
@@ -508,6 +509,105 @@ def _render_file_diff(entry):
     return text
 
 
+def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
+                       timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+    """取得 merge request 的 unified diff，**連同取得過程中知道的事實**。
+
+    回傳一個 dict：
+
+        text          組好的 unified diff（截斷時含結尾那行說明）
+        files         完整收進 text 的檔案路徑，依出現順序
+        dropped_files 因為截斷而沒有完整收進去的檔案路徑
+        file_count    這支 merge request 共有幾個檔案變更（截斷前）
+        empty_files   差異內容是空的那些檔案路徑（files 的子集合）
+        truncated     是否因為超過 max_bytes 而截斷
+        bytes_total   截斷前的位元組數
+        bytes_sent    text 中實際的差異位元組數（不含結尾那行說明）
+
+    **為什麼不只回文字**：截斷這件事原本只留在 text 的結尾與一筆警告裡，而那兩個地方
+    呼叫端都無法據以判斷「少了幾個檔案」。少了幾個是呼叫端唯一真正想知道的 —— 一份
+    只涵蓋 21/90 個檔案的分析，與一份完整的分析，在文字上看起來完全一樣。
+
+    `files` 只收**完整**放得下的檔案。截斷是對整份差異做的一刀，切點可能落在某個檔案
+    中間；把那個被切一半的檔案算成「有送到」會讓呼叫端少算一筆缺口，而那一筆正指向
+    「上限要調」。
+
+    `empty_files` 的成因有三種（二進位檔、只有模式變更、來源自己的大小限制），在 API
+    回來的資料上都是一個空的 diff 欄位，這裡不猜是哪一種 —— 只如實說「這個檔案沒有
+    內容」。要分開得多打幾支 API，那是另一件事。
+
+    取得差異的方式見 get_mr_plain_diff。
+    """
+    if not isinstance(mr_iid, (str, int)) or str(mr_iid).strip() == "":
+        raise GitLabError("merge request iid 不可為空")
+
+    base = "/projects/%s/merge_requests/%s" % (_encode_path(project_id),
+                                               _encode_path(mr_iid))
+
+    try:
+        entries = get_paged(server_url, token, base + "/diffs",
+                            timeout=timeout, verify_ssl=verify_ssl)
+    except GitLabError as exc:
+        if exc.status_code != 404:
+            raise
+        # 舊版沒有 /diffs。/changes 回的是物件，清單在 changes 欄位底下。
+        logger.debug("/diffs 不存在，改試 /changes：%s", base)
+        body = request(server_url, token, "GET", base + "/changes",
+                       timeout=timeout, verify_ssl=verify_ssl)
+        entries = (body or {}).get("changes") or []
+
+    if not isinstance(entries, list):
+        raise GitLabError("diff 端點回傳的不是清單：%s" % base)
+
+    chunks = [_render_file_diff(one).encode("utf-8") for one in entries]
+    raw = b"".join(chunks)
+    bytes_total = len(raw)
+    logger.debug("MR %s 的 diff 共 %d 個檔案、%d bytes",
+                 mr_iid, len(entries), len(raw))
+
+    # 逐檔累加，決定切點之前有幾個檔案**完整**放得下。這與下面那一刀是同一個切點：
+    # 兩邊各算一次就會有兩份規則，而漂移的症狀是報告說送出了某個檔案、模型卻沒看到它。
+    files = []
+    dropped_files = []
+    empty_files = []
+    used = 0
+    full = True
+    for entry, chunk in zip(entries, chunks):
+        path = entry.get("new_path") or entry.get("old_path") or ""
+        if full and max_bytes is not None and used + len(chunk) > max_bytes:
+            full = False
+        if not full:
+            dropped_files.append(path)
+            continue
+        used += len(chunk)
+        files.append(path)
+        if not (entry.get("diff") or ""):
+            empty_files.append(path)
+
+    truncated_note = ""
+    truncated = max_bytes is not None and bytes_total > max_bytes
+    if truncated:
+        truncated_note = ("\n（已截斷：只取前 %d bytes，原始大小 %d bytes；"
+                          "完整收進的檔案 %d / %d）\n"
+                          % (max_bytes, bytes_total, len(files), len(entries)))
+        logger.warn("MR %s 的 diff 有 %d bytes，截斷為 %d bytes，"
+                    "完整收進 %d / %d 個檔案",
+                    mr_iid, bytes_total, max_bytes, len(files), len(entries))
+        raw = raw[:max_bytes]
+
+    # 截斷可能切在多位元組字元中間，errors="replace" 讓它變成替代字元而不是例外。
+    return {
+        "text": raw.decode("utf-8", errors="replace") + truncated_note,
+        "files": files,
+        "dropped_files": dropped_files,
+        "file_count": len(entries),
+        "empty_files": empty_files,
+        "truncated": truncated,
+        "bytes_total": bytes_total,
+        "bytes_sent": len(raw),
+    }
+
+
 def get_mr_plain_diff(server_url, token, project_id, mr_iid, max_bytes=None,
                       timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """取得 merge request 的 unified diff 純文字。
@@ -532,39 +632,10 @@ def get_mr_plain_diff(server_url, token, project_id, mr_iid, max_bytes=None,
     max_bytes 限制回傳大小，None 表示不限。改了幾十個檔案的 MR，diff 輕易就是
     數百 KB 到數 MB，而它要經 stdout 進結果信封再交給 Qt。截斷時會在結尾附一行
     說明 —— 靜默截斷的話呼叫端會把半截 diff 當成完整的。
+
+    **只要文字就用這一支。** 想知道少了哪幾個檔案的，用 get_mr_diff_detail ——
+    那些事實在這裡會被丟掉。
     """
-    if not isinstance(mr_iid, (str, int)) or str(mr_iid).strip() == "":
-        raise GitLabError("merge request iid 不可為空")
-
-    base = "/projects/%s/merge_requests/%s" % (_encode_path(project_id),
-                                               _encode_path(mr_iid))
-
-    try:
-        entries = get_paged(server_url, token, base + "/diffs",
-                            timeout=timeout, verify_ssl=verify_ssl)
-    except GitLabError as exc:
-        if exc.status_code != 404:
-            raise
-        # 舊版沒有 /diffs。/changes 回的是物件，清單在 changes 欄位底下。
-        logger.debug("/diffs 不存在，改試 /changes：%s", base)
-        body = request(server_url, token, "GET", base + "/changes",
-                       timeout=timeout, verify_ssl=verify_ssl)
-        entries = (body or {}).get("changes") or []
-
-    if not isinstance(entries, list):
-        raise GitLabError("diff 端點回傳的不是清單：%s" % base)
-
-    raw = "".join(_render_file_diff(one) for one in entries).encode("utf-8")
-    logger.debug("MR %s 的 diff 共 %d 個檔案、%d bytes",
-                 mr_iid, len(entries), len(raw))
-
-    truncated_note = ""
-    if max_bytes is not None and len(raw) > max_bytes:
-        truncated_note = ("\n（已截斷：只取前 %d bytes，原始大小 %d bytes）\n"
-                          % (max_bytes, len(raw)))
-        logger.warn("MR %s 的 diff 有 %d bytes，截斷為 %d bytes",
-                    mr_iid, len(raw), max_bytes)
-        raw = raw[:max_bytes]
-
-    # 截斷可能切在多位元組字元中間，errors="replace" 讓它變成替代字元而不是例外。
-    return raw.decode("utf-8", errors="replace") + truncated_note
+    return get_mr_diff_detail(server_url, token, project_id, mr_iid,
+                              max_bytes=max_bytes, timeout=timeout,
+                              verify_ssl=verify_ssl)["text"]

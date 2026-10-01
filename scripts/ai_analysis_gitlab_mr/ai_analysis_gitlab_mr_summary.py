@@ -66,9 +66,14 @@ def _fail(debug_dir, message, detail="", code=""):
 
 
 def _fetch_diff(repo, mr_iid, debug_dir):
-    """取得這支 MR 的 unified diff。
+    """取得這支 MR 的 unified diff，連同「取得過程中知道的事實」。
 
     失敗就讓整步失敗：沒有 diff 的「程式碼分析」只能靠描述瞎猜，而它會回報成功。
+
+    取的是 detail 而不只是文字：截斷了幾個檔案、哪些檔案根本沒有內容，這些事實原本
+    只留在送給模型的那份文字尾端與一筆除錯警告裡，兩個地方讀報告的人都看不到。而
+    「這份分析少看了幾個檔案」正是他唯一想知道的事。回傳值的形狀見
+    gitlab_utils.get_mr_diff_detail。
     """
     try:
         server_url, token, verify_ssl = ai_analysis_gitlab_mr.gitlab_credentials()
@@ -78,7 +83,7 @@ def _fetch_diff(repo, mr_iid, debug_dir):
     try:
         project_id = gitlab_utils.get_repo_id(server_url, token, repo,
                                               verify_ssl=verify_ssl)
-        return gitlab_utils.get_mr_plain_diff(
+        return gitlab_utils.get_mr_diff_detail(
             server_url, token, project_id, mr_iid,
             max_bytes=ai_analysis_gitlab_mr.MAX_PROMPT_DIFF_BYTES,
             verify_ssl=verify_ssl)
@@ -214,9 +219,12 @@ def main():
     # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
     # 把一個連線問題講成腳本寫壞了。
     script_io.progress("取得程式碼差異…")
-    mr_diff = _fetch_diff(repo, mr_iid, params["debug_dir"])
+    diff_info = _fetch_diff(repo, mr_iid, params["debug_dir"])
+    mr_diff = diff_info["text"]
 
-    logger.info("素材：diff %d 字元", len(mr_diff))
+    logger.info("素材：diff %d 字元，完整送出 %d / %d 個檔案%s",
+                len(mr_diff), len(diff_info["files"]), diff_info["file_count"],
+                "（已截斷）" if diff_info["truncated"] else "")
 
     script_io.progress("送交 AI 分析…")
 
@@ -280,6 +288,20 @@ def main():
     # 種類覆寫而不是「沒有才補」：鉤子若回了一個與實際解析結果不同的種類，那份產物會
     # 讓步驟 5 挑到另一份版面，而兩步的說法互相矛盾卻都回報成功。
     body["mr_type"] = mr_type
+
+    # 涵蓋範圍也由入口蓋章，而且理由比種類更強：這份數字是用來檢查**鉤子回報了多少**的。
+    # 讓被檢查的一方提供它，這個機制就等於不存在 —— 一支宣稱自己涵蓋全部的鉤子不會有
+    # 任何一步發現它說謊。入口同時握有差異與鉤子的回傳，兩樣都在手上。
+    body["coverage"] = ai_analysis_gitlab_mr.diff_coverage(
+        mr_diff=body.get("mrDiff"),
+        files_sent=diff_info["files"],
+        files_dropped=diff_info["dropped_files"],
+        files_empty=diff_info["empty_files"],
+        file_count=diff_info["file_count"],
+        truncated=diff_info["truncated"],
+        bytes_total=diff_info["bytes_total"],
+        bytes_sent=diff_info["bytes_sent"])
+
     payload = ai_analysis_gitlab_mr.wrap_analysis(body)
 
     try:
@@ -295,9 +317,17 @@ def main():
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], payload)
     ai_analysis_gitlab_mr.write_debug_log(
         params["debug_dir"],
-        "summary(%s) repo=%s mr=%s type=%r jira_state=%s files=%d"
+        "summary(%s) repo=%s mr=%s type=%r jira_state=%s files=%d "
+        "coverage=%d/%d/%d dropped=%d empty=%d missing=%d unknown=%d"
         % (owner, repo, mr_iid, mr_type, body.get("jira_state"),
-           len(body.get("mrDiff") or {})))
+           len(body.get("mrDiff") or {}),
+           body["coverage"]["files_reported"],
+           body["coverage"]["files_sent"],
+           body["coverage"]["files_changed"],
+           body["coverage"]["dropped"]["count"],
+           body["coverage"]["empty"]["count"],
+           body["coverage"]["missing"]["count"],
+           body["coverage"]["unknown"]["count"]))
 
     script_io.reply(
         message="AI 分析完成（device：%s%s）"

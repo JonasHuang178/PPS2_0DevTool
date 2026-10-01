@@ -406,7 +406,12 @@ def _stub_analysis(inputs, key, state):
 
 
 def analyze(inputs):
-    """產生這次分析的內容。"""
+    """產生這次分析的內容。
+
+    只回內容。版本、種類與涵蓋範圍（這次分析涵蓋了多少個檔案）都由入口腳本蓋章 ——
+    涵蓋範圍尤其不在這裡填：報告會拿它對照 mrDiff，把「差異裡有、這支鉤子沒回報」的
+    檔案列出來，所以它不能由被對照的一方提供。
+    """
     key = contract.plain(inputs.get("jira_key"))
     state, key = _jira_state(inputs.get("jira_mode"), key)
 

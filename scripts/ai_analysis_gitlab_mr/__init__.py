@@ -29,6 +29,8 @@ __all__ = [
     "render_description_section",
     "render_ai_section",
     "render_code_review_section",
+    "COVERAGE_HEADING",
+    "render_coverage_section",
     "CODE_REVIEW_HEADING",
     "CODE_REVIEW_TABLE_HEADING",
     "CODE_REVIEW_SOURCE_HEADING",
@@ -60,6 +62,9 @@ __all__ = [
     "hunk_of",
     "MAX_FINDING_DIFF_BYTES",
     "MAX_PROMPT_DIFF_BYTES",
+    "MAX_COVERAGE_PATHS",
+    "diff_coverage",
+    "has_coverage_gap",
     "finding",
     "analysis_body",
     "CredentialError",
@@ -233,6 +238,15 @@ def resolve_json_input(params, key):
 # 不帶任何舊字串。真的撞到時，症狀在報告上看得見，補一個字串就好。
 DESCRIPTION_HEADING = "# Original Description"
 AI_HEADING = "# AI 分析結果"
+
+# 涵蓋範圍那一段的標題。與 AI 分析**同層**，位置緊接在它之後。
+#
+# 不放進 AI 分析那一段**之內**，是因為那一段的內容由 device 的鉤子產生 —— 而涵蓋範圍
+# 正是用來說「那支鉤子回報了多少」的。交給被檢查的一方渲染，它可以選擇不渲染。
+#
+# 它也不是切段的邊界：在 AI 分析之後，所以下一輪重新分析時會與分析一起被切掉，不會在
+# Merge Request 的描述裡越疊越多。
+COVERAGE_HEADING = "# 分析涵蓋範圍"
 
 # 程式碼審閱那一段的標題。與 AI 分析**同層** —— 它在語意上是並列的一段，不是分析
 # 的子節。由這一步寫出所有段落的標題，「報告有哪幾節、各在第幾層」就只有一個地方
@@ -453,6 +467,139 @@ def render_code_review_section(body):
     return "\n".join(parts).rstrip("\n") + "\n"
 
 
+def _int_of(value):
+    """讀成非負整數。讀不出來就是 0 —— 這一段是註解，不該為了一個壞掉的數字讓報告失敗。"""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(value, 0)
+
+
+def _bytes_note(coverage):
+    """截斷那一行後面的位元組說明。數字不全時整段不印。"""
+    sent = _int_of(coverage.get("bytes_sent"))
+    total = _int_of(coverage.get("bytes_total"))
+    if not sent or not total or total <= sent:
+        return ""
+    return "（送出 %d / 原始 %d bytes）" % (sent, total)
+
+
+def _coverage_list(title, bucket):
+    """一類缺口的路徑清單。數量以 count 為準，清單可能只有前幾筆。"""
+    count = _count_of(bucket)
+    paths = (bucket or {}).get("paths")
+    paths = [plain(one) for one in paths] if isinstance(paths, list) else []
+    paths = [one for one in paths if one]
+    if not paths:
+        return []
+
+    lines = ["**%s（%d）**" % (title, count), ""]
+    lines.extend("- `%s`" % one for one in paths)
+    rest = count - len(paths)
+    if rest > 0:
+        lines.append("")
+        # 說出還有幾筆，而不是讓清單在這裡無聲地停住 —— 否則讀的人會把列出來的
+        # 當成全部，而上面那個數字與它對不起來時只會被當成錯字。
+        lines.append("…（其餘 %d 筆未列出）" % rest)
+    lines.append("")
+    return lines
+
+
+def render_coverage_section(analysis):
+    """報告裡「分析涵蓋範圍」那一段。沒有缺口時回傳空字串。
+
+    這一段由**合併那一步**寫出，不由 device 的鉤子產生 —— 它說的正是「那支鉤子回報了
+    多少」，交給被檢查的一方渲染，它可以選擇不渲染。
+
+    四類缺口分開列，不合成一個比例：每一類的下一步完全不同（調上限、調 prompt、無能
+    為力），合成一個數字就是把「要調什麼」重新藏起來。
+
+    版面：
+
+        # 分析涵蓋範圍
+
+        這支 Merge Request 共有 90 個檔案變更，完整送進分析的有 21 個，AI 回報了其中 3 個。
+
+        - ⚠️ 69 個檔案的差異超過送出上限，沒有送進分析（送出 120000 / 原始 496320 bytes）
+        - ⚠️ 18 個檔案已送進分析，但 AI 沒有回報
+
+        <details>
+
+        **沒有送進分析（69）**
+
+        - `src/a.cpp`
+
+        </details>
+
+    路徑清單包在 <details> 裡收合：缺口有幾十筆是常態，攤開來會把報告的可讀性吃掉，而
+    讀的人多半先看數量、需要時才展開。<details> 之後必須空一行，否則 GitLab 不會把裡面
+    的內容當 markdown 解析。
+    """
+    coverage = analysis.get("coverage") if isinstance(analysis, dict) else None
+    if not has_coverage_gap(coverage):
+        return ""
+
+    parts = [COVERAGE_HEADING, ""]
+    parts.append("這支 Merge Request 共有 %d 個檔案變更，完整送進分析的有 %d 個，"
+                 "AI 回報了其中 %d 個。"
+                 % (_int_of(coverage.get("files_changed")),
+                    _int_of(coverage.get("files_sent")),
+                    _int_of(coverage.get("files_reported"))))
+    parts.append("")
+
+    dropped = _count_of(coverage.get("dropped"))
+    if dropped:
+        parts.append("- ⚠️ %d 個檔案的差異超過送出上限，沒有送進分析%s"
+                     % (dropped, _bytes_note(coverage)))
+    empty = _count_of(coverage.get("empty"))
+    if empty:
+        parts.append("- ⚠️ %d 個檔案的差異內容是空的（二進位檔、只有模式變更，"
+                     "或來源未提供）" % empty)
+    missing = _count_of(coverage.get("missing"))
+    if missing:
+        parts.append("- ⚠️ %d 個檔案已送進分析，但 AI 沒有回報" % missing)
+    unknown = _count_of(coverage.get("unknown"))
+    if unknown:
+        parts.append("- ⚠️ %d 筆回報的路徑在差異中找不到對應的檔案" % unknown)
+    parts.append("")
+
+    detail = []
+    detail.extend(_coverage_list("沒有送進分析", coverage.get("dropped")))
+    detail.extend(_coverage_list("差異內容是空的", coverage.get("empty")))
+    detail.extend(_coverage_list("AI 沒有回報", coverage.get("missing")))
+    detail.extend(_coverage_list("差異中找不到", coverage.get("unknown")))
+    if detail:
+        parts.append("<details>")
+        parts.append("")
+        parts.extend(detail)
+        parts.append("</details>")
+        parts.append("")
+
+    return "\n".join(parts).rstrip("\n") + "\n"
+
+
+def _coverage_label(analysis):
+    """出處資訊裡涵蓋範圍的那一段。沒有涵蓋範圍資訊時回空字串。
+
+    這一行永遠都在，所以放一個簡短的標示在這裡是零成本的常駐訊號 —— 沒有缺口的那
+    絕大多數報告也看得到「涵蓋 21/21」，於是「3/21」才會顯眼。
+    """
+    if not isinstance(analysis, dict):
+        return ""
+    coverage = analysis.get("coverage")
+    if not isinstance(coverage, dict) or "files_sent" not in coverage:
+        return ""
+
+    sent = _int_of(coverage.get("files_sent"))
+    reported = _int_of(coverage.get("files_reported"))
+    changed = _int_of(coverage.get("files_changed"))
+
+    label = "Coverage: %d/%d 檔案" % (reported, sent)
+    if changed != sent:
+        # 送進去的不是全部時一定要標出總數，否則 3/21 看起來像一次還算完整的分析。
+        label += "（MR 共 %d）" % changed
+    return label
+
+
 # --- GitLab 憑證與錯誤分流 --------------------------------------------------
 #
 # 本功能有兩支腳本要連 GitLab，兩邊的憑證來源與錯誤訊息必須一致。各自寫一份的話
@@ -671,19 +818,22 @@ def describe_gitlab_error(exc, repo):
 # 版本 3 相對於 2 多了三個 JIRA 欄位（jira_key / jira_state / jira_url）。
 # 版本 4 相對於 3 多了 mr_type —— 那個值決定步驟 5 用哪一份版面，所以它必須跟著產物
 # 一起走，不能只存在於當次執行的參數裡。
-ANALYSIS_SCHEMA_VERSION = 4
+# 版本 5 相對於 4 多了 coverage —— 這次分析涵蓋了多少。同樣必須跟著產物走：報告要靠它
+# 說出「這份分析少了哪些檔案」，而步驟 5 收到的只有檔案。
+ANALYSIS_SCHEMA_VERSION = 5
 
 # **讀**得懂的版本。寫出去的一律是 ANALYSIS_SCHEMA_VERSION。
 #
-# 規格要的是「依版本決定如何讀取」，而不是「只讀最新的一版」—— 版本 3 與 4 的差別只有
-# 多一個選填欄位，讀 3 的方式就是「視為沒有種類」。那不是猜測，是一條知道的讀法。
+# 規格要的是「依版本決定如何讀取」，而不是「只讀最新的一版」—— 版本 3、4 與 5 的差別都
+# 只有多一個選填欄位，讀 3 的方式就是「視為沒有種類」，讀 3、4 的方式是「視為沒有涵蓋
+# 範圍資訊」。那不是猜測，是兩條知道的讀法。
 #
 # 實際的好處很具體：開發時常常單獨拿昨天的 03_summary.json 重跑步驟 5 來看版面，
 # 而那份檔案是舊版本寫的。只認最新版會讓那個迴路在每次改版時斷一次。
 #
 # 加一個版本進來之前先問：那一版的讀法真的知道嗎？不知道就不要加 —— 猜的下場是一份
 # 看起來正常、實際上少了幾段的報告，而它會回報成功。
-ACCEPTED_SCHEMA_VERSIONS = (3, 4)
+ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5)
 
 
 # 一次分析的 JIRA 狀態。
@@ -897,8 +1047,113 @@ def finding(title, reason, diff_code=""):
     }
 
 
+# 涵蓋範圍中每一類缺口最多列出幾個路徑。
+#
+# 數量與清單**分開存放**，而不是「清單的長度就是數量」：一支改了幾千個檔案的 MR，完整
+# 清單會把產物與結果信封撐大，而那份信封要經 stdout 回到 Qt。先截清單再拿長度當數量的
+# 話，報告會說「3 個檔案未回報」而實際上是 3000 個 —— 那比沉默更糟。
+MAX_COVERAGE_PATHS = 50
+
+
+def _coverage_bucket(paths):
+    """一類缺口：數量精確，路徑清單截到 MAX_COVERAGE_PATHS。"""
+    clean = [plain(one) for one in paths]
+    clean = [one for one in clean if one]
+    return {"count": len(clean), "paths": clean[:MAX_COVERAGE_PATHS]}
+
+
+def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
+                  files_empty=(), file_count=None, truncated=False,
+                  bytes_total=0, bytes_sent=0):
+    """算出這次分析涵蓋了多少，以及缺口分別落在哪一類。
+
+    **由入口腳本呼叫，不給鉤子用。** 這份數字是用來檢查鉤子回報了多少的 —— 讓被檢查的
+    一方提供它，這個機制就等於不存在：一支宣稱自己涵蓋全部的鉤子不會有任何一步發現它
+    說謊。入口腳本同時握有差異（呼叫鉤子之前就取得了）與鉤子的回傳，兩樣都在手上。
+
+    缺口分四類，彼此獨立計數 —— 因為每一類的下一步完全不同：
+
+        dropped  差異超過送出上限，整個檔案沒有送進去     → 要調上限或分批
+        empty    差異內容是空的（二進位、僅模式變更、來源沒給）→ 無能為力，但要說出來
+        missing  完整送進去了，但回報的發現裡沒有它        → 要調 prompt
+        unknown  回報的路徑在差異中找不到對應的檔案        → 模型給了不存在的路徑
+
+    合成單一個比例會把「要調什麼」重新藏起來，而那正是這份資料要解決的問題。
+
+    empty 的那些**不算進 missing**：一個沒有內容的檔案，模型無從對它說任何話，把它算成
+    「AI 沒回報」是記在錯的一方頭上。
+
+    路徑比對沿用 hunk_of 那一套（見 _same_path）—— 回報的路徑可能帶 a/、b/ 前綴，也可能
+    只有檔名。另寫一份的結果是兩份規則慢慢漂移，而症狀是涵蓋範圍憑空報出缺口。
+    """
+    sent = [plain(one) for one in files_sent]
+    sent = [one for one in sent if one]
+    empty = set(plain(one) for one in files_empty)
+    # 形狀不對的 mrDiff 在這裡當成空的，不在這裡報錯 —— 型別由 validate_analysis()
+    # 檢查，那裡的訊息指得出是哪一個 device 寫壞的。
+    reported = [plain(one) for one in
+                (mr_diff if isinstance(mr_diff, dict) else {})]
+    reported = [one for one in reported if one]
+
+    # 檔案總數沒給就等於「沒有被截掉的」。命令列直接餵一份差異時會是這種情況。
+    total = len(sent) + len(list(files_dropped)) if file_count is None \
+        else int(file_count)
+
+    matched = set()
+    unknown = []
+    for key in reported:
+        hit = [one for one in sent if _same_path(key, one)]
+        if hit:
+            matched.update(hit)
+        else:
+            unknown.append(key)
+
+    missing = [one for one in sent
+               if one not in matched and one not in empty]
+
+    return {
+        "files_changed": total,
+        "files_sent": len(sent),
+        "files_reported": len(reported),
+        "truncated": bool(truncated),
+        "bytes_total": int(bytes_total or 0),
+        "bytes_sent": int(bytes_sent or 0),
+        "dropped": _coverage_bucket(files_dropped),
+        "empty": _coverage_bucket([one for one in sent if one in empty]),
+        "missing": _coverage_bucket(missing),
+        "unknown": _coverage_bucket(unknown),
+    }
+
+
+_COVERAGE_BUCKETS = ("dropped", "empty", "missing", "unknown")
+
+
+def has_coverage_gap(coverage):
+    """涵蓋範圍裡有沒有任何一類缺口。四類全空時報告不印那一段。
+
+    每一份報告都加一段「涵蓋 21/21，沒有缺口」是噪音 —— 絕大多數的 Merge Request 不會
+    有缺口。常駐的訊號留在出處資訊那一行就夠了。
+    """
+    if not isinstance(coverage, dict):
+        return False
+    for name in _COVERAGE_BUCKETS:
+        bucket = coverage.get(name)
+        if isinstance(bucket, dict) and _count_of(bucket) > 0:
+            return True
+    return False
+
+
+def _count_of(bucket):
+    """一類缺口的數量。count 不是整數時退回清單長度 —— 讀得出多少算多少。"""
+    value = (bucket or {}).get("count")
+    if isinstance(value, bool) or not isinstance(value, int):
+        paths = (bucket or {}).get("paths")
+        return len(paths) if isinstance(paths, list) else 0
+    return max(value, 0)
+
+
 def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
-                  jira_url="", mr_diff=None, mr_type=""):
+                  jira_url="", mr_diff=None, mr_type="", coverage=None):
     """組出 analysis 的**內容**。
 
     刻意不含 schema_version —— 版本由入口腳本蓋章。讓鉤子自己填，遲早有人複製範本時
@@ -916,6 +1171,9 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
 
     mr_type 由**入口腳本蓋章**，鉤子不必填（填了也會被覆蓋）—— 與 schema_version 同一個
     理由。它必須進到產物裡，因為步驟 5 要靠它決定用哪一份版面，而步驟 5 拿到的只有檔案。
+
+    coverage 同樣由**入口腳本蓋章**（見 diff_coverage），而且理由更強：它是用來檢查這份
+    mrDiff 回報了多少的。鉤子填了會被覆蓋。
     """
     return {
         "model": plain(model),
@@ -925,6 +1183,7 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
         "jira_url": plain(jira_url),
         "overview": plain(overview),
         "mrDiff": dict(mr_diff or {}),
+        "coverage": dict(coverage or {}),
     }
 
 
@@ -999,6 +1258,17 @@ def validate_analysis(payload, source=""):
             "%sAI 分析結果的 mr_type 不是字串：%r" % (where, mr_type),
             "讀到的型別是 %s。沒有種類時請填空字串。" % type(mr_type).__name__,
             "ANALYSIS_MR_TYPE_BAD")
+
+    # 涵蓋範圍是選填的：版本 3、4 的產物沒有這個欄位，讀法是「視為沒有涵蓋範圍資訊」。
+    # 但給了就必須是物件 —— 一個被填成數字或字串的 coverage 會讓渲染那一步拿它去取鍵，
+    # 而那裡只會得到一段指不出原因的 AttributeError。
+    coverage = analysis.get("coverage")
+    if coverage is not None and not isinstance(coverage, dict):
+        raise AnalysisFormatError(
+            "%sAI 分析結果的 coverage 不是物件" % where,
+            "coverage 的型別是 %s。這個欄位由入口腳本蓋章（見 diff_coverage），"
+            "鉤子不必填。" % type(coverage).__name__,
+            "ANALYSIS_COVERAGE_BAD_TYPE")
 
     # 型別檢查要在「沒給就當空的」之前 —— 反過來寫的話，一個打錯成 [] 的
     # mrDiff 會因為空 list 是 falsy 而變成 {}，報告少了整批檔案卻回報成功。
@@ -1412,7 +1682,7 @@ def _escape_link_text(text):
 # 這支腳本的名稱與版本。**改了報告的產出方式就把版本往上加** —— 那是這一行存在的
 # 唯一理由，不加的話舊報告與新報告在外觀上分不出來。
 SCRIPT_NAME = "MR Summary Script"
-SCRIPT_VERSION = "1.0"
+SCRIPT_VERSION = "1.1"
 
 
 def _link(text, url):
@@ -1494,7 +1764,7 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
 
         ---
 
-        Script: v1.0 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid)
+        Script: v1.1 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid) | Coverage: 3/21 檔案（MR 共 90）
         Gitlab Pipeline #1000 | Commit e456d23
 
     每個值前面都有名字。沒有標籤的話（例如 `(Open AI / ssd v1.2)`）兩個版本號並列時
@@ -1530,6 +1800,10 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     jira = _jira_label(analysis)
     if jira:
         parts.append(jira)
+
+    coverage = _coverage_label(analysis)
+    if coverage:
+        parts.append(coverage)
 
     lines = [" | ".join(parts)]
     origin = _ci_origin() or _tool_origin()

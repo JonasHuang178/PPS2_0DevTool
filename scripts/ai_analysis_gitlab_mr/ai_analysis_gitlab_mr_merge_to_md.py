@@ -250,6 +250,9 @@ def main():
     if not (description or summary or code_review_section):
         # 三段全空代表呼叫端什麼都沒給，或前面幾步全部沒有產出。產一份只有標題的
         # 報告等於把問題往下游丟。
+        #
+        # 涵蓋範圍**不計入**這個判斷：它是對其他內容的註解。只有它而沒有任何內容時，
+        # 產出的是一份只講自己涵蓋多少、而什麼都沒涵蓋的報告。
         script_io.reply_fail(
             "沒有任何可合併的內容",
             detail="ori_md_file_path、mr_summary_json_file_path 與 "
@@ -278,6 +281,17 @@ def main():
     if summary.strip():
         sections.append(
             ai_analysis_gitlab_mr.render_ai_section(summary).strip())
+
+    # 涵蓋範圍緊接在 AI 分析之後、自成一段。沒有缺口時 render 回空字串，整段不出現 ——
+    # 絕大多數的 MR 不會有缺口，每份報告都加一段「涵蓋 21/21」只是噪音；常駐的訊號在
+    # 末尾的出處那一行。
+    #
+    # 不交給 device 的鉤子渲染：這一段說的正是「那支鉤子回報了多少」，交給被檢查的一方
+    # 它可以選擇不渲染。放在 AI 分析之後則讓它跟著既有的切段規則 —— 下一輪重新分析時，
+    # 它與分析一起被切掉，不會在 MR 的描述裡越疊越多。
+    coverage_section = ai_analysis_gitlab_mr.render_coverage_section(analysis)
+    if coverage_section.strip():
+        sections.append(coverage_section.strip())
 
     if code_review_section.strip():
         # 段落標題與總表的小標題都由這一步寫出，步驟 4 只負責內容 —— 讓它自帶標題的

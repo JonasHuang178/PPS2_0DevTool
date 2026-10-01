@@ -66,6 +66,10 @@ def analyze(inputs):
     schema_version —— 版本由入口腳本蓋章。回傳之後入口會立刻驗證，不符合就在這一步
     失敗（而不是兩步之後的渲染），訊息會指名是哪個 device 的哪個檔案。
 
+    `mr_type` 與 `coverage`（這次分析涵蓋了多少）同樣由入口蓋章，這裡填了會被覆蓋。
+    coverage 尤其不要填：它正是用來說明「這支鉤子回報了多少個檔案」的，報告會把
+    「差異裡有、你沒回報」的那些列出來。想讓那個數字好看，唯一的辦法是真的多回報。
+
     JIRA 的有效性由**你**判定：
 
         通過檢查    jira_state=contract.JIRA_STATE_OK，jira_key 放那個 key

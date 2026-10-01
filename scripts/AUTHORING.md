@@ -409,6 +409,9 @@ script_utils/
                                 .code 形如 "GITLAB_401"）
     另有 request / get_paged / get_project / get_repo_id / list_branches /
          get_file_content / get_mr_info / get_mr_plain_diff
+    get_mr_diff_detail(...) 與 get_mr_plain_diff 取的是同一份差異，但另外回報
+        完整收進的檔案、檔案總數、內容為空的檔案與截斷與否 —— 要知道「少了幾個
+        檔案」的用這一支
   jira_utils.py     Jira REST（Server/DC）
 ```
 
