@@ -363,6 +363,16 @@ def _lookup_jira(inputs, key, state):
     return fetch(key)
 
 
+def _progress(inputs):
+    """取出回報進度的能力。沒有就回一個什麼都不做的函式。
+
+    命令列單獨呼叫 analyze() 時本來就沒有對話框，所以「沒有」是正常情況，不是錯誤。
+    回一個 no-op 讓呼叫處可以無條件呼叫，不必每次都先判斷。
+    """
+    report = inputs.get("progress")
+    return report if callable(report) else (lambda text: None)
+
+
 def _on_retry(progress):
     """給 ai_utils 的重試回呼，把狀況轉成對話框上的一行字。
 
@@ -458,6 +468,13 @@ def analyze(inputs):
         debug_write("ai_reply_%d.txt" % attempt[0], text)
         return parse_reply(ai_utils.as_json(text),
                            contract.plain(inputs.get("mr_diff")))
+
+    # 送出**之前**報一行，而且是由這裡報 —— 只有這裡知道什麼時候真的送出去。
+    #
+    # 這一行不能省，也不能由入口腳本代報：等 AI 回覆是整條流程最久的一段（分鐘級），
+    # 沒有這一行的話，畫面上留著的會是上一段「取得 JIRA …」—— 一件已經做完的事。盯著
+    # 它看兩分鐘，合理的結論是程式當掉了。
+    _progress(inputs)(u"送交 AI 分析，等待回覆…")
 
     summary, mr_diff = ai_utils.ask(
         api_url, prompt,

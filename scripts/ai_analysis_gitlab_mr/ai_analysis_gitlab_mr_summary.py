@@ -226,7 +226,15 @@ def main():
                 len(mr_diff), len(diff_info["files"]), diff_info["file_count"],
                 "（已截斷）" if diff_info["truncated"] else "")
 
-    script_io.progress("送交 AI 分析…")
+    # 這一行描述的是**當下**：素材備好了，正要把它交給鉤子。
+    #
+    # 它曾經寫成「送交 AI 分析…」，而那是錯的 —— 報這一行的時候 prompt 還不存在，鉤子
+    # 接下來可能先去取 JIRA、也可能根本不呼叫 AI（端點沒設定時走替代內容）。真正送出去
+    # 的那一行由鉤子自己報，因為只有它知道什麼時候送出去。
+    #
+    # 但這一行不能省：鉤子是使用者寫的，不保證報任何進度。什麼都不報的話，一支沉默的
+    # 鉤子會讓「取得程式碼差異…」留在畫面上直到整步結束。
+    script_io.progress("準備 AI 分析…")
 
     inputs = {
         "description": description,
