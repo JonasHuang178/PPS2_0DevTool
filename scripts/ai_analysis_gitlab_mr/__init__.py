@@ -260,7 +260,7 @@ CODE_REVIEW_TABLE_HEADING = "## 風險評估表"
 # **可由 device 覆寫**（見 device.code_review_source_heading()）。會變的是別人工具
 # 的產出格式，不是本工具的處理方式 —— 所以變的只有這個字串，擷取的演算法與報告的
 # 版面都只有一份。
-CODE_REVIEW_SOURCE_HEADING = "## 風險評估表總表"
+CODE_REVIEW_SOURCE_HEADING = "## 風險評估總表"
 
 
 def _heading_pattern(*headings):
@@ -1144,7 +1144,7 @@ _CODE_REVIEW_TRUNCATED = "\n\n… （內容已截斷）"
 
 # 任何以 # 開頭、後面不是 # 的行都算一個 ATX 標題，因此都是擷取範圍的終點。
 #
-# 比 "#{1,6}\s" 寬：_heading_pattern() 容許 "##風險評估表總表" 這種沒有空格的寫法，
+# 比 "#{1,6}\s" 寬：_heading_pattern() 容許 "##風險評估總表" 這種沒有空格的寫法，
 # 所以範圍的終點也必須認得同樣的寫法，否則下一節的標題會被當成內容而讓範圍過長。
 _ATX_RE = re.compile(r"^#{1,6}(?!#)")
 

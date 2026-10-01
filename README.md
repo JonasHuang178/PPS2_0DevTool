@@ -495,7 +495,7 @@ PPS 2.0 DevTool v2.0.0
 
 | 常數 | 用途 | device 可覆寫 |
 |---|---|---|
-| `CODE_REVIEW_SOURCE_HEADING` | 在**附件那份文件**裡找總表那一節（預設 `## 風險評估表總表`） | ✅ |
+| `CODE_REVIEW_SOURCE_HEADING` | 在**附件那份文件**裡找總表那一節（預設 `## 風險評估總表`） | ✅ |
 | `CODE_REVIEW_HEADING` | 寫進**報告**的段落標題 | ❌ |
 | `CODE_REVIEW_TABLE_HEADING` | 寫進**報告**的總表小標題 | ❌ |
 
