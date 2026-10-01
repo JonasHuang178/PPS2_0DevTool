@@ -24,6 +24,8 @@
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QStringList>
+#include <QApplication>
+#include <QPainter>
 #include <QStyle>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -116,7 +118,8 @@ const int kWebUrlRole = Qt::UserRole + 2;
 const int kAuthorNameRole = Qt::UserRole + 1;
 
 // 標題欄的連結色。與選取時的前景色（#042C53）刻意不同，否則選中那一列就
-// 看不出標題是可點的。
+// 看不出標題是可點的 —— 而要讓它在選取時真的留著，光靠 ForegroundRole 不夠，
+// 見 LinkColumnDelegate。
 const char *const kLinkColor = "#0B57D0";
 
 const char *const kNotFetchedText   = "按下重新整理以取得 Merge Requests";
@@ -194,6 +197,72 @@ void insertArtifactPath(QJsonObject &params,
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// LinkColumnDelegate
+// ---------------------------------------------------------------------------
+
+LinkColumnDelegate::LinkColumnDelegate(QObject *parent)
+    : QStyledItemDelegate(parent)
+{
+}
+
+void LinkColumnDelegate::initStyleOption(QStyleOptionViewItem *option,
+                                         const QModelIndex &index) const
+{
+    QStyledItemDelegate::initStyleOption(option, index);
+
+    // ForegroundRole 已經被基底類別套進 QPalette::Text，但選取時畫的是
+    // HighlightedText —— 把同一個顏色也放進去，paint() 才取得到它。
+    //
+    // 讀的是**項目自己的** ForegroundRole，而不是寫死 kLinkColor：這個委派因此
+    // 不必知道那個顏色是什麼，換色只要改填資料的那一邊。
+    const QVariant colour = index.data(Qt::ForegroundRole);
+    if (colour.canConvert<QColor>())
+        option->palette.setColor(QPalette::HighlightedText,
+                                 colour.value<QColor>());
+}
+
+void LinkColumnDelegate::paint(QPainter *painter,
+                               const QStyleOptionViewItem &option,
+                               const QModelIndex &index) const
+{
+    QStyleOptionViewItem opt = option;
+    initStyleOption(&opt, index);
+
+    QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
+
+    // 文字區域要在清掉文字**之前**算，免得日後某個樣式把它算得與內容有關。
+    const QRect textRect =
+            style->subElementRect(QStyle::SE_ItemViewItemText, &opt, opt.widget);
+    const QString text = opt.text;
+
+    // 讓樣式畫背景、選取高亮與焦點框，但**不要讓它畫文字** —— 外殼的樣式表規則
+    // 會在這一步把選取時的文字色寫死，而那正是要覆寫的東西。文字自己畫是唯一能
+    // 蓋過它的方式（試過只改 palette，沒有用）。
+    opt.text.clear();
+    style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
+
+    if (text.isEmpty())
+        return;
+
+    const bool selected = (opt.state & QStyle::State_Selected) != 0;
+    const QColor colour = opt.palette.color(opt.state & QStyle::State_Enabled
+                                            ? QPalette::Normal : QPalette::Disabled,
+                                            selected ? QPalette::HighlightedText
+                                                     : QPalette::Text);
+
+    // 截斷與對齊沿用 option 上的值，不自己訂 —— 那兩個由檢視與項目決定，寫死在這裡
+    // 就會與其餘四欄不一致，而症狀是「只有標題欄的省略號出現得比較早」。
+    painter->save();
+    painter->setFont(opt.font);
+    painter->setPen(colour);
+    painter->drawText(textRect,
+                      int(opt.displayAlignment),
+                      opt.fontMetrics.elidedText(text, opt.textElideMode,
+                                                 textRect.width()));
+    painter->restore();
+}
 
 // ---------------------------------------------------------------------------
 // MrFilterProxyModel
@@ -316,6 +385,10 @@ void AIAnalysisGitLabMR::attachWidgets(const AIAnalysisGitLabMRWidgets &widgets)
     // 標題過長時截斷；完整標題由整列的 tooltip 提供（填資料時設 ToolTipRole）。
     m_widgets.mrView->setTextElideMode(Qt::ElideRight);
     m_widgets.mrView->setWordWrap(false);
+
+    // 標題欄專用的委派，只為了一件事：選取那一列時連結色不要消失（見該類別）。
+    m_widgets.mrView->setItemDelegateForColumn(ColumnTitle,
+                                               new LinkColumnDelegate(this));
 
     // 指標移入標題欄時改變游標形狀。
     //

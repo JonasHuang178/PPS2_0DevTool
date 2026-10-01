@@ -12,6 +12,7 @@
 #include <QSharedPointer>
 #include <QSortFilterProxyModel>
 #include <QString>
+#include <QStyledItemDelegate>
 #include <QStringList>
 #include <QTemporaryDir>
 
@@ -107,6 +108,32 @@ struct AIAnalysisGitLabMRWidgets
 // 判定拆成兩支公開函式，是為了讓統計能用**同一份規則**走一遍來源模型：
 // filterAcceptsRow() 由 Qt 依需要呼叫，次數與順序都不保證，在它裡面累加
 // 計數器會得到一個看起來合理、實際上不對的數字。
+// 標題欄的委派：讓連結色在**選取時**也留著。
+//
+// 項目的 ForegroundRole 只覆寫 QPalette::Text，而選取狀態下文字畫的是
+// QPalette::HighlightedText —— 沒有這一手，選中的那一列標題會跟其餘欄位一樣是外殼
+// 選取樣式的深藍，只剩底線還在，看不出它是可點的。這一點以實際像素量過，不是推論。
+//
+// 只掛在標題欄：其餘四欄本來就該跟著外殼的選取樣式走。
+//
+// **文字必須自己畫。** 只把顏色放進 option 的 palette 是不夠的 —— 外殼的選取樣式是
+// 一條樣式表規則，而 QStyleSheetStyle 在畫項目時會用規則裡的 color 覆寫 palette，
+// 覆寫發生在委派交出 option 之後。這一點是量過像素才確定的，不是推論。
+class LinkColumnDelegate : public QStyledItemDelegate
+{
+    Q_OBJECT
+
+public:
+    explicit LinkColumnDelegate(QObject *parent = Q_NULLPTR);
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const Q_DECL_OVERRIDE;
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option,
+                         const QModelIndex &index) const Q_DECL_OVERRIDE;
+};
+
 class MrFilterProxyModel : public QSortFilterProxyModel
 {
     Q_OBJECT
