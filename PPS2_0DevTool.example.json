@@ -13,7 +13,8 @@
           "Name": "Open AI",
           "Api_URL": "https://api.openai.com/v1/chat/completions",
           "Api_Key": "",
-          "Model": "gpt-4o"
+          "Model": "gpt-4o",
+          "Timeout_Seconds": "120"
         }
       ]
     },

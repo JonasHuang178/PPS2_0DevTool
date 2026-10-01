@@ -257,6 +257,7 @@ private:
         QString aiApiUrl;
         QString aiApiKey;
         QString aiModel;
+        QString aiTimeout;
         QString jiraMode;        // none / manual / auto
         QString jiraKeyManual;
         QMap<QString, QString> envVars;

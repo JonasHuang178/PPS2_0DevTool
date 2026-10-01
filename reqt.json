@@ -1,0 +1,1 @@
+{"action": "ai_summary", "params": {"repo": "g/p", "mr_iid": "7", "description": "d", "jira_mode": "none", "ai_api_url": "http://ai", "ai_api_key": "k", "ai_model": "m", "ai_mode_name": "Open AI", "out_path": "03_t.json", "ai_timeout": "abc"}}

@@ -185,6 +185,21 @@ QString joinKeywords(const QJsonArray &items)
     return out.join(QString(", "));
 }
 
+// 設定檔裡的數值，數字與字串兩種寫法都收。
+//
+// 這個設定檔的慣例是用字串裝值（`"Debug_Mode": "false"`），但數字本來就會被寫成數字，
+// 兩種都有人寫。只認其中一種的結果是「我明明填了，它當作沒填」—— 而那在畫面上看不出來。
+//
+// 原樣轉成字串交給腳本，由腳本去驗與正規化：驗一次就好，而腳本那一側是命令列與 CI
+// 也會經過的路徑。
+QString configNumber(const QJsonObject &object, const QString &key)
+{
+    const QJsonValue value = object.value(key);
+    if (value.isDouble())
+        return QString::number(value.toDouble());
+    return value.toString().trimmed();
+}
+
 void insertArtifactPath(QJsonObject &params,
                         const QString &key,
                         const QDir &workDir,
@@ -1236,6 +1251,10 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
     context.aiApiKey   = mode.value(QString("Api_Key")).toString();
     context.aiModel    = mode.value(QString("Model")).toString();
 
+    // 逾時沒設定時留空字串，腳本據此採用自己的預設 —— Qt 不複製一份預設值，
+    // 否則同一個數字會有兩個來源，而它們可以不一致。
+    context.aiTimeout  = configNumber(mode, QString("Timeout_Seconds"));
+
     context.jiraMode      = jiraMode();
     context.jiraKeyManual = m_widgets.jiraKeyEdit->text().trimmed();
     context.envVars       = serviceEnvVars();
@@ -1379,6 +1398,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         params.insert(QString("ai_api_url"),   context.aiApiUrl);
         params.insert(QString("ai_api_key"),   context.aiApiKey);
         params.insert(QString("ai_model"),     context.aiModel);
+        params.insert(QString("ai_timeout"),   context.aiTimeout);
         break;
 
     case 3:

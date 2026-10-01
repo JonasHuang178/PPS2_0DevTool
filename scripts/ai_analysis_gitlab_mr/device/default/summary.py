@@ -479,6 +479,9 @@ def analyze(inputs):
     summary, mr_diff = ai_utils.ask(
         api_url, prompt,
         api_key=api_key,
+        # 逾時由設定檔決定（見 contract.ai_timeout）。服務忙的時候，使用者要的是
+        # 早點拿到「這次不行」，而不是對著一個固定尺寸的對話框等兩分鐘。
+        timeout=contract.ai_timeout(inputs),
         verify_ssl=contract.ai_verify_ssl(),
         parse=parse,
         reask=1,

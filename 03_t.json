@@ -1,0 +1,44 @@
+{
+  "schema_version": 5,
+  "analysis": {
+    "model": "m",
+    "mr_type": "",
+    "jira_key": "",
+    "jira_state": "none",
+    "jira_url": "",
+    "overview": "總覽",
+    "mrDiff": {
+      "a.cpp": [
+        {
+          "title": "t",
+          "reason": "r",
+          "diffCode": ""
+        }
+      ]
+    },
+    "coverage": {
+      "files_changed": 1,
+      "files_sent": 1,
+      "files_reported": 1,
+      "truncated": false,
+      "bytes_total": 40,
+      "bytes_sent": 40,
+      "dropped": {
+        "count": 0,
+        "paths": []
+      },
+      "empty": {
+        "count": 0,
+        "paths": []
+      },
+      "missing": {
+        "count": 0,
+        "paths": []
+      },
+      "unknown": {
+        "count": 0,
+        "paths": []
+      }
+    }
+  }
+}

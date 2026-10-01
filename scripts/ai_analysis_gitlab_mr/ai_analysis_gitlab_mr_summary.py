@@ -182,6 +182,8 @@ def main():
             script_io.arg("ai_api_url", default="", help="AI 端點"),
             script_io.arg("ai_api_key", default="", help="AI 金鑰"),
             script_io.arg("ai_model", default="", help="AI 模型名稱"),
+            script_io.arg("ai_timeout", default="",
+                          help="問 AI 的逾時秒數；空字串代表用預設值"),
             script_io.arg("debug_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
@@ -215,6 +217,13 @@ def main():
                 params["ai_mode_name"] or "(未指定)",
                 params["ai_model"] or "(未指定)",
                 params["jira_key"] or "(無)")
+    # 逾時值在**取 diff 之前**就驗。打錯的話不該讓使用者先等完一趟 GitLab、再看到一個
+    # 本來第一秒就能說的設定錯誤。
+    try:
+        ai_seconds = ai_analysis_gitlab_mr.ai_timeout(params)
+    except ai_analysis_gitlab_mr.CredentialError as exc:
+        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
+
     # 素材在呼叫鉤子**之前**備好。連線失敗要在這裡爆，而不是從使用者寫的鉤子裡
     # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
     # 把一個連線問題講成腳本寫壞了。
@@ -250,6 +259,9 @@ def main():
         "ai_api_url": params["ai_api_url"],
         "ai_api_key": params["ai_api_key"],
         "ai_model": params["ai_model"],
+
+        # 已經正規化成正數，鉤子再呼叫一次 contract.ai_timeout() 也只是原樣拿回去。
+        "ai_timeout": ai_seconds,
         "repo": repo,
         "mr_iid": mr_iid,
         "device": owner,

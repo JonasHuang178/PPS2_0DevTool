@@ -73,6 +73,8 @@ __all__ = [
     "jira_credentials",
     "code_review_keyword",
     "ai_credentials",
+    "ai_timeout",
+    "DEFAULT_AI_TIMEOUT",
     "ai_verify_ssl",
     "describe_gitlab_error",
     "DEBUG_LOG_NAME",
@@ -858,6 +860,55 @@ def ai_credentials(inputs):
             "AI_API_URL_MISSING")
 
     return api_url, api_key, model
+
+
+# 問 AI 的逾時秒數，設定檔沒指定時用這一個。
+#
+# 與 ai_utils.DEFAULT_TIMEOUT 目前同值，但**各自宣告**：那一個是「任何人用 ai_utils
+# 問 AI 的預設」，這一個是「這個功能的預設」。綁成同一個的話，之後想單獨調其中一個
+# 就得先把它們拆開。
+DEFAULT_AI_TIMEOUT = 120
+
+
+def ai_timeout(inputs):
+    """自鉤子的 inputs（或入口的 params）取出問 AI 的逾時秒數。
+
+    **這是 device 作者的公開 API。** 把它交給 ai_utils.ask(timeout=...)。
+
+    沒給就回 DEFAULT_AI_TIMEOUT。給了但不是正數就丟 CredentialError。
+
+    **不靜默退回預設**是刻意的：使用者會去設定這個值，多半正是因為服務很忙、他不想
+    再等那麼久。一個打錯的值若安靜地退回 120 秒，症狀是「我明明改了，還是等一樣久」
+    —— 而那個症狀指不出任何原因。寧可在這一步的一開始就失敗，訊息指名是哪一個鍵。
+
+    數字與純數字字串都收（設定檔裡 120 與 "120" 都有人寫）。布林值明確擋掉 ——
+    Python 的 True 是 1，不擋的話一個寫成 true 的值會變成「一秒逾時」。
+    """
+    value = inputs.get("ai_timeout")
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return DEFAULT_AI_TIMEOUT
+
+    where = ("設定檔 Service.AI_Mode_List 裡所選模式的 Timeout_Seconds "
+             "應該是一個正整數（秒）。")
+
+    if isinstance(value, bool):
+        raise CredentialError(
+            "AI 逾時秒數不是數字：%r" % value, where, "AI_TIMEOUT_INVALID")
+
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise CredentialError(
+            "AI 逾時秒數不是數字：%r" % value, where, "AI_TIMEOUT_INVALID")
+
+    # 比較寫成 not (> 0) 而不是 <= 0，是為了把 NaN 一起擋掉（NaN 的所有比較都是 False）。
+    if not (seconds > 0):
+        raise CredentialError(
+            "AI 逾時秒數必須大於 0，讀到的是 %r" % value,
+            where, "AI_TIMEOUT_INVALID")
+
+    return int(seconds) if seconds == int(seconds) else seconds
 
 
 def ai_verify_ssl():
