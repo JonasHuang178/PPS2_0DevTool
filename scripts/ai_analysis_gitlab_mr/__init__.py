@@ -31,6 +31,7 @@ __all__ = [
     "render_code_review_section",
     "COVERAGE_HEADING",
     "render_coverage_section",
+    "as_list",
     "CODE_REVIEW_HEADING",
     "CODE_REVIEW_TABLE_HEADING",
     "CODE_REVIEW_SOURCE_HEADING",
@@ -413,6 +414,118 @@ def render_description_section(original):
 def render_ai_section(summary):
     """步驟 5 接在原始描述後面的那一段。"""
     return "%s\n\n%s\n" % (AI_HEADING, summary.strip())
+
+
+# 總覽那一段的斷行 ---------------------------------------------------------
+#
+# 模型回來的總覽是一句接一句的**一整段**（prompt 要的就是「三到五句」）。那一段在結果
+# 視窗會依寬度折成一片文字牆，貼到討論串則是一個段落 —— 兩邊都難以掃讀。
+#
+# 斷行放在渲染這一側，**不改產物裡的原文**：產物存的是來源說了什麼，版面由它推導。改掉
+# 原文之後，想換一種版面就只能重新呼叫一次 AI；留在渲染端則連既有的產物重跑一次就能
+# 受益。
+
+# 句末標點。**只認全形。**
+#
+# 半形那三個幾乎都是誤切：`.` 出現在 v1.0 / 0.5 / e.g.，`!` 出現在 !7 這種 Merge Request
+# 編號，`?` 出現在查詢字串 ?foo=bar。全形句號不會出現在數字或識別碼裡，所以這條規則的
+# 誤切機會接近零 —— 整個方案能成立就是靠這一點。
+_SENTENCE_END = u"。！？"
+
+# 句末標點，連同後面緊跟的收尾符號。
+#
+# 收尾符號要留在**前**一段：`他說「要改」。`、`（見下）。` 把 `」`、`）` 留給下一段的話，
+# 下一行會以一個孤立的右括號開頭。
+_SENTENCE_RE = re.compile(u"[%s]+[」』”’）)〕】》〉]*" % _SENTENCE_END)
+
+# 行內的有序編號。四種寫法都收：`1.` `1、` `1)` `(1)`。
+#
+# 三道守衛，少一道就會切壞正常的句子：
+#
+#   前面必須是開頭、空白或句末標點   `v1.` 的 1 前面是 v，排除；而 `1.調高。2.改逾時。`
+#                                    的 2 前面是 `。`，要收 —— 模型不加空白是常態
+#   後面不可緊跟數字                 `1.0` 的 1. 後面是 0，排除（版本號最可能的誤判來源）
+#   必須由 1 起算、連續遞增、至少兩個  見 _ordered_points
+_ORDER_RE = re.compile(u"(^|[\\s%s；;])\\(?(\\d{1,2})[.、)]\\s*(?![0-9])" % _SENTENCE_END)
+
+
+def _ordered_points(text):
+    """文字自帶的行內有序編號。切得出來回清單，否則回 None。
+
+    **必須由 1 起算、連續遞增、至少兩個。** 這是整條規則最重要的守衛：文字裡偶然出現的
+    數字加標點不會剛好構成 1,2,3 的遞增序列。只認單獨一個 `1.` 的話，「v1. 0 之後」這類
+    寫法就會被切成兩段。
+    """
+    marks = []
+    for match in _ORDER_RE.finditer(text):
+        number = int(match.group(2))
+        if number != len(marks) + 1:
+            return None                     # 不是從 1 開始，或跳號
+        # 內容的起點在整個標記之後；前一段的終點在分隔字元之前。
+        marks.append((match.start() + len(match.group(1)), match.end(), number))
+
+    if len(marks) < 2:
+        return None
+
+    points = []
+    for index, (head, body_start, number) in enumerate(marks):
+        tail = marks[index + 1][0] if index + 1 < len(marks) else len(text)
+        content = text[body_start:tail].strip()
+        if content:
+            # 編號保留，但正規化成 `N. ` —— `1、`、`1)`、`(1)` 都不是 markdown 的清單
+            # 語法，貼到討論串不會變成清單。換成 `N. ` 則數字與順序都還在。
+            points.append(u"%d. %s" % (number, content))
+    return points or None
+
+
+def _sentence_points(text):
+    """依全形句末標點把一段文字切開。標點留在前一段。"""
+    points = []
+    last = 0
+    for match in _SENTENCE_RE.finditer(text):
+        chunk = text[last:match.end()].strip()
+        if chunk:
+            points.append(chunk)
+        last = match.end()
+    tail = text[last:].strip()
+    if tail:
+        # 最後一句沒有標點也要算 —— 模型常常省略最後那一個句號。
+        points.append(tail)
+    return points
+
+
+def as_list(text):
+    """把一段總覽文字排成逐行的清單。切不動就原樣回傳。
+
+    **這是 device 作者的公開 API。**
+
+    依來源的形狀決定，三條互斥、先到先用：
+
+        已有換行       原樣 —— 來源自己做過版面決定了，覆寫它才是真正的損失
+        行內有序編號   保留編號，逐行排成 `N. `（用編號通常表示有順序）
+        以上皆非       依全形句末標點斷開，逐行排成 `- `
+
+    只斷得出一段時原樣回傳 —— 單項清單在視覺上是噪音，而「這份摘要只有一句話」本身就
+    看得出來。
+
+    不設點數上限：prompt 要的是三到五句，不會爆；設了上限反而會出現「有時是清單、有時是
+    一整段」的不一致，那比條目多更難解釋。
+    """
+    body = plain(text)
+    if not body:
+        return ""
+
+    if "\n" in body:
+        return body
+
+    points = _ordered_points(body)
+    if points:
+        return "\n".join(points)
+
+    points = _sentence_points(body)
+    if len(points) < 2:
+        return body
+    return "\n".join(u"- %s" % one for one in points)
 
 
 def render_code_review_section(body):
@@ -1682,7 +1795,7 @@ def _escape_link_text(text):
 # 這支腳本的名稱與版本。**改了報告的產出方式就把版本往上加** —— 那是這一行存在的
 # 唯一理由，不加的話舊報告與新報告在外觀上分不出來。
 SCRIPT_NAME = "MR Summary Script"
-SCRIPT_VERSION = "1.1"
+SCRIPT_VERSION = "1.2"
 
 
 def _link(text, url):
@@ -1764,7 +1877,7 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
 
         ---
 
-        Script: v1.1 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid) | Coverage: 3/21 檔案（MR 共 90）
+        Script: v1.2 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid) | Coverage: 3/21 檔案（MR 共 90）
         Gitlab Pipeline #1000 | Commit e456d23
 
     每個值前面都有名字。沒有標籤的話（例如 `(Open AI / ssd v1.2)`）兩個版本號並列時

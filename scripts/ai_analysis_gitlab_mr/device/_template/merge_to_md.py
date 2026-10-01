@@ -38,12 +38,18 @@ def render(inputs):
     ## 請用這些，不要自己重寫
 
         contract.plain(value)           None 與非字串收斂成字串。不用的話報告會印出 "None"
+        contract.as_list(text)          把一整段文字排成逐行的清單
         contract.fence_for(code)        算程式碼圍籬的長度
         contract.MAX_FINDING_DIFF_BYTES 單筆 diff 的位元組上限
 
     `fence_for()` 特別重要：寫死三個反引號的話，內容本身含有反引號的 diff（改到
     markdown 檔就會）會讓程式碼區塊提前結束，後面的內容變成一般文字 —— 而報告仍然
     「成功」產出。
+
+    `as_list()` 用在總覽那種「一句接一句的一整段」上：AI 回來的總覽通常是一段，在結果
+    視窗會折成一片文字牆。它會尊重來源已有的結構（自帶換行、自帶有序編號），切不動就
+    原樣回傳，所以可以無條件套用。**不要在步驟 3 把原文改掉** —— 產物存的是 AI 說了
+    什麼，版面在這一步決定；改了原文，想換版面就只能重新呼叫一次 AI。
     """
     lines = []
     overview = contract.plain(analysis_overview(inputs))

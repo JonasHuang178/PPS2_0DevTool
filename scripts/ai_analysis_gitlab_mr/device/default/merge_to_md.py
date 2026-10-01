@@ -89,7 +89,8 @@ def render(inputs):
     版面：
 
         ## Summary
-        <overview>
+        - <總覽第一句>
+        - <總覽第二句>
 
         ## Code Changes
         ### 1. <檔案路徑>
@@ -107,7 +108,14 @@ def render(inputs):
 
     blocks = []
 
-    overview = contract.plain(analysis.get("overview"))
+    # 總覽排成逐行的清單。AI 回來的是一句接一句的**一整段**，在結果視窗會折成一片
+    # 文字牆、貼到討論串則是一個段落 —— 兩邊都難以掃讀。
+    #
+    # 斷行在這裡做而不是在步驟 3 改掉 overview：產物存的是 AI 說了什麼，版面由它推導。
+    # 改掉原文之後，想換一種版面就只能重新呼叫一次 AI。
+    #
+    # as_list() 會尊重來源已有的結構（自帶換行、自帶有序編號），切不動就原樣回傳。
+    overview = contract.as_list(analysis.get("overview"))
     if overview:
         blocks.append("## Summary")
         blocks.append(overview)
