@@ -454,7 +454,7 @@ def analyze(inputs):
     debug_write("ai_prompt.txt", prompt)
 
     # 兩層驗證串成同一個 parse：先要是合法 JSON，再要是認得的結構。任何一層不過都
-    # 丟 ValueError，ai_utils 據此重問一次（reask=1）。
+    # 丟 ValueError，ai_utils 據此重問（次數見 contract.ai_reask）。
     #
     # 分兩段寫的話，第二段跑在 ask() 之外，重問就永遠觸發不到 —— 而「JSON 合法但
     # 結構不對」恰好是模型最常見的失手方式。
@@ -484,7 +484,11 @@ def analyze(inputs):
         timeout=contract.ai_timeout(inputs),
         verify_ssl=contract.ai_verify_ssl(),
         parse=parse,
-        reask=1,
+        # 兩種重試都由設定檔決定。兩個是**不同層**的東西 —— retries 管連線（服務沒
+        # 回應），reask 管內容（服務回了，但解析不開）—— 但兩個都會讓總等待時間翻倍，
+        # 所以要把等待封頂就得兩個一起調。
+        retries=contract.ai_retries(inputs),
+        reask=contract.ai_reask(inputs),
         on_retry=_on_retry(inputs.get("progress")))
 
     logger.info("AI 回覆解析完成：%d 個檔案", len(mr_diff))

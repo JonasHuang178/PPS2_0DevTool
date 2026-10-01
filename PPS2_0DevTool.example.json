@@ -14,7 +14,9 @@
           "Api_URL": "https://api.openai.com/v1/chat/completions",
           "Api_Key": "",
           "Model": "gpt-4o",
-          "Timeout_Seconds": "120"
+          "Timeout_Seconds": "120",
+          "Retry_Count": "3",
+          "Reask_Count": "1"
         }
       ]
     },

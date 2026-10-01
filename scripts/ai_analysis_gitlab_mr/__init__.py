@@ -74,7 +74,11 @@ __all__ = [
     "code_review_keyword",
     "ai_credentials",
     "ai_timeout",
+    "ai_retries",
+    "ai_reask",
     "DEFAULT_AI_TIMEOUT",
+    "DEFAULT_AI_RETRIES",
+    "DEFAULT_AI_REASK",
     "ai_verify_ssl",
     "describe_gitlab_error",
     "DEBUG_LOG_NAME",
@@ -862,53 +866,98 @@ def ai_credentials(inputs):
     return api_url, api_key, model
 
 
-# 問 AI 的逾時秒數，設定檔沒指定時用這一個。
+# 問 AI 的三個等待相關設定，設定檔沒指定時用這幾個。
 #
-# 與 ai_utils.DEFAULT_TIMEOUT 目前同值，但**各自宣告**：那一個是「任何人用 ai_utils
-# 問 AI 的預設」，這一個是「這個功能的預設」。綁成同一個的話，之後想單獨調其中一個
-# 就得先把它們拆開。
+# 與 ai_utils 的同名常數目前同值，但**各自宣告**：那邊是「任何人用 ai_utils 問 AI 的
+# 預設」，這邊是「這個功能的預設」。綁成同一個的話，之後想單獨調其中一個就得先拆開。
+#
+# 三個一起決定最壞情況的等待時間：
+#
+#     逾時 × (重試次數 + 1) × (重問次數 + 1) ＋ 退避
+#
+# 預設值（120 / 3 / 1）算出來約 16 分鐘。使用者要把等待封頂，三個都得調得動 —— 只開
+# 逾時的話，他把它設成 30 秒仍然可能等上四分半，而那會看起來像設定沒有生效。
 DEFAULT_AI_TIMEOUT = 120
+DEFAULT_AI_RETRIES = 3
+DEFAULT_AI_REASK = 1
+
+
+def _ai_number(inputs, key, default, setting, code, allow_zero, allow_float):
+    """讀一個 AI 的數值設定。沒給就回 default，給了但不合法就丟 CredentialError。
+
+    **不靜默退回預設**是刻意的：使用者會去調這幾個值，多半正是因為服務很忙、他不想
+    再等那麼久。一個打錯的值若安靜地退回預設，症狀是「我明明改了，還是等一樣久」——
+    而那個症狀指不出任何原因。寧可在這一步的一開始就失敗，訊息指名是哪一個鍵。
+
+    數字與純數字字串都收（設定檔裡 120 與 "120" 都有人寫）。布林值明確擋掉 ——
+    Python 的 True 是 1，不擋的話一個寫成 true 的值會變成「一秒逾時」或「只重試一次」。
+
+    allow_zero 分開兩種設定：逾時 0 秒沒有意義（那不是「不要等」，是「立刻失敗」），
+    而重試 0 次正是「服務很忙時不要再等」的那個值。
+    """
+    value = inputs.get(key)
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+
+    rule = "0 或正整數" if allow_zero else ("正數（秒）" if allow_float else "正整數")
+    where = ("設定檔 Service.AI_Mode_List 裡所選模式的 %s 應該是一個%s。"
+             % (setting, rule))
+
+    if isinstance(value, bool):
+        raise CredentialError("%s 不是數字：%r" % (setting, value), where, code)
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise CredentialError("%s 不是數字：%r" % (setting, value), where, code)
+
+    # 條件寫成肯定式再取反，是為了把 NaN 一起擋掉 —— NaN 的所有比較都是 False。
+    within = (number >= 0) if allow_zero else (number > 0)
+    if not within:
+        raise CredentialError(
+            "%s 必須是%s，讀到的是 %r" % (setting, rule, value), where, code)
+
+    if not allow_float and number != int(number):
+        raise CredentialError(
+            "%s 必須是整數，讀到的是 %r" % (setting, value), where, code)
+
+    return int(number) if number == int(number) else number
 
 
 def ai_timeout(inputs):
-    """自鉤子的 inputs（或入口的 params）取出問 AI 的逾時秒數。
+    """問 AI 的逾時秒數。沒給就是 DEFAULT_AI_TIMEOUT。
 
-    **這是 device 作者的公開 API。** 把它交給 ai_utils.ask(timeout=...)。
-
-    沒給就回 DEFAULT_AI_TIMEOUT。給了但不是正數就丟 CredentialError。
-
-    **不靜默退回預設**是刻意的：使用者會去設定這個值，多半正是因為服務很忙、他不想
-    再等那麼久。一個打錯的值若安靜地退回 120 秒，症狀是「我明明改了，還是等一樣久」
-    —— 而那個症狀指不出任何原因。寧可在這一步的一開始就失敗，訊息指名是哪一個鍵。
-
-    數字與純數字字串都收（設定檔裡 120 與 "120" 都有人寫）。布林值明確擋掉 ——
-    Python 的 True 是 1，不擋的話一個寫成 true 的值會變成「一秒逾時」。
+    **這是 device 作者的公開 API。** 交給 ai_utils.ask(timeout=...)。
     """
-    value = inputs.get("ai_timeout")
+    return _ai_number(inputs, "ai_timeout", DEFAULT_AI_TIMEOUT,
+                      "Timeout_Seconds", "AI_TIMEOUT_INVALID",
+                      allow_zero=False, allow_float=True)
 
-    if value is None or (isinstance(value, str) and not value.strip()):
-        return DEFAULT_AI_TIMEOUT
 
-    where = ("設定檔 Service.AI_Mode_List 裡所選模式的 Timeout_Seconds "
-             "應該是一個正整數（秒）。")
+def ai_retries(inputs):
+    """連線層的重試次數（逾時、斷線、429、5xx）。沒給就是 DEFAULT_AI_RETRIES。
 
-    if isinstance(value, bool):
-        raise CredentialError(
-            "AI 逾時秒數不是數字：%r" % value, where, "AI_TIMEOUT_INVALID")
+    **這是 device 作者的公開 API。** 交給 ai_utils.ask(retries=...)。
 
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        raise CredentialError(
-            "AI 逾時秒數不是數字：%r" % value, where, "AI_TIMEOUT_INVALID")
+    0 是合法的，而且正是「服務很忙時不要再等」的那個設定值。
+    """
+    return _ai_number(inputs, "ai_retries", DEFAULT_AI_RETRIES,
+                      "Retry_Count", "AI_RETRIES_INVALID",
+                      allow_zero=True, allow_float=False)
 
-    # 比較寫成 not (> 0) 而不是 <= 0，是為了把 NaN 一起擋掉（NaN 的所有比較都是 False）。
-    if not (seconds > 0):
-        raise CredentialError(
-            "AI 逾時秒數必須大於 0，讀到的是 %r" % value,
-            where, "AI_TIMEOUT_INVALID")
 
-    return int(seconds) if seconds == int(seconds) else seconds
+def ai_reask(inputs):
+    """回覆格式不符時重問的次數。沒給就是 DEFAULT_AI_REASK。
+
+    **這是 device 作者的公開 API。** 交給 ai_utils.ask(reask=...)。
+
+    與 retries 是**不同層**的東西：那一個管連線（服務沒回應），這一個管內容（服務回了，
+    但回來的東西解析不開）。兩個都會讓總等待時間翻倍，所以要封頂就得兩個一起調。
+    """
+    return _ai_number(inputs, "ai_reask", DEFAULT_AI_REASK,
+                      "Reask_Count", "AI_REASK_INVALID",
+                      allow_zero=True, allow_float=False)
 
 
 def ai_verify_ssl():

@@ -184,6 +184,10 @@ def main():
             script_io.arg("ai_model", default="", help="AI 模型名稱"),
             script_io.arg("ai_timeout", default="",
                           help="問 AI 的逾時秒數；空字串代表用預設值"),
+            script_io.arg("ai_retries", default="",
+                          help="連線失敗時的重試次數；空字串代表用預設值"),
+            script_io.arg("ai_reask", default="",
+                          help="回覆格式不符時的重問次數；空字串代表用預設值"),
             script_io.arg("debug_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
@@ -217,12 +221,22 @@ def main():
                 params["ai_mode_name"] or "(未指定)",
                 params["ai_model"] or "(未指定)",
                 params["jira_key"] or "(無)")
-    # 逾時值在**取 diff 之前**就驗。打錯的話不該讓使用者先等完一趟 GitLab、再看到一個
-    # 本來第一秒就能說的設定錯誤。
+    # 三個等待相關的設定在**取 diff 之前**就驗。打錯的話不該讓使用者先等完一趟 GitLab、
+    # 再看到一個本來第一秒就能說的設定錯誤。
+    #
+    # 三個一起決定最壞情況的等待時間（逾時 ×(重試+1)×(重問+1) ＋退避），所以也一起記進
+    # log —— 事後問「為什麼等了十六分鐘」時，這一行就是答案。
     try:
         ai_seconds = ai_analysis_gitlab_mr.ai_timeout(params)
+        ai_retries = ai_analysis_gitlab_mr.ai_retries(params)
+        ai_reask = ai_analysis_gitlab_mr.ai_reask(params)
     except ai_analysis_gitlab_mr.CredentialError as exc:
         _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
+
+    logger.info("AI 等待設定：逾時 %s 秒、重試 %d 次、重問 %d 次"
+                "（最壞情況約 %d 秒，不含退避）",
+                ai_seconds, ai_retries, ai_reask,
+                int(ai_seconds * (ai_retries + 1) * (ai_reask + 1)))
 
     # 素材在呼叫鉤子**之前**備好。連線失敗要在這裡爆，而不是從使用者寫的鉤子裡
     # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
@@ -260,8 +274,10 @@ def main():
         "ai_api_key": params["ai_api_key"],
         "ai_model": params["ai_model"],
 
-        # 已經正規化成正數，鉤子再呼叫一次 contract.ai_timeout() 也只是原樣拿回去。
+        # 已經正規化過，鉤子再呼叫一次那三支也只是原樣拿回去。
         "ai_timeout": ai_seconds,
+        "ai_retries": ai_retries,
+        "ai_reask": ai_reask,
         "repo": repo,
         "mr_iid": mr_iid,
         "device": owner,

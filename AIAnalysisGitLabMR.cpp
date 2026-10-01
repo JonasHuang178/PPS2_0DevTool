@@ -1251,9 +1251,14 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
     context.aiApiKey   = mode.value(QString("Api_Key")).toString();
     context.aiModel    = mode.value(QString("Model")).toString();
 
-    // 逾時沒設定時留空字串，腳本據此採用自己的預設 —— Qt 不複製一份預設值，
-    // 否則同一個數字會有兩個來源，而它們可以不一致。
+    // 三個等待相關的設定。沒設定時留空字串，腳本據此採用自己的預設 —— Qt 不複製一份
+    // 預設值，否則同一個數字會有兩個來源，而它們可以不一致；而且命令列與 CI 那條路徑
+    // 根本不經過 Qt。
+    //
+    // 三個一起決定最壞情況的等待時間，所以要把等待封頂就得三個一起調（見 README）。
     context.aiTimeout  = configNumber(mode, QString("Timeout_Seconds"));
+    context.aiRetries  = configNumber(mode, QString("Retry_Count"));
+    context.aiReask    = configNumber(mode, QString("Reask_Count"));
 
     context.jiraMode      = jiraMode();
     context.jiraKeyManual = m_widgets.jiraKeyEdit->text().trimmed();
@@ -1399,6 +1404,8 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         params.insert(QString("ai_api_key"),   context.aiApiKey);
         params.insert(QString("ai_model"),     context.aiModel);
         params.insert(QString("ai_timeout"),   context.aiTimeout);
+        params.insert(QString("ai_retries"),   context.aiRetries);
+        params.insert(QString("ai_reask"),     context.aiReask);
         break;
 
     case 3:

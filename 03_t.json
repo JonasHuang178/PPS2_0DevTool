@@ -17,12 +17,12 @@
       ]
     },
     "coverage": {
-      "files_changed": 1,
-      "files_sent": 1,
+      "files_changed": 0,
+      "files_sent": 0,
       "files_reported": 1,
       "truncated": false,
-      "bytes_total": 40,
-      "bytes_sent": 40,
+      "bytes_total": 0,
+      "bytes_sent": 0,
       "dropped": {
         "count": 0,
         "paths": []
@@ -36,8 +36,10 @@
         "paths": []
       },
       "unknown": {
-        "count": 0,
-        "paths": []
+        "count": 1,
+        "paths": [
+          "a.cpp"
+        ]
       }
     }
   }
