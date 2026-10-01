@@ -27,6 +27,12 @@
         "Program": "python",
         "PPS_Device": "",
         "PPS_Scripts_CodeReview_File_StartsWith": "CodeReview_",
+        "Skip_Title_StartsWith_List": [],
+        "Skip_Title_EndsWith_List": [],
+        "Skip_Title_Contains_List": [
+          "[WIP]",
+          "[Draft]"
+        ],
         "Repo_List": [
           "Jonas_Huang/lw-os",
           "Jonas_Huang/Test_Submodule"

@@ -8,8 +8,11 @@
 #include <QList>
 #include <QMap>
 #include <QObject>
+#include <QSet>
 #include <QSharedPointer>
+#include <QSortFilterProxyModel>
 #include <QString>
+#include <QStringList>
 #include <QTemporaryDir>
 
 QT_BEGIN_NAMESPACE
@@ -19,10 +22,13 @@ class QLineEdit;
 class QListView;
 class QPushButton;
 class QRadioButton;
-class QSortFilterProxyModel;
+class QLabel;
 class QSpinBox;
+class QStandardItem;
 class QStandardItemModel;
 class QTableView;
+class QToolButton;
+class QWidget;
 QT_END_NAMESPACE
 
 // 功能要用到的元件。由外殼在 UI_SetupSignal() 填好後交過來。
@@ -50,6 +56,19 @@ struct AIAnalysisGitLabMRWidgets
     QTableView   *mrView;
     QPushButton  *analysisButton;
 
+    // Filter 群組。兩個過濾器都作用於**已經取回的資料**，所以它們與
+    // Merge Request Parameter 分屬兩個群組 —— 後者改動會使清單失效並需要
+    // 重新取得，前者立即生效且不發出任何請求。放在同一個框裡的話，兩種
+    // 行為不同的控件在外觀上無從區分。
+    QToolButton  *filterToggleButton;
+    QLabel       *filterStatusLabel;
+    QPushButton  *filterClearButton;
+    QWidget      *filterContentWidget;
+    QListView    *authorView;
+    QLineEdit    *skipStartsWithEdit;
+    QLineEdit    *skipEndsWithEdit;
+    QLineEdit    *skipContainsEdit;
+
     AIAnalysisGitLabMRWidgets()
         : modeCombo(Q_NULLPTR)
         , debugFileCheck(Q_NULLPTR)
@@ -68,7 +87,56 @@ struct AIAnalysisGitLabMRWidgets
         , createdAfterSpin(Q_NULLPTR)
         , refreshButton(Q_NULLPTR)
         , mrView(Q_NULLPTR)
-        , analysisButton(Q_NULLPTR) {}
+        , analysisButton(Q_NULLPTR)
+        , filterToggleButton(Q_NULLPTR)
+        , filterStatusLabel(Q_NULLPTR)
+        , filterClearButton(Q_NULLPTR)
+        , filterContentWidget(Q_NULLPTR)
+        , authorView(Q_NULLPTR)
+        , skipStartsWithEdit(Q_NULLPTR)
+        , skipEndsWithEdit(Q_NULLPTR)
+        , skipContainsEdit(Q_NULLPTR) {}
+};
+
+
+// Merge Request 表格的過濾層：作者與標題排除。
+//
+// 兩個條件寫在同一個 filterAcceptsRow() 裡，不疊兩層 proxy —— 疊兩層的話
+// 「各篩掉幾筆」這個統計要分別從兩層取，而兩層的先後會影響數字。
+//
+// 判定拆成兩支公開函式，是為了讓統計能用**同一份規則**走一遍來源模型：
+// filterAcceptsRow() 由 Qt 依需要呼叫，次數與順序都不保證，在它裡面累加
+// 計數器會得到一個看起來合理、實際上不對的數字。
+class MrFilterProxyModel : public QSortFilterProxyModel
+{
+    Q_OBJECT
+
+public:
+    explicit MrFilterProxyModel(int authorColumn, int titleColumn,
+                                QObject *parent = Q_NULLPTR);
+
+    // 空集合代表不過濾作者。
+    void setAuthors(const QSet<QString> &authors);
+
+    // 三種比對各自一份關鍵字清單；呼叫端負責先解析（去空白、丟掉空的）。
+    void setSkipRules(const QStringList &startsWith,
+                      const QStringList &endsWith,
+                      const QStringList &contains);
+
+    bool authorAccepts(const QString &author) const;
+    bool titleAccepts(const QString &title) const;
+
+protected:
+    bool filterAcceptsRow(int sourceRow,
+                          const QModelIndex &sourceParent) const Q_DECL_OVERRIDE;
+
+private:
+    int             m_authorColumn;
+    int             m_titleColumn;
+    QSet<QString>   m_authors;
+    QStringList     m_startsWith;
+    QStringList     m_endsWith;
+    QStringList     m_contains;
 };
 
 // AI Analysis GitLab MR 功能。
@@ -99,6 +167,13 @@ public:
     // 接上元件並建立訊號連接。外殼在 UI_SetupSignal() 呼叫一次。
     void attachWidgets(const AIAnalysisGitLabMRWidgets &widgets);
 
+    // 把一行逗號分隔的輸入解析成關鍵字清單：每筆去頭尾空白，**空的一律丟掉**。
+    //
+    // 公開是為了讓它驗得到。空字串是所有標題的子字串，一個多餘的逗號就會讓整張
+    // 表格一筆不剩 —— 那是這次改動裡唯一「看起來正常卻完全壞掉」的失敗方式，
+    // 不該只靠讀碼確認。純字串函式，沒有狀態，公開不增加任何耦合。
+    static QStringList parseSkipKeywords(const QString &text);
+
 private slots:
     void onRepoSelectionChanged();
     void onMrSelectionChanged();
@@ -111,6 +186,15 @@ private slots:
     void onRefreshClicked();
     void onAnalysisClicked();
     void updateButtonStates();
+
+    void onFilterToggled(bool expanded);
+    void onAuthorItemChanged(QStandardItem *item);
+    void onSkipRulesEdited();
+    void onClearFilterClicked();
+    void onMrDoubleClicked(const QModelIndex &index);
+    void onMrEntered(const QModelIndex &index);
+    void onMrViewportEntered();
+    void onRepoDoubleClicked(const QModelIndex &index);
 
 private:
     // MR 表格的三種狀態。空白畫面在「還沒抓」與「抓了但沒有符合的」之間
@@ -163,6 +247,16 @@ private:
     void invalidateMrTable();
     QString selectedRepo() const;
     QString selectedMrIid() const;
+
+    // --- 顯示過濾 ---
+    //
+    // 候選作者自**來源模型**推導，不從過濾後的結果推導 —— 從結果推導的話，
+    // 一勾選某位作者，其餘作者的候選就消失了，再也回不去。
+    void rebuildAuthorCandidates();
+    void clearAuthorCandidates();
+    void applyFilters();
+    void updateFilterStatus();
+    QSet<QString> checkedAuthors() const;
     QString effectiveMrIid() const;
     QString jiraMode() const;
 
@@ -178,9 +272,19 @@ private:
 
     QStandardItemModel    *m_repoModel;
     QStandardItemModel    *m_mrModel;
-    QSortFilterProxyModel *m_mrProxy;
+    QStandardItemModel    *m_authorModel;
+    MrFilterProxyModel    *m_mrProxy;
 
     MrTableState m_mrState;
+
+    // 取回筆數是否達到單次上限。改以持續顯示的狀態行承載，不再跳一次性的
+    // 訊息框 —— 那個框按掉就沒了，而使用者正是在按掉之後才開始在候選清單
+    // 裡找人，也就是最需要那個提示的時刻它剛好不在。
+    bool m_truncated;
+
+    // 重建候選作者時，setCheckState() 會發出 itemChanged，而那不是使用者的
+    // 勾選。少了這個旗標，重建過程中會重複套用過濾並清掉表格選取。
+    bool m_rebuildingAuthors;
 
     // 手動編號的輸入框會自我修正（貼上 !123 或整條網址時取出其中的數字），
     // 而 setText() 會再次觸發 textChanged。這個旗標擋掉那一層遞迴。

@@ -181,6 +181,14 @@ void PPS2_0DevTool::UI_SetupSignal()
         widgets.refreshButton       = ui->aiRefreshButton;
         widgets.mrView              = ui->aiMrTableView;
         widgets.analysisButton      = ui->aiAnalysisButton;
+        widgets.filterToggleButton  = ui->aiFilterToggleButton;
+        widgets.filterStatusLabel   = ui->aiFilterStatusLabel;
+        widgets.filterClearButton   = ui->aiFilterClearButton;
+        widgets.filterContentWidget = ui->aiFilterContentWidget;
+        widgets.authorView          = ui->aiAuthorListView;
+        widgets.skipStartsWithEdit  = ui->aiSkipStartsWithLineEdit;
+        widgets.skipEndsWithEdit    = ui->aiSkipEndsWithLineEdit;
+        widgets.skipContainsEdit    = ui->aiSkipContainsLineEdit;
         m_aiAnalysisGitLabMR->attachWidgets(widgets);
     }
 

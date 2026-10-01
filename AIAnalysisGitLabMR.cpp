@@ -3,25 +3,33 @@
 #include "debug.h"
 
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QFont>
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QJsonArray>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QMap>
 #include <QPushButton>
 #include <QRadioButton>
-#include <QSortFilterProxyModel>
 #include <QSpinBox>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QStringList>
 #include <QStyle>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QToolButton>
+#include <QUrl>
+#include <QWidget>
 
 #include <QCoreApplication>
 
@@ -96,6 +104,21 @@ enum MrColumn {
 // 的時間先後。兩者同一個 role、每一欄各自填入自己該有的可比較值。
 const int kSortRole = Qt::UserRole + 1;
 
+// 標題欄項目上存放該筆的 GitLab 網址。
+//
+// 網址**取自取得清單那一步的回傳資料**，不由這裡組合 —— 它早就在回傳裡
+// （見那支腳本的 _row()），只是先前沒有被接起來。自己組的話就多一份對
+// GitLab 網址形狀的假設，而那份假設沒有任何東西會驗證它。
+const int kWebUrlRole = Qt::UserRole + 2;
+
+// 候選作者項目上存放**未經加工的作者名稱**。顯示文字是「名稱 (筆數)」，
+// 拿顯示文字去比對表格裡的作者永遠對不上。
+const int kAuthorNameRole = Qt::UserRole + 1;
+
+// 標題欄的連結色。與選取時的前景色（#042C53）刻意不同，否則選中那一列就
+// 看不出標題是可點的。
+const char *const kLinkColor = "#0B57D0";
+
 const char *const kNotFetchedText   = "按下重新整理以取得 Merge Requests";
 const char *const kEmptyResultText  = "沒有符合條件的 Merge Request";
 
@@ -143,6 +166,22 @@ QString extractMergeRequestIid(const QString &text)
 // 合併那一步的契約是「路徑給了就必須存在」：指名一個不存在的檔案代表上一步
 // 沒寫成功，該當成錯誤停下來。而「這一段本來就沒有內容」（例如未要求程式碼
 // 審閱）要表達成**沒給**，不是給一個指向空氣的路徑。兩者的差別全靠這裡。
+// 設定檔的關鍵字清單填進輸入框：以 ", " 串接。
+//
+// 設定檔用 JSON array（與 Repo_List、AI_Mode_List 同一個慣例），輸入框是逗號
+// 分隔的一行 —— 中間只有這一個轉換，而且是**單向**的：使用者改過的內容不寫回
+// 任何地方，重新啟動就回到設定檔的值。
+QString joinKeywords(const QJsonArray &items)
+{
+    QStringList out;
+    for (int i = 0; i < items.size(); ++i) {
+        const QString one = items.at(i).toString().trimmed();
+        if (!one.isEmpty())
+            out.append(one);
+    }
+    return out.join(QString(", "));
+}
+
 void insertArtifactPath(QJsonObject &params,
                         const QString &key,
                         const QDir &workDir,
@@ -155,6 +194,80 @@ void insertArtifactPath(QJsonObject &params,
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// MrFilterProxyModel
+// ---------------------------------------------------------------------------
+
+MrFilterProxyModel::MrFilterProxyModel(int authorColumn, int titleColumn,
+                                       QObject *parent)
+    : QSortFilterProxyModel(parent)
+    , m_authorColumn(authorColumn)
+    , m_titleColumn(titleColumn)
+{
+}
+
+void MrFilterProxyModel::setAuthors(const QSet<QString> &authors)
+{
+    m_authors = authors;
+    invalidateFilter();
+}
+
+void MrFilterProxyModel::setSkipRules(const QStringList &startsWith,
+                                      const QStringList &endsWith,
+                                      const QStringList &contains)
+{
+    m_startsWith = startsWith;
+    m_endsWith   = endsWith;
+    m_contains   = contains;
+    invalidateFilter();
+}
+
+bool MrFilterProxyModel::authorAccepts(const QString &author) const
+{
+    // 空集合代表不過濾 —— 一個都沒勾等同顯示全部。
+    return m_authors.isEmpty() || m_authors.contains(author);
+}
+
+bool MrFilterProxyModel::titleAccepts(const QString &title) const
+{
+    // 比對一律區分大小寫，且所有字元都是字面文字 —— 不支援萬用字元或正規
+    // 表示法。本工具另一個功能的過濾已明文如此，兩個輸入框對同一個字元的
+    // 解讀不該相反。
+    for (int i = 0; i < m_startsWith.size(); ++i) {
+        if (title.startsWith(m_startsWith.at(i), Qt::CaseSensitive))
+            return false;
+    }
+    for (int i = 0; i < m_endsWith.size(); ++i) {
+        if (title.endsWith(m_endsWith.at(i), Qt::CaseSensitive))
+            return false;
+    }
+    for (int i = 0; i < m_contains.size(); ++i) {
+        if (title.contains(m_contains.at(i), Qt::CaseSensitive))
+            return false;
+    }
+    return true;
+}
+
+bool MrFilterProxyModel::filterAcceptsRow(int sourceRow,
+                                          const QModelIndex &sourceParent) const
+{
+    QAbstractItemModel *model = sourceModel();
+    if (!model)
+        return true;
+
+    const QString author =
+            model->index(sourceRow, m_authorColumn, sourceParent).data().toString();
+    const QString title =
+            model->index(sourceRow, m_titleColumn, sourceParent).data().toString();
+
+    // 兩個條件為 AND，順序與統計的算法一致（先作者，再標題）。
+    //
+    // 表格顯示提示文字（尚未取得／沒有符合條件）時只有一列，而那一列的作者
+    // 與標題都是空字串：候選作者在那些狀態下已被清空（集合為空 -> 不過濾），
+    // 而空標題不可能被任何非空關鍵字命中，所以提示列不會被藏起來。
+    return authorAccepts(author) && titleAccepts(title);
+}
 
 // ---------------------------------------------------------------------------
 // 建置
@@ -170,8 +283,11 @@ AIAnalysisGitLabMR::AIAnalysisGitLabMR(PPS2_0DevTool *shell, QObject *parent)
     , m_shell(shell)
     , m_repoModel(new QStandardItemModel(this))
     , m_mrModel(new QStandardItemModel(this))
-    , m_mrProxy(new QSortFilterProxyModel(this))
+    , m_authorModel(new QStandardItemModel(this))
+    , m_mrProxy(new MrFilterProxyModel(ColumnAuthor, ColumnTitle, this))
     , m_mrState(MrNotFetched)
+    , m_truncated(false)
+    , m_rebuildingAuthors(false)
     , m_sanitizingManualMr(false)
 {
     m_mrProxy->setSourceModel(m_mrModel);
@@ -200,6 +316,13 @@ void AIAnalysisGitLabMR::attachWidgets(const AIAnalysisGitLabMRWidgets &widgets)
     // 標題過長時截斷；完整標題由整列的 tooltip 提供（填資料時設 ToolTipRole）。
     m_widgets.mrView->setTextElideMode(Qt::ElideRight);
     m_widgets.mrView->setWordWrap(false);
+
+    // 指標移入標題欄時改變游標形狀。
+    //
+    // entered() 需要滑鼠追蹤，而 QAbstractScrollArea 的事件來自 viewport —— 只在
+    // view 上設定，訊號不會發出，而那個失敗沒有任何徵兆。
+    m_widgets.mrView->setMouseTracking(true);
+    m_widgets.mrView->viewport()->setMouseTracking(true);
 
     // 欄寬與伸縮模式不在這裡設 —— 此刻 model 還是 0 欄，header 一個 section
     // 都沒有。底下「初始狀態」的 setMrTableState() 會在建立欄位之後設好。
@@ -230,6 +353,27 @@ void AIAnalysisGitLabMR::attachWidgets(const AIAnalysisGitLabMRWidgets &widgets)
 
     m_widgets.saveDirEdit->setText(
                 cfg.value(QString("Save_Analysis_File_Dir")).toString());
+
+    // --- Filter 群組 ---
+    m_widgets.authorView->setModel(m_authorModel);
+    m_widgets.authorView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_widgets.authorView->setSelectionMode(QAbstractItemView::NoSelection);
+    m_widgets.authorView->setUniformItemSizes(true);
+
+    // 預設收合：過濾不是每次都要調的東西，而視窗是固定尺寸，展開那一百多像素
+    // 就是表格的四到五列。
+    m_widgets.filterToggleButton->setArrowType(Qt::RightArrow);
+    m_widgets.filterToggleButton->setChecked(false);
+    m_widgets.filterContentWidget->setVisible(false);
+
+    // 排除關鍵字的預設值來自設定檔。使用者在執行期間的修改不寫回任何地方 ——
+    // 重新啟動就回到這裡填進去的值。
+    m_widgets.skipStartsWithEdit->setText(
+                joinKeywords(cfg.value(QString("Skip_Title_StartsWith_List")).toArray()));
+    m_widgets.skipEndsWithEdit->setText(
+                joinKeywords(cfg.value(QString("Skip_Title_EndsWith_List")).toArray()));
+    m_widgets.skipContainsEdit->setText(
+                joinKeywords(cfg.value(QString("Skip_Title_Contains_List")).toArray()));
 
     // --- 訊號 ---
     connect(m_widgets.repoView->selectionModel(),
@@ -270,8 +414,35 @@ void AIAnalysisGitLabMR::attachWidgets(const AIAnalysisGitLabMRWidgets &widgets)
     connect(m_widgets.jiraKeyEdit, SIGNAL(textChanged(QString)),
             this, SLOT(updateButtonStates()));
 
+    connect(m_widgets.filterToggleButton, SIGNAL(toggled(bool)),
+            this, SLOT(onFilterToggled(bool)));
+    connect(m_widgets.filterClearButton, SIGNAL(clicked()),
+            this, SLOT(onClearFilterClicked()));
+    connect(m_authorModel, SIGNAL(itemChanged(QStandardItem*)),
+            this, SLOT(onAuthorItemChanged(QStandardItem*)));
+
+    // 排除關鍵字以**輸入結束**才套用，不逐字元套用 —— 否則表格會在輸入
+    // 「skip」的過程中隨 s、sk、ski 連續重算。來源路徑那個輸入框用的是同一個
+    // 慣例（見外殼的 onSourcePathEdited）。
+    connect(m_widgets.skipStartsWithEdit, SIGNAL(editingFinished()),
+            this, SLOT(onSkipRulesEdited()));
+    connect(m_widgets.skipEndsWithEdit, SIGNAL(editingFinished()),
+            this, SLOT(onSkipRulesEdited()));
+    connect(m_widgets.skipContainsEdit, SIGNAL(editingFinished()),
+            this, SLOT(onSkipRulesEdited()));
+
+    connect(m_widgets.mrView, SIGNAL(doubleClicked(QModelIndex)),
+            this, SLOT(onMrDoubleClicked(QModelIndex)));
+    connect(m_widgets.mrView, SIGNAL(entered(QModelIndex)),
+            this, SLOT(onMrEntered(QModelIndex)));
+    connect(m_widgets.mrView, SIGNAL(viewportEntered()),
+            this, SLOT(onMrViewportEntered()));
+    connect(m_widgets.repoView, SIGNAL(doubleClicked(QModelIndex)),
+            this, SLOT(onRepoDoubleClicked(QModelIndex)));
+
     // --- 初始狀態 ---
     setMrTableState(MrNotFetched, QString(kNotFetchedText));
+    applyFilters();
     onSourceModeToggled();
     onDebugFileToggled();
     onJiraModeToggled();
@@ -388,6 +559,13 @@ void AIAnalysisGitLabMR::setMrTableState(MrTableState state,
     // clear() 之後欄寬與伸縮模式都回到預設值，必須重設。
     applyMrHeaderLayout();
 
+    if (state != MrLoaded) {
+        // 候選作者是從那一批資料推導出來的。資料沒了，候選也不該留著 ——
+        // 而且留著一個非空的作者集合會讓底下那一列提示文字被過濾掉。
+        clearAuthorCandidates();
+        m_truncated = false;
+    }
+
     if (state == MrLoaded)
         return;
 
@@ -403,7 +581,10 @@ void AIAnalysisGitLabMR::setMrTableState(MrTableState state,
 void AIAnalysisGitLabMR::invalidateMrTable()
 {
     setMrTableState(MrNotFetched, QString(kNotFetchedText));
-    updateButtonStates();
+
+    // 顯示過濾器的設定**不重設** —— 它們不是查詢條件，使用者填的排除關鍵字不該
+    // 因為換了一個 repository 就消失。候選作者則由 setMrTableState 清掉。
+    applyFilters();
 }
 
 QString AIAnalysisGitLabMR::selectedRepo() const
@@ -545,6 +726,255 @@ void AIAnalysisGitLabMR::updateButtonStates()
 }
 
 // ---------------------------------------------------------------------------
+// 顯示過濾
+// ---------------------------------------------------------------------------
+
+void AIAnalysisGitLabMR::onFilterToggled(bool expanded)
+{
+    m_widgets.filterToggleButton->setArrowType(expanded ? Qt::DownArrow
+                                                        : Qt::RightArrow);
+    m_widgets.filterContentWidget->setVisible(expanded);
+}
+
+void AIAnalysisGitLabMR::onAuthorItemChanged(QStandardItem *item)
+{
+    Q_UNUSED(item);
+
+    // 重建候選時 setCheckState() 也會發這個訊號，而那不是使用者的勾選。
+    if (m_rebuildingAuthors)
+        return;
+
+    applyFilters();
+}
+
+void AIAnalysisGitLabMR::onSkipRulesEdited()
+{
+    applyFilters();
+}
+
+void AIAnalysisGitLabMR::onClearFilterClicked()
+{
+    m_rebuildingAuthors = true;
+    for (int row = 0; row < m_authorModel->rowCount(); ++row) {
+        if (QStandardItem *item = m_authorModel->item(row))
+            item->setCheckState(Qt::Unchecked);
+    }
+    m_rebuildingAuthors = false;
+
+    // clear() 不會發出 editingFinished（那個訊號只在使用者結束輸入時發出），
+    // 所以底下要自己套用一次。
+    m_widgets.skipStartsWithEdit->clear();
+    m_widgets.skipEndsWithEdit->clear();
+    m_widgets.skipContainsEdit->clear();
+
+    applyFilters();
+}
+
+QStringList AIAnalysisGitLabMR::parseSkipKeywords(const QString &text)
+{
+    QStringList out;
+    const QStringList parts = text.split(QChar(','));
+    for (int i = 0; i < parts.size(); ++i) {
+        const QString one = parts.at(i).trimmed();
+
+        // 空的關鍵字一律丟掉。空字串是**所有**標題的子字串，留著的話一個多餘的
+        // 逗號就會讓整張表格一筆不剩 —— 而畫面上看不出成因。使用者打字打到
+        // 「skip,」那一瞬間正是這個情況。
+        if (!one.isEmpty())
+            out.append(one);
+    }
+    return out;
+}
+
+QSet<QString> AIAnalysisGitLabMR::checkedAuthors() const
+{
+    QSet<QString> picked;
+    for (int row = 0; row < m_authorModel->rowCount(); ++row) {
+        QStandardItem *item = m_authorModel->item(row);
+        if (item && item->checkState() == Qt::Checked)
+            picked.insert(item->data(kAuthorNameRole).toString());
+    }
+    return picked;
+}
+
+void AIAnalysisGitLabMR::clearAuthorCandidates()
+{
+    m_rebuildingAuthors = true;
+    m_authorModel->clear();
+    m_rebuildingAuthors = false;
+
+    // 清掉候選時必須同時把作者條件也清掉。留著一個非空的集合，表格那一列提示
+    // 文字（作者欄是空字串）會被判定為不符而整列消失，畫面上只剩一片空白。
+    m_mrProxy->setAuthors(QSet<QString>());
+}
+
+void AIAnalysisGitLabMR::rebuildAuthorCandidates()
+{
+    clearAuthorCandidates();
+
+    // 自**來源模型**推導，不從過濾後的結果推導 —— 從結果推導的話，一勾選某位
+    // 作者，其餘作者的候選就跟著消失，使用者再也回不去。
+    //
+    // QMap 依鍵排序，所以候選的次序就是作者名稱的次序：穩定且可預期，同一批
+    // 資料兩次載入不會排出不同結果。
+    QMap<QString, int> counts;
+    for (int row = 0; row < m_mrModel->rowCount(); ++row) {
+        const QString author =
+                m_mrModel->index(row, ColumnAuthor).data().toString();
+        counts[author] += 1;
+    }
+
+    m_rebuildingAuthors = true;
+    for (QMap<QString, int>::const_iterator it = counts.constBegin();
+         it != counts.constEnd(); ++it) {
+        // 作者為空字串時仍然建立候選（GitLab 對已刪除的使用者可能給不出名字）。
+        // 略過的話那幾筆永遠無法被挑出來，而那是一個看不見的洞。
+        const QString label = it.key().isEmpty()
+                ? QString("(未標明) (%1)").arg(it.value())
+                : QString("%1 (%2)").arg(it.key()).arg(it.value());
+
+        QStandardItem *item = new QStandardItem(label);
+        item->setData(it.key(), kAuthorNameRole);   // 比對用的是原值，不是顯示文字
+        item->setCheckable(true);
+        item->setCheckState(Qt::Unchecked);
+        item->setEditable(false);
+        m_authorModel->appendRow(item);
+    }
+    m_rebuildingAuthors = false;
+}
+
+void AIAnalysisGitLabMR::applyFilters()
+{
+    // attachWidgets() 之前不會有元件。
+    if (!m_widgets.skipContainsEdit)
+        return;
+
+    m_mrProxy->setSkipRules(
+                parseSkipKeywords(m_widgets.skipStartsWithEdit->text()),
+                parseSkipKeywords(m_widgets.skipEndsWithEdit->text()),
+                parseSkipKeywords(m_widgets.skipContainsEdit->text()));
+    m_mrProxy->setAuthors(checkedAuthors());
+
+    // 過濾會把列藏起來。保留選取的話，使用者可能在看不見那一筆的情況下按下
+    // AI Analysis，而整條流程會對著一筆他看不到的 Merge Request 跑完、回報成功。
+    //
+    // 選取一空，「指定了 MR」就不成立，AI Analysis 自動停用 —— 不需要另外偵測
+    // 「選取的那一筆被藏起來了」。
+    m_widgets.mrView->clearSelection();
+
+    updateFilterStatus();
+    updateButtonStates();
+}
+
+void AIAnalysisGitLabMR::updateFilterStatus()
+{
+    if (!m_widgets.filterStatusLabel)
+        return;
+
+    if (m_mrState != MrLoaded) {
+        m_widgets.filterStatusLabel->clear();
+        return;
+    }
+
+    const int total = m_mrModel->rowCount();
+
+    // 兩個過濾器分別篩掉幾筆：先作者、再標題，兩者不重複計，因此
+    // total = 顯示 + author + skip 必然成立。
+    //
+    // 不在 filterAcceptsRow() 裡累加計數器 —— 那一支由 Qt 依需要呼叫，次數與
+    // 順序都不保證，累加出來的數字會看起來合理但其實不對。改成拿同一份判定
+    // 規則走一遍來源模型。
+    int authorRejected = 0;
+    int skipRejected = 0;
+    for (int row = 0; row < total; ++row) {
+        const QString author =
+                m_mrModel->index(row, ColumnAuthor).data().toString();
+        if (!m_mrProxy->authorAccepts(author)) {
+            ++authorRejected;
+            continue;
+        }
+        const QString title =
+                m_mrModel->index(row, ColumnTitle).data().toString();
+        if (!m_mrProxy->titleAccepts(title))
+            ++skipRejected;
+    }
+
+    QString text = QString("共 %1 筆，顯示 %2（Author %3、Skip %4）")
+            .arg(total)
+            .arg(total - authorRejected - skipRejected)
+            .arg(authorRejected)
+            .arg(skipRejected);
+
+    if (m_truncated) {
+        text += QString(" · 已達上限，名單可能不完整");
+    }
+
+    m_widgets.filterStatusLabel->setText(text);
+}
+
+// ---------------------------------------------------------------------------
+// 開啟外部頁面
+// ---------------------------------------------------------------------------
+
+void AIAnalysisGitLabMR::onMrDoubleClicked(const QModelIndex &index)
+{
+    // 只有標題欄會開啟頁面，而標題欄也是唯一帶著連結外觀的那一欄。
+    if (!index.isValid() || m_mrState != MrLoaded || index.column() != ColumnTitle)
+        return;
+
+    // index 是 proxy 的索引，data() 會穿過 proxy 取到來源的角色值。
+    const QString url = index.data(kWebUrlRole).toString();
+    if (url.isEmpty()) {
+        QTWarn(QString("[%1] 該筆 Merge Request 的回傳資料沒有網址，不開啟")
+               .arg(functionName()));
+        return;
+    }
+
+    QDesktopServices::openUrl(QUrl(url));
+}
+
+void AIAnalysisGitLabMR::onMrEntered(const QModelIndex &index)
+{
+    const bool overLink = index.isValid() && m_mrState == MrLoaded
+            && index.column() == ColumnTitle;
+    m_widgets.mrView->viewport()->setCursor(
+                overLink ? Qt::PointingHandCursor : Qt::ArrowCursor);
+}
+
+void AIAnalysisGitLabMR::onMrViewportEntered()
+{
+    // 指標在 viewport 內但不在任何一列上（例如表格底下的空白）。
+    m_widgets.mrView->viewport()->setCursor(Qt::ArrowCursor);
+}
+
+void AIAnalysisGitLabMR::onRepoDoubleClicked(const QModelIndex &index)
+{
+    if (!index.isValid())
+        return;
+
+    const QString repo = m_repoModel->data(index).toString();
+    if (repo.isEmpty())
+        return;
+
+    QString server =
+            config().value(QString("Gitlab_Server_URL")).toString().trimmed();
+
+    // 組不出網址就不要開一個壞掉的網址 —— 瀏覽器只會說「找不到伺服器」，而那句
+    // 話指不出真正要修的地方是執行檔旁那份設定檔。
+    if (server.isEmpty()) {
+        m_shell->showUI_ErrorMessageBox(
+                    QString("未設定 GitLab 伺服器位址，無法開啟專案頁面。\n\n"
+                            "請在設定檔的 Service.Gitlab_Server_URL 填入位址。"));
+        return;
+    }
+
+    while (server.endsWith(QChar('/')))
+        server.chop(1);
+
+    QDesktopServices::openUrl(QUrl(QString("%1/%2").arg(server, repo)));
+}
+
+// ---------------------------------------------------------------------------
 // 取得 Merge Request 清單
 // ---------------------------------------------------------------------------
 
@@ -574,7 +1004,7 @@ void AIAnalysisGitLabMR::onRefreshClicked()
             if (!result.success) {
                 // 保留失敗前的舊內容會讓使用者誤以為那是當前條件的結果。
                 setMrTableState(MrNotFetched, QString(kNotFetchedText));
-                updateButtonStates();
+                applyFilters();
                 m_shell->showUI_ErrorMessageBox(
                             QString("取得 Merge Request 清單失敗：\n%1")
                             .arg(failureReason(result)));
@@ -587,11 +1017,17 @@ void AIAnalysisGitLabMR::onRefreshClicked()
             if (items.isEmpty()) {
                 // 零筆是成功而非失敗 —— 條件太緊是正常結果，不該跳錯誤框。
                 setMrTableState(MrEmptyResult, QString(kEmptyResultText));
-                updateButtonStates();
+                applyFilters();
                 return;
             }
 
             setMrTableState(MrLoaded, QString());
+
+            // 連結外觀的字型取自 view，不是預設建構的 QFont —— 後者的字族與
+            // 大小可能與表格其餘欄位不同，那一欄會連字體都變了。
+            QFont linkFont = m_widgets.mrView->font();
+            linkFont.setUnderline(true);
+            const QColor linkColor(QString::fromLatin1(kLinkColor));
 
             for (int i = 0; i < items.size(); ++i) {
                 const QJsonObject mr = items.at(i).toObject();
@@ -602,6 +1038,7 @@ void AIAnalysisGitLabMR::onRefreshClicked()
                 const QString author  = mr.value(QString("author")).toString();
                 const QString created = mr.value(QString("created_at")).toString();
                 const QString state   = mr.value(QString("state")).toString();
+                const QString webUrl  = mr.value(QString("web_url")).toString();
 
                 // 依 MrColumn 的索引指派，不靠 append 的先後順序 ——
                 // 這樣調整欄序時只要改 enum，這裡不會被漏掉。
@@ -619,7 +1056,18 @@ void AIAnalysisGitLabMR::onRefreshClicked()
 
                 QStandardItem *titleItem = new QStandardItem(title);
                 titleItem->setData(title, kSortRole);
-                titleItem->setToolTip(title);   // 截斷後仍看得到全文
+                titleItem->setData(webUrl, kWebUrlRole);
+
+                // 標題欄是唯一可點的那一欄，所以也是唯一帶著連結外觀的。外觀把
+                // 範圍講清楚之後，「為什麼雙擊作者欄沒反應」就不需要被解釋。
+                titleItem->setData(linkColor, Qt::ForegroundRole);
+                titleItem->setData(linkFont, Qt::FontRole);
+
+                // 外觀像連結卻要**連按兩下**，是使用者無從猜到的落差，所以在
+                // tooltip 裡講出來。單擊必須留給選取 —— 那是按下 AI Analysis 的
+                // 前提，單擊即開會讓「只想選一筆」變成不可能。
+                titleItem->setToolTip(
+                            QString("%1\n（連按兩下開啟 GitLab 頁面）").arg(title));
                 row[ColumnTitle] = titleItem;
 
                 QStandardItem *authorItem = new QStandardItem(author);
@@ -639,15 +1087,17 @@ void AIAnalysisGitLabMR::onRefreshClicked()
                 m_mrModel->appendRow(row);
             }
 
-            updateButtonStates();
-
             // 腳本在取回筆數達到上限時會這樣標示 —— 「剛好 100 筆」與
             // 「其實有 300 筆」在畫面上完全一樣，不說使用者無從得知。
-            if (result.data.value(QString("truncated")).toBool()) {
-                m_shell->showUI_WarningMessageBox(
-                            QString("結果可能未完整：已達單次取回的上限。\n"
-                                    "請縮小查詢條件以取得完整清單。"));
-            }
+            //
+            // 改以狀態行持續顯示，不再跳一次性的訊息框：達到上限意味著某些作者
+            // 根本不會出現在候選清單中，而使用者正是在按掉那個框**之後**才開始
+            // 在候選裡找人 —— 最需要那個提示的時刻，它剛好不在。
+            m_truncated = result.data.value(QString("truncated")).toBool();
+
+            // 候選作者自**來源模型**推導，所以必須在填完列之後。
+            rebuildAuthorCandidates();
+            applyFilters();
         },
         serviceEnvVars());
 }
