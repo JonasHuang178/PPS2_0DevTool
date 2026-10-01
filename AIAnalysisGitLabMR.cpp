@@ -1081,8 +1081,14 @@ void AIAnalysisGitLabMR::onRefreshClicked()
                 createdItem->setToolTip(created);
                 row[ColumnCreated] = createdItem;
 
-                for (int c = 0; c < row.size(); ++c)
+                // 每一欄都置中，且只設一次 —— 逐欄分開設的話，之後加一欄就會
+                // 漏掉，而漏掉的症狀是一欄靠左、其餘置中，看起來像是沒對齊。
+                //
+                // 表頭不必設：QHeaderView 的水平表頭預設就是置中。
+                for (int c = 0; c < row.size(); ++c) {
                     row.at(c)->setEditable(false);
+                    row.at(c)->setTextAlignment(Qt::AlignCenter);
+                }
 
                 m_mrModel->appendRow(row);
             }
