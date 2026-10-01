@@ -25,7 +25,15 @@ def analyze(inputs):
     inputs 是一個 dict：
 
         description     MR 的原始描述（已扣掉上一輪的 AI 分析）
-        mr_diff         unified diff 純文字。太大時已截斷，尾端會註明
+        mr_diff         unified diff 純文字。太大時已截斷，尾端會註明。
+
+                        **報告裡的程式碼一律從這裡切，不要用 AI 回覆帶回來的
+                        那一份。** 讓模型回位置（例如 diff 裡那一行 @@ 標頭），
+                        再用 contract.hunk_of(mr_diff, 檔名, 位置) 取出內容。
+                        理由見 contract 裡那一支的說明；簡短版是：複述而來的
+                        程式碼可能與 MR 上的不一致，而沒有任何一步會發現。
+                        取不到時給空字串即可 —— 那一筆只剩標題與理由，不要
+                        回退成用回覆裡的原文。
         fetch_jira      fetch_jira(key) -> dict 或 None。鍵有 key / summary /
                         description / status / type / url。查不到、或沒設定
                         JIRA 連線都回 None —— 那不是錯誤，prompt 少那一段即可。
@@ -98,7 +106,9 @@ def analyze(inputs):
                 contract.finding(
                     title=u"（一句話說明發現什麼）",
                     reason=u"（為什麼）",
-                    diff_code=u"@@ ...",          # 沒有就省略
+                    # 從 inputs["mr_diff"] 切出來，不是用 AI 回的那一份
+                    diff_code=contract.hunk_of(
+                        inputs["mr_diff"], u"path/to/file.cpp", u"@@ ..."),
                 ),
             ],
         },
