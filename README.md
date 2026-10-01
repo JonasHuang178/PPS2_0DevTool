@@ -18,6 +18,20 @@ console 中 —— 在 Single Building 交付後才具備觸發腳本的入口�
 > [`openspec/changes/archive/2026-09-11-add-single-building-tab/tasks.md`](openspec/changes/archive/2026-09-11-add-single-building-tab/tasks.md)
 > 第 6 節。
 
+> **Merge Request 清單的兩個顯示過濾器與兩處連結，實機驗收尚未完成，change 已先行歸檔。**
+> 已在 Linux + Qt 5.15.13 驗過三件事：全新建置**零警告**（並與改動前的基準比對）、
+> 離屏啟動跑滿不崩、以及過濾層與關鍵字解析的 **23 項行為檢查**全過。
+> **39 項任務中 29 項未驗證** —— 全部是需要目視畫面或真的取回 Merge Request 的部分：
+> 摺疊造成的表格高度變化、標題欄的連結外觀與手形游標、連按兩下開瀏覽器、狀態行的數字、
+> 候選作者的推導與重建、過濾改動時選取被清空。
+>
+> 其中最值得先看的是 **6.2**：外殼的 `QTableView::item:selected { color: #042C53; }`
+> 可能蓋掉標題欄的連結色，那樣選中的那一列就看不出標題可點。這是 Qt 的灰色地帶，沒有以
+> 猜測斷言。
+>
+> 逐項狀態見
+> [`openspec/changes/archive/2026-10-01-add-mr-list-filters/tasks.md`](openspec/changes/archive/2026-10-01-add-mr-list-filters/tasks.md)。
+
 應用程式圖示已內嵌進執行檔，並在 Windows 上實機驗收通過（見 `openspec/changes/archive/2026-09-07-add-app-icon/tasks.md` 第 4 節）。
 
 ---
