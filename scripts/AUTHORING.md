@@ -320,6 +320,19 @@ Jira_Server_URL       ->   JIRA_SERVER_URL
 最後一項刻意沒有預設值：給了預設值的話，漏設時會靜默改用一個部署者沒選的前綴，而症狀
 是「JIRA 議題上明明掛著附件，報告裡卻沒有那一段」。點名失敗至少指得出要去改哪裡。
 
+**不走設定檔的那一個：**
+
+| 變數 | 內容 | 沒設定時 |
+|---|---|---|
+| `AI_VERIFY_SSL` | 要不要驗證 AI 服務的 TLS 憑證（AI Analysis GitLab MR 步驟 3 專用） | 視為 `false`，即**不驗證** |
+
+它與上表那些不同，**不在 `kServiceKey[]` 裡，也沒有對應的設定檔鍵** —— Qt 不會注入它，
+要開啟只能在環境裡設 `AI_VERIFY_SSL=true`（CI 想開就開）。這樣安排的原因是：加一個設定
+檔鍵要動 C++ 並重新建置，而地端 AI 服務多半用自簽或內部 CA 簽發的憑證，驗證失敗會讓功能
+完全不能用。所以工具端維持「不驗證」這個對地端服務唯一可用的預設，想收緊的人從環境收緊。
+
+預設不驗證與 `GITLAB_VERIFY_SSL` 同一個理由，是明著寫出來的取捨，不是疏忽。
+
 布林值記得自己轉換 —— `bool("false")` 在 Python 裡是 `True`：
 
 ```python
@@ -396,8 +409,9 @@ if not token:
 ```
 script_utils/
   system_utils.py   環境變數、建目錄、列目錄、暫存檔路徑、路徑轉 Windows 表示法
-  file_utils.py     整檔讀寫、行號區間讀取與置換、尋找、複製、搬移、刪除
-  json_utils.py     JSON 讀檔、寫檔、序列化
+  file_utils.py     整檔讀寫、行式文字檔讀寫、行號區間讀取與置換、尋找、
+                    複製、搬移、刪除
+  json_utils.py     JSON 讀檔、解析字串（可給預設值）、寫檔、序列化
   http_utils.py     REST 共用底層：session、逾時、重試、HttpError 基底
   gitlab_utils.py   GitLab REST
     get_all_mr(server_url, token, project_id, created_after,

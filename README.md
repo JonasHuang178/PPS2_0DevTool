@@ -140,6 +140,7 @@ PPS2_0DevTool/
 │   └── make_app_icon.py      圖示資產產生腳本（**不是**建置步驟）
 │
 ├── scripts/
+│   ├── AUTHORING.md          腳本撰寫手冊 ← 寫腳本之前先讀這份
 │   ├── _function_template.py 功能腳本範本 ← 複製這個開始寫新腳本
 │   ├── script_io.py          信封處理
 │   │
@@ -953,7 +954,6 @@ AI 等待設定：逾時 30 秒、重試 0 次、重問 0 次（最壞情況約 
 事後最常問的是「為什麼這次等了那麼久」，而那時使用者手上通常已經沒有當時的設定了。
 
 #### 重試的界線
-#### 重試的界線
 
 重點不在重試幾次，在**哪些不重試**：
 
@@ -1060,12 +1060,55 @@ print(load_hook('summary')[0].build_prompt({
 
 第 3 步在呼叫鉤子**之前**把素材備好，鉤子拿到的是現成的內容：
 
+完整的 `inputs`（權威版本是 `device/_template/summary.py` 的 docstring，範本就在手邊，
+不必翻這份文件）：
+
+**素材**
+
 | inputs | 內容 |
 |---|---|
+| `description` | MR 的原始描述，已扣掉上一輪的 AI 分析 |
 | `mr_diff` | unified diff 純文字，上限 `MAX_PROMPT_DIFF_BYTES`（目前 120000），超過截斷並註明 |
 | `fetch_jira` | `fetch_jira(key)` → dict 或 None，**函式而不是內容**，見下 |
+
+**這次是誰、哪一筆**
+
+| inputs | 內容 |
+|---|---|
+| `repo` | 專案，`namespace/project` |
+| `mr_iid` | Merge Request 編號 |
+| `device` | 選中這一份的 device 名稱 |
+| `mr_type` | 選中這一份的種類；沒有種類時是空字串 |
+| `jira_key` | 該次採用的 key；沒有就是空字串 |
+| `jira_mode` | `none` / `manual` / `auto` —— 讓你分辨 key 是抽的還是使用者填的 |
+
+**AI 連線與等待**（都來自使用者選的那個 AI 模式）
+
+| inputs | 內容 |
+|---|---|
+| `ai_mode_name` | 使用者選的模式名稱 |
+| `ai_api_url` | 端點；用 `contract.ai_credentials(inputs)` 取比較省事 |
+| `ai_api_key` | 金鑰，可以是空的 |
+| `ai_model` | 模型名稱。**不進請求**，只印在報告出處 |
+| `ai_timeout` | 單次請求的逾時秒數 |
+| `ai_retries` | 連線層的重試次數 |
+| `ai_reask` | 內容層的重問次數 |
+
+> **後三個要直接交給 `ai_utils.ask()`，不要自己寫死數字。** 它們是使用者為這個模式填的
+> `Timeout_Seconds` / `Retry_Count` / `Reask_Count`，而他會去調多半正是因為服務很忙。
+> 寫死的話那些設定對你這一支毫無效果，症狀是「我明明改了，還是等一樣久」。沒設定時這裡
+> 拿到的已經是預設值。
+
+**能力**（函式，可無條件呼叫）
+
+| inputs | 內容 |
+|---|---|
 | `progress` | `progress(text)`，在那個固定尺寸對話框上顯示一行字 |
 | `debug_write` | `debug_write(檔名, 內容)`，除錯沒開時什麼都不做 |
+
+**送出之前自己報一行 `progress`。** 入口腳本在呼叫鉤子前只報「準備 AI 分析…」—— 它不知道
+你接下來要做什麼，也不知道你什麼時候真的送出去。不報的話，等回覆那幾分鐘畫面上留著的會是
+你做完的上一件事，而盯著它看兩分鐘，合理的結論是程式當掉了。
 
 連線、憑證、錯誤分類都留在入口 —— 改 prompt 的人不該為了一句話面對 HTTP。連線失敗也
 因此不會被包裝成「device 的 summary.py 執行失敗」，那會把連線問題講成腳本寫壞了。
@@ -1275,6 +1318,9 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 | `contract.jira_url(key)` | 組 JIRA 網址 |
 | `contract.MAX_FINDING_DIFF_BYTES` | 單筆 diff 的位元組上限 |
 | `contract.ai_credentials(inputs)` | 取出 AI 端點、金鑰與模型名 |
+| `contract.ai_timeout(inputs)` | 逾時秒數，交給 `ai_utils.ask(timeout=...)` |
+| `contract.ai_retries(inputs)` | 連線層重試次數，交給 `ask(retries=...)` |
+| `contract.ai_reask(inputs)` | 內容層重問次數，交給 `ask(reask=...)` |
 | `contract.ai_verify_ssl()` | 要不要驗 TLS 憑證（預設否） |
 | `ai_utils.ask(...)` / `ask_json(...)` | 問 AI，含重試與重問 |
 | `ai_utils.as_json(text)` / `strip_fence(text)` | 解析回覆、剝 markdown 圍籬 |
@@ -1817,8 +1863,8 @@ Python 只把「腳本所在目錄」放進 `sys.path`，少了它，`from scrip
 | `reply_fail(message, detail, code)` | FAIL + exit 1 |
 | `run(main_func)` | 統一錯誤處理入口 |
 
-`script_utils.logger` 提供 `debug` / `info` / `warn` / `error` / `set_verbose`。
-它是**唯一**設定 logging 的地方，全部等級一律走 stderr。
+`script_utils.logger` 提供 `debug` / `info` / `warn` / `error` / `set_verbose` /
+`is_verbose`。它是**唯一**設定 logging 的地方，全部等級一律走 stderr。
 
 ---
 

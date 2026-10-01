@@ -49,6 +49,16 @@ def analyze(inputs):
         ai_api_url      AI 端點
         ai_api_key      AI 金鑰
         ai_model        模型名稱
+        ai_timeout      單次請求的逾時秒數（已正規化過的設定值）
+        ai_retries      連線層的重試次數 —— 服務沒回應時重試幾次
+        ai_reask        內容層的重問次數 —— 回了但解析不開時重問幾次
+
+                        **這三個直接交給 ai_utils.ask()**，不要自己寫死數字：
+                        它們來自使用者為這個 AI 模式填的 Timeout_Seconds /
+                        Retry_Count / Reask_Count，而他會去調它們多半正是因為
+                        服務很忙、不想再等那麼久。寫死的話那些設定對你這一支
+                        完全沒有效果，而症狀是「我明明改了，還是等一樣久」。
+                        沒設定時這裡拿到的已經是預設值，不必自己補。
         repo            專案，namespace/project
         mr_iid          編號
         device          這個 device 的名稱
