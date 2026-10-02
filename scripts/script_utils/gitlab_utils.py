@@ -69,6 +69,13 @@ DEFAULT_TIMEOUT = http_utils.DEFAULT_TIMEOUT
 # GitLab 每頁上限 100。取小了只是讓同樣的資料多跑幾趟。
 _PER_PAGE = 100
 
+# merge request 的 /diffs 端點每頁上限。
+#
+# **不能用 _PER_PAGE 的 100。** 已知多個 GitLab 版本在這個端點收到大於 30 的 per_page
+# 時直接回 500（gitlab-org/gitlab#427168、#428187）。那個失敗不會退回 /changes ——
+# 退回只在 404 時發生 —— 所以它會變成一個指不出原因的「GitLab 查詢失敗」。
+_DIFFS_PER_PAGE = 30
+
 # 分頁的硬上限，防止伺服器回傳異常的 next page 時無限迴圈。
 _MAX_PAGES = 1000
 
@@ -509,6 +516,55 @@ def _render_file_diff(entry):
     return text
 
 
+def _entry_path(entry):
+    """一筆 diff 項目對應的檔案路徑。"""
+    return entry.get("new_path") or entry.get("old_path") or ""
+
+
+def _changes_entries(server_url, token, base, timeout, verify_ssl):
+    """走 /changes 取得項目清單，回傳 (entries, overflow)。
+
+    overflow 是 GitLab 在「大小限制影響了這次結果」時給的旗標 —— 先前沒有讀它，於是
+    一份被截掉一半的 diff 與一份完整的 diff 在呼叫端看起來完全一樣。
+    """
+    body = request(server_url, token, "GET", base + "/changes",
+                   params={"access_raw_diffs": "true"},
+                   timeout=timeout, verify_ssl=verify_ssl)
+    body = body or {}
+    return (body.get("changes") or []), bool(body.get("overflow"))
+
+
+def _raw_entries(server_url, token, base, entries, overflow, timeout, verify_ssl):
+    """以 access_raw_diffs 重取，**內容較多的那一份勝出**。
+
+    不無條件採用重取的結果：那條路是舊端點，在某些版本上它自己也回空的
+    （gitlab-org/gitlab#300385）。比較「有內容的檔案數」再決定，所以重取失敗時至少
+    不會比原本更糟。
+
+    重取本身失敗（端點不在、權限不足）不讓整件事失敗 —— 原本那一份仍然可用，而且
+    呼叫端會從空的檔案數看見問題。
+    """
+    def with_content(items):
+        return sum(1 for one in items if (one.get("diff") or ""))
+
+    try:
+        raw, raw_overflow = _changes_entries(server_url, token, base,
+                                             timeout, verify_ssl)
+    except GitLabError as exc:
+        logger.warn("以 access_raw_diffs 重取失敗，沿用原本的結果：%s", exc)
+        return entries, overflow
+
+    if with_content(raw) > with_content(entries):
+        logger.info("access_raw_diffs 取回較完整的內容（%d → %d 個檔案有內容）",
+                    with_content(entries), with_content(raw))
+        return raw, bool(raw_overflow)
+
+    logger.warn("access_raw_diffs 沒有取回更多內容（仍有 %d 個檔案是空的）—— "
+                "多半是伺服器端的 diff 大小限制，需由管理者調整",
+                len(entries) - with_content(entries))
+    return entries, overflow or bool(raw_overflow)
+
+
 def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
                        timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """取得 merge request 的 unified diff，**連同取得過程中知道的事實**。
@@ -523,6 +579,9 @@ def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
         truncated     是否因為超過 max_bytes 而截斷
         bytes_total   截斷前的位元組數
         bytes_sent    text 中實際的差異位元組數（不含結尾那行說明）
+        overflow      GitLab 表示大小限制影響了這次結果
+        collapsed_files / too_large_files
+                      GitLab 明說被收合／過大的檔案（18.4 以後才有這兩個欄位）
 
     **為什麼不只回文字**：截斷這件事原本只留在 text 的結尾與一筆警告裡，而那兩個地方
     呼叫端都無法據以判斷「少了幾個檔案」。少了幾個是呼叫端唯一真正想知道的 —— 一份
@@ -544,20 +603,46 @@ def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
     base = "/projects/%s/merge_requests/%s" % (_encode_path(project_id),
                                                _encode_path(mr_iid))
 
+    overflow = False
+
     try:
         entries = get_paged(server_url, token, base + "/diffs",
+                            params={"per_page": _DIFFS_PER_PAGE},
                             timeout=timeout, verify_ssl=verify_ssl)
     except GitLabError as exc:
         if exc.status_code != 404:
             raise
         # 舊版沒有 /diffs。/changes 回的是物件，清單在 changes 欄位底下。
         logger.debug("/diffs 不存在，改試 /changes：%s", base)
-        body = request(server_url, token, "GET", base + "/changes",
-                       timeout=timeout, verify_ssl=verify_ssl)
-        entries = (body or {}).get("changes") or []
+        entries, overflow = _changes_entries(server_url, token, base,
+                                             timeout, verify_ssl)
 
     if not isinstance(entries, list):
         raise GitLabError("diff 端點回傳的不是清單：%s" % base)
+
+    # **被收合的檔案要再抓一次。**
+    #
+    # GitLab 的 diff 大小限制比直覺低得多：patch 只要到門檻的 10%（預設 200 KB 的
+    # 10%，約 20 KB）就會被「收合」，而收合的檔案在 API 回來的 diff 欄位是**空字串**。
+    # 網頁上看得到（點開才載入），API 拿到的卻只有一行檔頭 —— 於是 prompt 裡只剩
+    # `diff --git a/… b/…`，而每一步都回報成功。
+    #
+    # /diffs 沒有任何參數可以繞過它（它只吃 page / per_page / unidiff）。能繞過的是舊的
+    # /changes 加上 access_raw_diffs=true —— 那條路直接向 Gitaly 取，不受資料庫端的大小
+    # 限制。較慢也較耗資源，所以**只在真的有空的時候**才走。
+    if any(not (one.get("diff") or "") for one in entries):
+        logger.warn("MR %s 有檔案的差異內容是空的（多半是被 GitLab 的大小限制收合），"
+                    "改以 access_raw_diffs 重取", mr_iid)
+        entries, overflow = _raw_entries(server_url, token, base, entries,
+                                         overflow, timeout, verify_ssl)
+
+    collapsed_files = [_entry_path(one) for one in entries if one.get("collapsed")]
+    too_large_files = [_entry_path(one) for one in entries if one.get("too_large")]
+    if collapsed_files or too_large_files:
+        # collapsed / too_large 是 GitLab 18.4 才有的欄位；有就直接說，沒有就只能靠
+        # 「內容是空的」間接判斷。
+        logger.warn("MR %s：GitLab 標示 %d 個檔案被收合、%d 個過大",
+                    mr_iid, len(collapsed_files), len(too_large_files))
 
     chunks = [_render_file_diff(one).encode("utf-8") for one in entries]
     raw = b"".join(chunks)
@@ -605,6 +690,9 @@ def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
         "truncated": truncated,
         "bytes_total": bytes_total,
         "bytes_sent": len(raw),
+        "overflow": overflow,
+        "collapsed_files": collapsed_files,
+        "too_large_files": too_large_files,
     }
 
 

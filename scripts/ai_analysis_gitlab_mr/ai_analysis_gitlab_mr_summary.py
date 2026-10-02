@@ -83,7 +83,7 @@ def _fetch_diff(repo, mr_iid, debug_dir):
     try:
         project_id = gitlab_utils.get_repo_id(server_url, token, repo,
                                               verify_ssl=verify_ssl)
-        return gitlab_utils.get_mr_diff_detail(
+        info = gitlab_utils.get_mr_diff_detail(
             server_url, token, project_id, mr_iid,
             max_bytes=ai_analysis_gitlab_mr.MAX_PROMPT_DIFF_BYTES,
             verify_ssl=verify_ssl)
@@ -91,6 +91,53 @@ def _fetch_diff(repo, mr_iid, debug_dir):
         message, detail, code = ai_analysis_gitlab_mr.describe_gitlab_error(
             exc, repo)
         _fail(debug_dir, message, detail, code)
+
+    _require_diff_content(info, repo, mr_iid, debug_dir)
+    return info
+
+
+def _require_diff_content(info, repo, mr_iid, debug_dir):
+    """這支 MR 明明有變更，取回來的差異卻一行內容都沒有時，讓這一步失敗。
+
+    GitLab 的 diff 大小限制比直覺低得多（patch 到門檻的 10%、預設約 20 KB 就收合），
+    而被收合的檔案在 API 回來的 diff 欄位是空字串。組出來的差異於是只剩幾行
+    `diff --git a/… b/…`，網頁上卻看得到內容。
+
+    **這種時候要失敗，不能照樣送進 AI。** 送出去的話，模型對著幾行檔名給出一份自信的
+    分析，而每一步都回報成功 —— 使用者拿到的是一份看起來正常、實際上沒看過任何程式碼的
+    報告，還付了錢。這與「沒有 diff 的程式碼分析只能靠描述瞎猜」是同一條理由。
+
+    訊息要指得出成因與**該找誰改**：這是伺服器端的設定，使用者自己改不動。
+    """
+    if not info["file_count"]:
+        return                              # 這支 MR 本來就沒有變更，不是這裡的事
+    if "@@" in info["text"]:
+        return                              # 至少有一個 hunk，正常
+
+    reasons = []
+    if info.get("too_large_files"):
+        reasons.append("GitLab 標示 %d 個檔案過大"
+                       % len(info["too_large_files"]))
+    if info.get("collapsed_files"):
+        reasons.append("GitLab 標示 %d 個檔案被收合"
+                       % len(info["collapsed_files"]))
+    if info.get("overflow"):
+        reasons.append("GitLab 表示大小限制影響了這次結果")
+
+    _fail(debug_dir,
+          "GitLab 沒有提供任何程式碼差異內容（%s !%s 共 %d 個檔案）"
+          % (repo, mr_iid, info["file_count"]),
+          "取回的差異只有檔名、沒有任何一段內容%s。\n\n"
+          "最常見的成因是伺服器端的 diff 大小限制：單一 patch 到上限的 10%%"
+          "（預設 200 KB 的 10%%，約 20 KB）就會被收合，API 取到的 diff 欄位因此是空的，"
+          "而網頁上點開仍然看得到。本工具已經改以 access_raw_diffs 重取過一次，仍然沒有"
+          "內容。\n\n"
+          "請管理者調高 diff 大小限制（Admin → Settings → General → Diff limits），"
+          "或改以較小的 Merge Request 進行分析。\n\n"
+          "不送進 AI 是刻意的：對著幾行檔名做出的分析會看起來很正常，而它沒有看過任何"
+          "程式碼。"
+          % ("（%s）" % "、".join(reasons) if reasons else ""),
+          "MR_DIFF_NO_CONTENT")
 
 
 def _fetch_jira(jira_key):
