@@ -704,28 +704,6 @@ def render_coverage_section(analysis):
     return "\n".join(parts).rstrip("\n") + "\n"
 
 
-def _coverage_label(analysis):
-    """出處資訊裡涵蓋範圍的那一段。沒有涵蓋範圍資訊時回空字串。
-
-    這一行永遠都在，所以放一個簡短的標示在這裡是零成本的常駐訊號 —— 沒有缺口的那
-    絕大多數報告也看得到「涵蓋 21/21」，於是「3/21」才會顯眼。
-    """
-    if not isinstance(analysis, dict):
-        return ""
-    coverage = analysis.get("coverage")
-    if not isinstance(coverage, dict) or "files_sent" not in coverage:
-        return ""
-
-    sent = _int_of(coverage.get("files_sent"))
-    reported = _int_of(coverage.get("files_reported"))
-    changed = _int_of(coverage.get("files_changed"))
-
-    label = "Coverage: %d/%d 檔案" % (reported, sent)
-    if changed != sent:
-        # 送進去的不是全部時一定要標出總數，否則 3/21 看起來像一次還算完整的分析。
-        label += "（MR 共 %d）" % changed
-    return label
-
 
 # --- GitLab 憑證與錯誤分流 --------------------------------------------------
 #
@@ -1900,10 +1878,19 @@ def _escape_link_text(text):
 # 一份報告被貼到 MR 討論串之後就脫離了產生它的環境。半年後有人問「這段分析是哪來的、
 # 為什麼跟現在跑出來的不一樣」，footer 是唯一答得出來的東西。
 
-# 這支腳本的名稱與版本。**改了報告的產出方式就把版本往上加** —— 那是這一行存在的
-# 唯一理由，不加的話舊報告與新報告在外觀上分不出來。
-SCRIPT_NAME = "MR Summary Script"
-SCRIPT_VERSION = "1.3"
+# 這個功能的名稱與版號。五支入口腳本與這份契約共用這一份。
+#
+# 版號兩碼：第一碼留給重大修改，第二碼是修改計數。**這個功能每改一次就把第二碼加一**
+# ——包含只改註解或診斷文字；第一碼更新時第二碼歸零。沒有判斷餘地是刻意的：需要判斷
+# 「這算大改還是小改」的規則，就是會被漏掉的規則。
+#
+# **不要與 TEMPLATE_VERSION 搞混。** 那一個是信封模板的版本，全專案共用一個值，只有
+# 信封格式本身改了才動。改這個功能不要動它。
+#
+# device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
+# 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
+SCRIPT_NAME = "AI Analysis GitLab MR"
+SCRIPT_VERSION = "2.0"
 
 
 def _link(text, url):
@@ -1950,90 +1937,64 @@ def _tool_origin():
     return ("%s %s" % (name, version)).strip()
 
 
-def _jira_label(analysis):
-    """出處資訊裡 JIRA 的那一段。
-
-    依狀態而異：
-
-        ok       印 key；有網址就做成連結
-        none     印 NONE
-        invalid  印**被拒絕的原值**加 (invalid)
-
-    印原值而不是 NONE 是刻意的：看到 `JIRA: WIP (invalid)` 就知道標題的第一個方括號放
-    的是 WIP，直接指出怎麼修；只印 NONE 的話只知道失敗了。
-
-    狀態由產生分析的那一步判定並隨結構帶過來，**這裡不重新判定** —— 重判就會有第二份
-    規則，兩份必然漂移。
-    """
-    if not isinstance(analysis, dict):
-        return ""
-
-    state = plain(analysis.get("jira_state")) or JIRA_STATE_NONE
-    key = plain(analysis.get("jira_key"))
-
-    if state == JIRA_STATE_OK and key:
-        return "JIRA: %s" % _link(key, plain(analysis.get("jira_url")))
-    if state == JIRA_STATE_INVALID:
-        return "JIRA: %s (invalid)" % (key or "(空值)")
-    return "JIRA: NONE"
-
-
 def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     """報告最後那一段出處資訊。
 
-    形狀：
+    形狀（每一行都是一個清單項目，整行包在 <sub> 裡縮小）：
 
         ---
 
-        Script: v1.3 | Device: ssd v1.2 | Type: bug | AI Mode: Open AI | JIRA: WIP (invalid) | Coverage: 3/21 檔案（MR 共 90）
-        Gitlab Pipeline #1000 | Commit e456d23
+        - <sub>**Device**　`ssd` `2.1`　·　**Type**　`bug`</sub>
+        - <sub>**腳本**　AI Analysis GitLab MR `2.0`</sub>
+        - <sub>**AI**　Open AI ／ `gpt-4o`</sub>
+        - <sub>**產生方式**　PPS 2.0 DevTool `v2.0.0`</sub>
 
-    每個值前面都有名字。沒有標籤的話（例如 `(Open AI / ssd v1.2)`）兩個版本號並列時
-    讀的人分不出哪一個是腳本的、哪一個是 device 的。
+    四行各回答一個問題：用哪一套邏輯、哪一版骨架、哪個模型、誰在哪裡產生的。
 
-    `Script` 是入口腳本與契約的版本，`Device` 是那個 device 自己的。分開標示的理由是
-    同一份 MR 用不同 device 跑出來的報告不一樣 —— 只有一個全域版本號的話，兩份不同的
-    報告會帶同一個版本。
+    **用清單而不是四行連著的文字**：段落內的換行在 markdown 是軟換行，轉譯後會變成一個
+    空白，四行會擠成一行。清單是結構上就分開的元素，在任何轉譯器下都成立。
 
-    第二行依環境而定：CI 裡是 pipeline 與 commit，從工具跑是工具名稱與版本，兩者都沒有
-    （命令列直接執行）就整行不出現。**第一行永遠都在** —— 它是這整段存在的理由。
+    **<sub> 放在每一個項目**裡，不是包住整個清單：<sub> 是 inline 標籤，包不住清單這種
+    block 元素 —— 那樣產生的是 `<p><sub></p>…<p></sub></p>`，清單根本不在它裡面，而
+    sanitizer 多半會把那兩個孤兒標籤丟掉（量過）。
+
+    兩個版號都在：`Device` 那一行是該 device 的，`腳本` 那一行是通用層的。第一碼一致代表
+    同一代；不一致時讀的人自己對照得出來，程式不擋也不標記。
+
+    最後一行依環境而定：CI 裡是 pipeline 與 commit，從工具跑是工具名稱與版本，兩者都沒有
+    （命令列直接執行）就整行不出現。
 
     分隔線之前必須空一行，否則 markdown 會把上一行文字當成 setext 標題。
     """
-    parts = ["Script: v%s" % SCRIPT_VERSION]
+    lines = []
 
+    # 一、用哪一套邏輯。種類沒有時整段不印 —— 不用種類的 device 每份報告都多一個
+    # 「Type: 無」只是噪音。
     name = plain(device_name)
     if name:
+        bits = ["**Device**　`%s`" % name]
         version = plain(device_version)
-        parts.append("Device: %s" % (("%s v%s" % (name, version)) if version else name))
+        if version:
+            bits.append("`%s`" % version)
+        mr_type = plain((analysis or {}).get("mr_type"))
+        if mr_type:
+            bits.append("·　**Type**　`%s`" % mr_type)
+        lines.append("　".join(bits))
 
-    # 種類緊接在 device 後面：兩者一起才說得出「這份報告是哪一段邏輯產生的」。
-    # 沒有種類時**整段不印**，不印「無」—— 不用種類的 device 每一份報告都多一個
-    # 「Type: 無」只是噪音。
-    mr_type = plain((analysis or {}).get("mr_type"))
-    if mr_type:
-        parts.append("Type: %s" % mr_type)
+    # 二、哪一版骨架。**這一行永遠都在** —— 它是這整段存在的理由。
+    lines.append("**腳本**　%s `%s`" % (SCRIPT_NAME, SCRIPT_VERSION))
 
+    # 三、哪個模型。模式是「使用者選了哪一組設定」，模型是「實際跑的是誰」；在 CI 上
+    # 只有後者有意義，所以兩個都印。
     mode = plain(ai_mode)
-    if mode:
-        parts.append("AI Mode: %s" % mode)
+    model = plain((analysis or {}).get("model"))
+    if mode or model:
+        lines.append("**AI**　%s" % ("%s ／ `%s`" % (mode, model) if mode and model
+                                     else (mode or "`%s`" % model)))
 
-    jira = _jira_label(analysis)
-    if jira:
-        parts.append(jira)
-
-    coverage = _coverage_label(analysis)
-    if coverage:
-        parts.append(coverage)
-
-    lines = [" | ".join(parts)]
+    # 四、誰在哪裡產生的。
     origin = _ci_origin() or _tool_origin()
     if origin:
-        # 兩行之間空一行，兩者才會是**兩個段落**。只放一個換行的話 markdown 會把它們
-        # 併成同一段（段落內的換行是軟換行，轉譯後變成一個空白），出處就擠成一行。
-        #
-        # 這裡用空行而不是清單：兩行各自是一句完整的出處敘述，不是一組欄位。
-        lines.append("")
-        lines.append(origin)
+        lines.append("**產生方式**　%s" % origin)
 
-    return "---\n\n" + "\n".join(lines)
+    return "---\n\n" + "\n".join("- <sub>%s</sub>" % one for one in lines)
