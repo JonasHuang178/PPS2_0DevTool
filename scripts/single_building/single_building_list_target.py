@@ -38,6 +38,11 @@ def main():
         params=[],
     )
 
+    # 版號記進診斷：這個功能的產出不會脫離產生它的環境，所以沒有一份報告
+    # 可以承載版號 —— console 是唯一看得到它的地方（見 single_building 套件）。
+    logger.info("%s %s", single_building.SCRIPT_NAME,
+                single_building.SCRIPT_VERSION)
+
     path = single_building.setting_file_path()
     logger.info("讀取設定檔：%s", path)
     script_io.progress("讀取設定…")
