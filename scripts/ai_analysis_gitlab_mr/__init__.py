@@ -1890,7 +1890,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.0"
+SCRIPT_VERSION = "2.1"
 
 
 def _link(text, url):
@@ -1940,25 +1940,25 @@ def _tool_origin():
 def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     """報告最後那一段出處資訊。
 
-    形狀（每一行都是一個清單項目，整行包在 <sub> 裡縮小）：
+    形狀（整段是一個 <sub>，行與行之間用 <br> 斷開）：
 
         ---
 
-        - <sub>**Device**　`ssd` `2.1`　·　**Type**　`bug`</sub>
-        - <sub>**腳本**　AI Analysis GitLab MR `2.0`</sub>
-        - <sub>**AI**　Open AI ／ `gpt-4o`</sub>
-        - <sub>**產生方式**　PPS 2.0 DevTool `v2.0.0`</sub>
+        <sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.0`<br>**AI** Open AI | `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 
     四行各回答一個問題：用哪一套邏輯、哪一版骨架、哪個模型、誰在哪裡產生的。
 
-    **用清單而不是四行連著的文字**：段落內的換行在 markdown 是軟換行，轉譯後會變成一個
-    空白，四行會擠成一行。清單是結構上就分開的元素，在任何轉譯器下都成立。
+    **斷行用 <br> 而不是真的換行**：段落內的換行在 markdown 是軟換行，轉譯後會變成一個
+    空白，四行會擠成一行。<br> 是明確的斷行，在任何轉譯器下都成立（量過）。
 
-    **<sub> 放在每一個項目**裡，不是包住整個清單：<sub> 是 inline 標籤，包不住清單這種
-    block 元素 —— 那樣產生的是 `<p><sub></p>…<p></sub></p>`，清單根本不在它裡面，而
-    sanitizer 多半會把那兩個孤兒標籤丟掉（量過）。
+    **<sub> 包住整段，不是每一行各包一個**：這一段轉譯出來是單一個 `<p>`，<sub> 是
+    inline 標籤，包得住 `<p>` 裡的內容，<br> 也是 inline，巢狀合法（量過）。先前用清單
+    時每一個項目都得自己包一次，是因為 <sub> 包不住清單那種 block 元素。
 
-    兩個版號都在：`Device` 那一行是該 device 的，`腳本` 那一行是通用層的。第一碼一致代表
+    **只用 ASCII 的分隔**：欄位之間一個半形空白，同一行內的兩組值之間 ` | `。全形空白
+    與全形斜線在等寬字型下寬度不定，貼到 GitLab 也不見得照原樣保留。
+
+    兩個版號都在：`Device` 那一組是該 device 的，`腳本` 那一組是通用層的。第一碼一致代表
     同一代；不一致時讀的人自己對照得出來，程式不擋也不標記。
 
     最後一行依環境而定：CI 裡是 pipeline 與 commit，從工具跑是工具名稱與版本，兩者都沒有
@@ -1972,29 +1972,29 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     # 「Type: 無」只是噪音。
     name = plain(device_name)
     if name:
-        bits = ["**Device**　`%s`" % name]
+        bits = ["**Device** `%s`" % name]
         version = plain(device_version)
         if version:
             bits.append("`%s`" % version)
         mr_type = plain((analysis or {}).get("mr_type"))
         if mr_type:
-            bits.append("·　**Type**　`%s`" % mr_type)
-        lines.append("　".join(bits))
+            bits.append("| **Type** `%s`" % mr_type)
+        lines.append(" ".join(bits))
 
     # 二、哪一版骨架。**這一行永遠都在** —— 它是這整段存在的理由。
-    lines.append("**腳本**　%s `%s`" % (SCRIPT_NAME, SCRIPT_VERSION))
+    lines.append("**腳本** %s `%s`" % (SCRIPT_NAME, SCRIPT_VERSION))
 
     # 三、哪個模型。模式是「使用者選了哪一組設定」，模型是「實際跑的是誰」；在 CI 上
     # 只有後者有意義，所以兩個都印。
     mode = plain(ai_mode)
     model = plain((analysis or {}).get("model"))
     if mode or model:
-        lines.append("**AI**　%s" % ("%s ／ `%s`" % (mode, model) if mode and model
-                                     else (mode or "`%s`" % model)))
+        lines.append("**AI** %s" % ("%s | `%s`" % (mode, model) if mode and model
+                                    else (mode or "`%s`" % model)))
 
     # 四、誰在哪裡產生的。
     origin = _ci_origin() or _tool_origin()
     if origin:
-        lines.append("**產生方式**　%s" % origin)
+        lines.append("**產生方式** %s" % origin)
 
-    return "---\n\n" + "\n".join("- <sub>%s</sub>" % one for one in lines)
+    return "---\n\n<sub>%s</sub>" % "<br>".join(lines)
