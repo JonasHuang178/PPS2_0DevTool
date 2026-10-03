@@ -27,7 +27,8 @@ def _entry_block(item, path, position):
     形狀：
 
         - <標題>
-          <理由>
+          - <理由第一句>
+          - <理由第二句>
           <details>
 
           ```diff
@@ -35,8 +36,18 @@ def _entry_block(item, path, position):
           ```
           </details>
 
-    理由緊接在 bullet 下一行、縮排兩格。GitLab 會把它併進同一段（markdown 的清單
-    延續），結果視窗是純文字則如實顯示成兩行縮排 —— 兩邊都讀得下去。
+    **理由與總覽用同一套斷行。** AI 回來的理由跟總覽一樣是一句接一句的一整段，在結果
+    視窗會折成一片文字牆、貼到討論串則是一個段落。contract.as_list() 遇到句末標點就斷，
+    逐行排成該筆之下的子清單；它會尊重來源已有的結構（自帶換行、自帶有序編號），只斷得出
+    一段時原樣回傳，所以可以無條件套用 —— 單句的理由仍是縮排的一行，與先前相同。
+
+    子清單縮排兩格。CommonMark（GitLab 用的那一套）據此把它收進該筆 bullet 之內，而
+    <details> 成為子清單的兄弟、仍掛在該筆之下 —— 也就是 diff 屬於這一筆 finding，不屬於
+    理由的最後一句。量過。
+
+    > python-markdown 在兩格縮排下不認巢狀，會把理由各句拉成與標題同層的項目；四格縮排
+    > 則反過來把 <details> 吸進子項目裡、圍籬變成行內程式碼。兩格是對 GitLab 正確的那一邊，
+    > 而報告的目的地就是 GitLab。
 
     diff 包在 <details> 裡收合：一筆 finding 的 diff 可能幾十行，攤開來會把整份報告
     的可讀性吃掉，而讀的人多半先看標題與理由、需要時才展開。<details> 之後必須空一行，
@@ -53,8 +64,15 @@ def _entry_block(item, path, position):
     if title:
         lines.append("- %s" % title)
     if reason:
-        # 沒有標題時理由自己當 bullet —— 否則會是一段縮排卻沒有歸屬的文字。
-        lines.append(_indent(reason) if title else "- %s" % reason)
+        points = contract.as_list(reason)
+        if title:
+            lines.append(_indent(points))
+        elif points == reason:
+            # 沒有標題又切不動時理由自己當 bullet —— 否則會是一段縮排卻沒有歸屬的文字。
+            lines.append("- %s" % points)
+        else:
+            # 沒有標題但切得動：各句直接當這一筆的條目，不必多一層。
+            lines.append(points)
 
     if code:
         fence = contract.fence_for(code)
@@ -95,11 +113,11 @@ def render(inputs):
         ## Code Changes
         ### 1. <檔案路徑>
         - <標題>
-        <理由>
-        <理由>
-        ```diff
-        <diff>
-        ```
+          - <理由第一句>
+          - <理由第二句>
+          ```diff
+          <diff>
+          ```
 
     空的欄位整段不放：一個只有標題、底下什麼都沒有的區塊會讓人以為內容漏掉了。
     整個 mrDiff 為空時連 "## Code Changes" 都不出現。
@@ -115,6 +133,9 @@ def render(inputs):
     # 改掉原文之後，想換一種版面就只能重新呼叫一次 AI。
     #
     # as_list() 會尊重來源已有的結構（自帶換行、自帶有序編號），切不動就原樣回傳。
+    #
+    # 每一筆 finding 的理由用的是同一個函式（見 _entry_block）—— 兩處都是「AI 回來的
+    # 一整段」，沒有理由一邊斷行一邊不斷。
     overview = contract.as_list(analysis.get("overview"))
     if overview:
         blocks.append("## Summary")

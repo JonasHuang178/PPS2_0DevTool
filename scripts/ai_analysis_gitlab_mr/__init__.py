@@ -1890,7 +1890,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.1"
+SCRIPT_VERSION = "2.2"
 
 
 def _link(text, url):
