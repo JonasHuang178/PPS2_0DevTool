@@ -41,6 +41,11 @@ def main():
         params=[],
     )
 
+    # 版號記進診斷：這個功能的產出不會脫離產生它的環境，所以沒有一份報告
+    # 可以承載版號 —— console 是唯一看得到它的地方（見 single_building 套件）。
+    logger.info("%s %s", single_building.SCRIPT_NAME,
+                single_building.SCRIPT_VERSION)
+
     source_path = req["source_path"]
     if not source_path:
         # Qt 端在來源路徑為空時根本不會呼叫這支腳本，但命令列使用者會。
