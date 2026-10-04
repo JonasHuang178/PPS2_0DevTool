@@ -98,6 +98,48 @@ def _file_body(path, findings):
     return body
 
 
+def _jira_entry(analysis):
+    """JIRA 指引那一節的內容（不含 `## 詳細資料` 那一行）。
+
+    沒有採用有效的 key 時回空字串，呼叫端據此整節不放。
+
+    **這一節是報告裡唯一提到那張單子的地方。** 出處那一段曾經印過 `JIRA: <key>`，後來
+    移除了（見 `contract.render_footer`），所以 key 現在只存在於產物的資料裡 —— 讀報告
+    的人看不到，而那張單子正是這份分析的前提。
+
+    **狀態不在這裡重新判定。** `jira_state` 由步驟 3 的 summary 鉤子判定並隨結構帶過來；
+    規格明文要求這一步沿用它。自己再認一次 key 的樣式就有第二份規則，而兩份必然漂移。
+
+    只有 `ok` 會出現這一節：
+
+        ok       採用了這張單子 -> 出現
+        none     沒有要用       -> 不出現
+        invalid  抽到但不是 key -> 不出現
+
+    `invalid` 不出現是因為那個字串不是 key（例如標題第一個方括號放的是 `WIP`），為它產生
+    一行「想知道更多請看這裡」會把讀者送向一個不存在的議題。**也因此這一節不負責「抽錯了」
+    那個訊號** —— 該訊號在出處移除 JIRA 那一輪即已失去，本輪不恢復（見 design 風險二）。
+
+    另外要求 key 非空：`validate_analysis()` 不保證狀態與 key 一致，少了這個條件，一份
+    「狀態說有效、key 卻是空的」結構會印出一行指向空字串的指引。
+
+    網址取現成的 `jira_url`，不呼叫 `contract.jira_url()` —— 步驟 3 已經填好，而那一支讀
+    的是環境變數；這一步重算一次就多一個可能與產物不一致的來源。組不出網址（沒設
+    `JIRA_SERVER_URL`）時只印 key 的文字：那是部署的設定問題，與 key 對不對無關，而知道是
+    哪一張單子比因為做不成連結就整節消失有用。
+    """
+    if contract.plain(analysis.get("jira_state")) != contract.JIRA_STATE_OK:
+        return ""
+
+    key = contract.plain(analysis.get("jira_key"))
+    if not key:
+        return ""
+
+    url = contract.plain(analysis.get("jira_url"))
+    target = "[%s](%s)" % (key, url) if url else key
+    return "- For more information, please refer to %s" % target
+
+
 def render(inputs):
     """把步驟 3 的結構化分析渲染成報告裡「AI 分析結果」底下的內容。
 
@@ -119,8 +161,15 @@ def render(inputs):
           <diff>
           ```
 
+        ## 詳細資料
+        - For more information, please refer to [<JIRA key>](<網址>)
+
     空的欄位整段不放：一個只有標題、底下什麼都沒有的區塊會讓人以為內容漏掉了。
     整個 mrDiff 為空時連 "## Code Changes" 都不出現。
+
+    詳細資料那一節排在最後，而且只在採用了有效的 JIRA key 時出現（見 _jira_entry）。
+    放最後是因為它是「要更多就往這裡去」的指引、不是分析的內容 —— 排在總覽之前的話，
+    一份報告的開頭就先告訴讀者他要的東西在別處。
     """
     analysis = inputs["analysis"]
 
@@ -157,5 +206,16 @@ def render(inputs):
     if files:
         blocks.append("## Code Changes")
         blocks.extend(files)
+
+    # 指引放最後：它不是分析的內容，是看完之後要往哪裡去。
+    #
+    # **沒有任何分析內容時連它也不放**（`blocks` 為空）。它是對其他內容的註解，與涵蓋範圍
+    # 那一段同一個理由：單獨存在時，產出的是一份只說「詳情請看別處」、而本身什麼都沒說的
+    # 報告。而這一節若自己撐起了那一段，入口腳本的「是否有可合併的內容」就會判定為有，
+    # 於是那份報告會被當成成功的產出交出去。
+    jira = _jira_entry(analysis)
+    if blocks and jira:
+        blocks.append("## 詳細資料")
+        blocks.append(jira)
 
     return "\n\n".join(blocks)
