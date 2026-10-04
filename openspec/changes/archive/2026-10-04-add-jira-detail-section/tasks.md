@@ -62,5 +62,5 @@
 
 ## 6. 併入主規格
 
-- [ ] 6.1 把 delta 併入 `openspec/specs/ai-analysis-gitlab-mr/spec.md`，注意這一輪是
+- [x] 6.1 把 delta 併入 `openspec/specs/ai-analysis-gitlab-mr/spec.md`，注意這一輪是
       **收窄**既有那句「模式名稱與 JIRA 連結 SHALL NOT 出現在報告中」，不是整句刪除
