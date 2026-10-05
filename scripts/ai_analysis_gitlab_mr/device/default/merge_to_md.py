@@ -21,44 +21,40 @@ def _indent(text):
                       for line in text.split("\n"))
 
 
-def _entry_block(item, path, position):
-    """一筆 finding，組成報告裡的一個條目。
+def _details(code):
+    """diff 的收合區塊。
+
+    diff 包在 <details> 裡收合：一個 hunk 的 diff 可能幾十行，攤開來會把整份報告的
+    可讀性吃掉，而讀的人多半先看標題與理由、需要時才展開。<details> 之後必須空一行，
+    否則 GitLab 不會把裡面的內容當 markdown 解析，圍籬會原樣印出來。
+    """
+    fence = contract.fence_for(code)
+    return "%s%sdiff\n%s\n%s%s" % ("<details>\n\n", fence, code, fence,
+                                   "\n</details>")
+
+
+def _finding_lines(item):
+    """一筆 finding 的標題與理由。回傳行的清單，整筆都沒有內容時回空清單。
 
     形狀：
 
         - <標題>
           - <理由第一句>
           - <理由第二句>
-          <details>
-
-          ```diff
-          <diff>
-          ```
-          </details>
 
     **理由與總覽用同一套斷行。** AI 回來的理由跟總覽一樣是一句接一句的一整段，在結果
     視窗會折成一片文字牆、貼到討論串則是一個段落。contract.as_list() 遇到句末標點就斷，
     逐行排成該筆之下的子清單；它會尊重來源已有的結構（自帶換行、自帶有序編號），只斷得出
-    一段時原樣回傳，所以可以無條件套用 —— 單句的理由仍是縮排的一行，與先前相同。
+    一段時原樣回傳，所以可以無條件套用 —— 單句的理由仍是縮排的一行。
 
-    子清單縮排兩格。CommonMark（GitLab 用的那一套）據此把它收進該筆 bullet 之內，而
-    <details> 成為子清單的兄弟、仍掛在該筆之下 —— 也就是 diff 屬於這一筆 finding，不屬於
-    理由的最後一句。量過。
+    子清單縮排兩格。CommonMark（GitLab 用的那一套）據此把它收進該筆 bullet 之內。
 
     > python-markdown 在兩格縮排下不認巢狀，會把理由各句拉成與標題同層的項目；四格縮排
     > 則反過來把 <details> 吸進子項目裡、圍籬變成行內程式碼。兩格是對 GitLab 正確的那一邊，
     > 而報告的目的地就是 GitLab。
-
-    diff 包在 <details> 裡收合：一筆 finding 的 diff 可能幾十行，攤開來會把整份報告
-    的可讀性吃掉，而讀的人多半先看標題與理由、需要時才展開。<details> 之後必須空一行，
-    否則 GitLab 不會把裡面的內容當 markdown 解析，圍籬會原樣印出來。
-
-    整段縮排兩格是為了讓它留在該筆 bullet 之內；markdown 會把圍籬的縮排從內容行一併
-    扣掉，所以 diff 本身不會多出兩格。
     """
     title = contract.plain(item.get("title"))
     reason = contract.plain(item.get("reason"))
-    code = contract.plain(item.get("diffCode"))
 
     lines = []
     if title:
@@ -73,26 +69,90 @@ def _entry_block(item, path, position):
         else:
             # 沒有標題但切得動：各句直接當這一筆的條目，不必多一層。
             lines.append(points)
+    return lines
+
+
+def _group_by_hunk(findings):
+    """把指向**同一個 hunk** 的發現收成一組，回傳 [[item, ...], ...]。
+
+    模型對同一段程式碼常常分成好幾個 JSON 節點講（「這裡調高了上限」、「這會拖長失敗
+    時間」），而那幾筆的 diffCode 是同一段文字 —— 不分組的話，同一個 hunk 的收合區塊
+    會一字不差地重複貼好幾次，讀的人得自己比對才知道那是同一段。
+
+    鍵用 diffCode 本身而不是 hunk 標頭：那段文字由 contract.hunk_of() 從同一份 diff
+    切出來，同一個 hunk 必然一字不差，而標頭要再解析一次才拿得到 —— 多一份解析就多一份
+    會漂移的規則。
+
+    **沒有 diffCode 的各自成組。** 它們的 diffCode 都是空字串，當成鍵的話所有「位置
+    指不到」的發現會被併成一組，而它們之間毫無關係。
+
+    分組保持**首次出現的順序**，組內保持模型原本的相對順序。模型若交錯著講
+    （hunk A、hunk B、又回到 A），同一個 hunk 的幾筆會被收到一起 —— 必須如此，因為
+    diff 只掛在該組第一筆，後續各筆是靠「緊跟在後面」表達它們講的是同一段。
+    """
+    groups = []
+    by_code = {}
+    for item in findings:
+        code = contract.plain(item.get("diffCode"))
+        if not code:
+            groups.append([item])
+            continue
+        bucket = by_code.get(code)
+        if bucket is None:
+            bucket = [item]
+            by_code[code] = bucket
+            groups.append(bucket)       # 同一個 list 物件，後面 append 會一起長
+        else:
+            bucket.append(item)
+    return groups
+
+
+def _group_block(group):
+    """一組（同一個 hunk）的發現，組成報告裡的條目。
+
+    形狀：
+
+        - <第一筆的標題>
+          - <理由>
+          <details>
+
+          ```diff
+          <diff>
+          ```
+          </details>
+        - <第二筆的標題>
+          - <理由>
+
+    **diff 只掛在該組的第一筆。** 每一筆各貼一次的話，同一段程式碼會在報告裡出現 N 次。
+    掛第一筆而不是最後一筆：讀的人先看到那段程式碼，接下來幾筆都是在講它；掛最後一筆則
+    是規格警告過的那個形狀（收合區塊落在尾端，讀起來像只有那一筆有對應的程式碼）。
+
+    整段縮排兩格是為了讓它留在該筆 bullet 之內；markdown 會把圍籬的縮排從內容行一併
+    扣掉，所以 diff 本身不會多出兩格。
+    """
+    entries = [lines for lines in (_finding_lines(one) for one in group) if lines]
+    code = contract.plain(group[0].get("diffCode"))
+
+    if not entries:
+        # 整組都沒有標題也沒有理由。維持既有行為：有程式碼就原樣放，不縮排 ——
+        # 沒有 bullet 可以依附時，縮排只會變成一段無主的內容。
+        return _details(code) if code else ""
 
     if code:
-        fence = contract.fence_for(code)
-        block = "%s%sdiff\n%s\n%s%s" % (
-            "<details>\n\n", fence, code, fence, "\n</details>")
-        # 有 bullet 才縮排；沒有的話縮排會變成一段無主的內容。
-        lines.append(_indent(block) if lines else block)
+        entries[0].append(_indent(_details(code)))
 
-    return "\n".join(lines)
+    return "\n".join("\n".join(entry) for entry in entries)
 
 
-def _file_body(path, findings):
+def _file_body(findings):
     """一個檔案底下的內容（不含 `### N. 路徑` 那一行）。
 
     回傳空清單代表這個檔案沒有任何可呈現的內容 —— 呼叫端據此整個略過它，不留下一個
     底下什麼都沒有的標題，編號也不會跳號。
     """
     body = []
-    for position, item in enumerate(findings, start=1):
-        block = _entry_block(item, path, position)
+    for group in _group_by_hunk(findings):
+        block = _group_block(group)
         if block:
             body.append(block)
     return body
@@ -183,7 +243,7 @@ def render(inputs):
     #
     # as_list() 會尊重來源已有的結構（自帶換行、自帶有序編號），切不動就原樣回傳。
     #
-    # 每一筆 finding 的理由用的是同一個函式（見 _entry_block）—— 兩處都是「AI 回來的
+    # 每一筆 finding 的理由用的是同一個函式（見 _finding_lines）—— 兩處都是「AI 回來的
     # 一整段」，沒有理由一邊斷行一邊不斷。
     overview = contract.as_list(analysis.get("overview"))
     if overview:
@@ -197,7 +257,7 @@ def render(inputs):
     index = 0
     for path, findings in mr_diff.items():
         clean = contract.plain(path)
-        body = _file_body(clean, findings)
+        body = _file_body(findings)
         if not body:
             continue
         index += 1
