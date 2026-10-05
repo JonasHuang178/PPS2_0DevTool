@@ -61,6 +61,7 @@ __all__ = [
     "fence_for",
     "hunk_header_of",
     "hunk_of",
+    "resolve_reported_path",
     "MAX_FINDING_DIFF_BYTES",
     "MAX_PROMPT_DIFF_BYTES",
     "MAX_COVERAGE_PATHS",
@@ -1224,6 +1225,73 @@ def _same_path(candidate, wanted):
             or right.endswith("/" + left))
 
 
+# unified diff 用來表示「這一側不存在」的哨兵值。它**不是檔案路徑**。
+#
+# 新增檔案的檔頭是 `--- /dev/null`，刪除檔案是 `+++ /dev/null`。兩者都由
+# gitlab_utils._render_file_diff() 補上，因為少了它們，這份 diff 餵給任何吃 unified
+# diff 的工具都會在新增／刪除這兩個情況失敗。
+_DIFF_SENTINEL = "dev/null"     # _clean_path() 會把前導的 / 去掉
+
+
+def _is_sentinel(path):
+    return _clean_path(path) == _DIFF_SENTINEL
+
+
+def resolve_reported_path(diff_text, path, hunk_headers=()):
+    """把鉤子回報的路徑收斂成差異中真正的檔案路徑。認不出來就原樣回傳。
+
+    **這是 device 作者的公開 API。** 自己解析模型回的 code_changes 時先過一次這一支。
+
+    絕大多數情況原樣回傳 —— 只有回報的是 unified diff 的哨兵值（`/dev/null`）時才需要
+    動它。成因是我們自己給的素材：新增檔案的檔頭是 `--- /dev/null`，而 OUTPUT_SPEC 要求
+    模型「檔名要與上面 diff 裡出現的一致」，於是那個哨兵就成了一個看起來合法的答案。
+
+    它不是路徑，配不上任何送出的檔案，症狀是涵蓋範圍**同時**報出 unknown 與 missing
+    （回報的那個沒人認得、真正的那個沒人認領），而報告上那兩句話都指不出真正的原因。
+    附帶的傷害是 hunk_of() 先比路徑，所以那一筆也拿不到程式碼。
+
+    收斂的方式是回頭問 diff：哪些區段是新增檔案（檔頭有 `--- /dev/null`）。
+
+        剛好一個   就是它，直接換成它的新路徑
+        好幾個     用 hunk 標頭挑 —— 標頭在哪一個區段裡就是哪一個
+        還是不止一個，或一個都沒有   原樣回傳
+
+    最後那一條是刻意的：猜錯會把 A 檔案的發現掛到 B 檔案上，而每一步都回報成功。寧可
+    留著「對不上」那個訊號，它至少是誠實的。
+    """
+    if not _is_sentinel(path):
+        return path
+
+    new_files = []
+    for (old_path, new_path), lines in _file_sections(diff_text):
+        # 判斷「這一段是新增檔案」看的是它自己的 `---` 檔頭，不是 diff --git 那一行 ——
+        # 後者對新增檔案兩側都是真正的路徑。
+        if any(_is_sentinel(line[4:]) for line in lines
+               if line.startswith("--- ")):
+            new_files.append((new_path, lines))
+
+    if len(new_files) > 1:
+        wanted = [hunk_header_of(one) for one in hunk_headers]
+        wanted = [one for one in wanted if one]
+        if wanted:
+            narrowed = [(new_path, lines) for new_path, lines in new_files
+                        if any(hunk_header_of(hunk[0]) in wanted
+                               for hunk in _hunks(lines))]
+            if narrowed:
+                new_files = narrowed
+
+    if len(new_files) != 1:
+        logger.warn("鉤子把路徑回報成 %r（unified diff 的哨兵值，不是檔名），"
+                    "而差異中有 %d 個新增檔案 —— 無法確定是哪一個，原樣留著",
+                    path, len(new_files))
+        return path
+
+    resolved = new_files[0][0]
+    logger.warn("鉤子把路徑回報成 %r（unified diff 的哨兵值，不是檔名），"
+                "依差異的檔頭收斂為 %r", path, resolved)
+    return resolved
+
+
 def _file_sections(diff_text):
     """把 unified diff 依檔案切開，逐段產生 ((舊路徑, 新路徑), 內容行)。"""
     head = None
@@ -1361,6 +1429,19 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
 
     missing = [one for one in sent
                if one not in matched and one not in empty]
+
+    # unknown 與 missing **同時**出現，意思幾乎一定是「路徑比對失敗」而不是兩件事：
+    # 鉤子回的那個路徑配不上任何送出的檔案（進 unknown），而它本來想指的那個檔案
+    # 因此沒人認領（進 missing）。
+    #
+    # 這一行把兩邊的實際字串並排印出來 —— 少了它，使用者在報告上看到的是「AI 沒有回報」
+    # 加「差異中找不到」兩句話，而那兩句話都指不出真正的原因是一個 `/dev/null` 或多一層
+    # 目錄這類字串差異。問題查到這裡就只能靠猜。
+    if unknown and missing:
+        logger.warn("路徑比對失敗：鉤子回報了 %s，而這些送出的檔案沒人認領 %s"
+                    "（兩者同時出現時，多半是同一個檔案的路徑寫法對不上）",
+                    unknown[:MAX_COVERAGE_PATHS],
+                    missing[:MAX_COVERAGE_PATHS])
 
     return {
         "files_changed": total,
@@ -1942,7 +2023,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.5"
+SCRIPT_VERSION = "2.6"
 
 
 def _link(text, url):

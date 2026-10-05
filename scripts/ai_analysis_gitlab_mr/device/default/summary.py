@@ -114,7 +114,9 @@ hunkHeader 只填上面 diff 裡那一行 @@ 開頭的標頭，一字不差地�
 **不要**填 diff 的內容，也不要加 ``` 圍籬 —— 程式碼會由工具自己從 diff 取出，
 你填在這裡的程式碼不會被使用。
 一個發現對應一個 hunk；同一個檔案有多處要講就分成多筆。
-檔名要與上面 diff 裡出現的一致。沒有值得注意之處的檔案不要放進 code_changes。
+檔名要與上面 diff 裡出現的一致，用 `diff --git a/… b/…` 那一行裡的路徑。
+**新增的檔案其檔頭是 `--- /dev/null`，那不是檔名，不要拿它當 key。**
+沒有值得注意之處的檔案不要放進 code_changes。
 """
 
 
@@ -287,6 +289,17 @@ def parse_reply(data, diff_text=""):
         if not isinstance(findings, list):
             raise ValueError("code_changes[%r] 不是陣列，而是 %s"
                              % (clean, type(findings).__name__))
+
+        # 哨兵值收斂成真正的路徑。新增檔案的檔頭是 `--- /dev/null`，而 OUTPUT_SPEC 要求
+        # 「檔名要與上面 diff 裡出現的一致」—— 於是那個哨兵成了一個看起來合法的答案。
+        #
+        # **在這裡收斂，而不是在下游各處比對時放寬。** 鍵一改好，涵蓋範圍與 hunk_of 兩邊
+        # 都自然正確；留到下游就變成每一個讀 mrDiff 的地方各自認一次哨兵，而那是三份會
+        # 漂移的規則。
+        clean = contract.resolve_reported_path(
+            diff_text, clean,
+            [contract.plain(one.get("hunkHeader"))
+             for one in findings if isinstance(one, dict)])
 
         items = []
         for item in findings:
