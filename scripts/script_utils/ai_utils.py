@@ -97,11 +97,24 @@ def split_share_code(api_url):
     （`https:`），而且可能還有連接埠（`host:8080`）。切錯的下場是把整個路徑當成
     shareCode 送出去，而伺服器只會回一個看不出原因的 400。
 
-    這裡用的規則是「**最後一個斜線之後**的冒號才算分隔」：
+    規則是「**path 裡的第一個**冒號才算分隔，其後整段都是 shareCode」：
 
-        https://host:8080/v1/chat          最後一個 / 之後沒有冒號 → 沒有 shareCode
+        https://host:8080/v1/chat          path 裡沒有冒號 → 沒有 shareCode
         https://host:8080/v1/chat:ABC      → ("https://host:8080/v1/chat", "ABC")
-        https://host/v1/chat:ABC:DEF       → (".../chat:ABC", "DEF")  取最後一個
+        https://host:8080/v1/chat:ABC/123  → ("https://host:8080/v1/chat", "ABC/123")
+        https://host/v1/chat:ABC:DEF       → (".../chat", "ABC:DEF")
+
+    先把 path 的起點找出來，scheme 與 authority（`host:8080`）的冒號後面就不必再防，
+    而 shareCode 被當成**不透明的字串**：裡面有斜線或冒號都照樣整段取出。
+
+    這裡原本的規則是「最後一個斜線之後的冒號才算分隔」，它擋得住 scheme 與連接埠，
+    但同時擋死了含斜線的 shareCode —— 那個斜線會變成「最後一個斜線」，真正的分隔冒號
+    於是落在它前面而被當成連接埠，結果是明明填了卻回報「沒帶 shareCode」。shareCode
+    是服務那端發的不透明識別碼，本專案無權規定它不能含斜線。
+
+    代價寫明白：改成這條規則之後，**端點的 path 自己不能含冒號**（例如
+    `/v1/models/foo:generate` 這種形狀會被切錯）。path 是部署者自己填的、而且固定不變，
+    shareCode 則是人家發的、換了就得照抄 —— 兩者之中該讓哪一個受限很清楚。
 
     找不到 shareCode 時 share_code 是空字串，由呼叫端決定那是不是錯誤。
     """
@@ -109,13 +122,35 @@ def split_share_code(api_url):
     if not url:
         return "", ""
 
-    tail_start = url.rfind("/") + 1
-    sep = url.rfind(":")
-    if sep < tail_start:
-        # 冒號在最後一個斜線之前 —— 那是 scheme 或連接埠，不是分隔符。
+    # 只在 path 裡找分隔冒號。scheme 的 "://" 與 authority 的連接埠都在 path 之前，
+    # 把起點定出來就一次排除了，不必再逐種情況判斷。
+    scheme_end = url.find("://")
+    authority_start = scheme_end + 3 if scheme_end >= 0 else 0
+    path_start = url.find("/", authority_start)
+
+    if path_start < 0:
+        # 沒有 path 就沒有能放 shareCode 的地方，位址裡的冒號只會是 scheme 或連接埠。
+        logger.debug("Api_URL 沒有 path，視為沒有 shareCode")
         return url, ""
 
-    return url[:sep], url[sep + 1:]
+    sep = url.find(":", path_start)
+    if sep < 0:
+        # path 裡一個冒號都沒有，所以也不可能有被誤判的 shareCode 藏在裡面 ——
+        # 這一行印出整個 url 是安全的，而使用者要的正是「它到底把什麼當成端點」。
+        logger.debug("Api_URL 的 path 裡沒有分隔冒號，視為沒有 shareCode（端點 %s）",
+                     url)
+        return url, ""
+
+    endpoint = url[:sep]
+    share_code = url[sep + 1:]
+
+    # **只印長度，不印值。** 這個服務沒有認證標頭，shareCode 本身就是憑證，而
+    # Debug_Mode 開啟時這一行會進 debug console，崩潰時還會被寫進 crash.log。
+    # 端點印得出來是因為它是分隔冒號**之前**那一段，不含 shareCode。
+    logger.debug("Api_URL 拆解：端點 %s，shareCode %d 字元",
+                 endpoint, len(share_code))
+
+    return endpoint, share_code
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +439,10 @@ def ask(api_url, prompt, history=None, file_ids=None, api_key="",
     ValueError。JSON 只是它的一個特例（見 ask_json），自製格式寫一支自己的 parse
     傳進來即可，兩種格式共用同一套重試。
 
-    **prompt 與 shareCode 都不進 log。** prompt 裡有整份 diff，印出來會把 log 撐爆，
-    也把原始碼落到磁碟上。
+    **prompt 與 shareCode 的內容都不進 log。** prompt 裡有整份 diff，印出來會把 log
+    撐爆，也把原始碼落到磁碟上；shareCode 是這個服務唯一的憑證。拆解那一支會以
+    DEBUG 記下**長度**（見 split_share_code），因為「冒號切在哪裡」缺了就無從診斷 ——
+    長度不足以還原憑證。
     """
     http_utils.require_requests(AiError)
 

@@ -1004,9 +1004,38 @@ as_json(text, require=())   strip_fence(text)
 https://主機:8443/端點:SHARE_CODE
 ```
 
-拆解時**只有最後一個斜線之後的冒號才算分隔符** —— 位址本身至少有一個冒號
-（`https:`），還可能有連接埠，切錯會把整個路徑當成 shareCode 送出去，而伺服器只回
-一個看不出原因的 400。沒帶 shareCode 時直接失敗並講出正確寫法。
+拆解時**只有 path 裡的第一個冒號才算分隔符，其後整段都是 shareCode** —— 位址本身至少
+有一個冒號（`https:`），還可能有連接埠，整串亂切會把路徑的一部分當成 shareCode 送出去，
+而伺服器只回一個看不出原因的 400。先把 path 的起點找出來，scheme 與連接埠就一次排除了。
+沒帶 shareCode 時直接失敗並講出正確寫法。
+
+**shareCode 當成不透明字串，裡面有斜線或冒號都照樣整段取出：**
+
+| `Api_URL` | 端點 | shareCode |
+|---|---|---|
+| `https://host:8443/v1/chat:ABC123` | `https://host:8443/v1/chat` | `ABC123` |
+| `https://host:8443/v1/chat:ABC/123` | `https://host:8443/v1/chat` | `ABC/123` |
+| `https://host:8443/v1/chat:A:B` | `https://host:8443/v1/chat` | `A:B` |
+| `https://host:8443/v1/chat` | `https://host:8443/v1/chat` | 空 → 失敗 |
+
+> 這條規則原本是「最後一個斜線之後的冒號才算分隔」。它擋得住 scheme 與連接埠，但同時
+> 擋死了**含斜線的 shareCode** —— 那個斜線會變成「最後一個斜線」，真正的分隔冒號於是
+> 落在它前面而被當成連接埠，症狀是明明填了卻回報「Api_URL 沒有帶 shareCode」。shareCode
+> 是服務那端發的，本專案無權規定它不能含斜線。
+>
+> **代價：端點的 path 自己不能含冒號**（`/v1/models/foo:generate` 這種形狀會被切錯）。
+> path 是部署者自己填的、固定不變，shareCode 是人家發的、換了就得照抄 —— 該讓哪一個
+> 受限很清楚。
+
+打開 `Debug_Mode` 時會印出拆解的結果，用來確認冒號切在你以為的地方：
+
+```
+Api_URL 拆解：端點 https://host:8443/v1/chat，shareCode 13 字元
+```
+
+**只印長度，不印值** —— 這個服務沒有認證標頭，shareCode 本身就是憑證，而這一行會進
+debug console、崩潰時還會進 `crash.log`。端點印得出來是因為它是分隔冒號**之前**那一段，
+不含 shareCode。完全沒帶時印的是另一行（`path 裡沒有分隔冒號`）。
 
 設定檔的 `Model` **不進請求**（模型由 shareCode 那端決定），它只印在報告的出處那一行，
 所以也不是必填。
