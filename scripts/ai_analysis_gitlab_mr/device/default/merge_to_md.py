@@ -72,35 +72,65 @@ def _finding_lines(item):
     return lines
 
 
+def _group_key(item):
+    """一筆發現的分組鍵。回 None 代表「不與任何人合併」。
+
+    依序三層：
+
+        hunkHeader 解析得出位置   正規化後的 `@@ -a,b +c,d @@`
+                                  （所以帶不帶後面的函式名算同一個位置）
+        解析不出但字串非空        去頭尾空白後的原字串
+        兩者皆無                  退回 diffCode（版本 5 以前的產物沒有 hunkHeader）
+
+    **第二層不能省。** 模型對新增檔案常回 `@@ -0,0 +1,433`（少了結尾的 `@@`），那串
+    正規化之後是空字串，會與「根本沒給位置」撞在一起。退回原字串，同樣寫法的幾筆才合
+    得起來 —— 而那正是這個功能要處理的情況。
+
+    **完全沒有位置也沒有 diff 的，各自成組。** 把它們併在一起只是因為「都是空的」，
+    彼此毫無關係。
+
+    鍵加前綴是為了讓三層不互相碰撞：一個剛好長得像 diff 內容的標頭字串不會與某一段
+    diffCode 撞鍵。
+    """
+    header = contract.plain(item.get("hunkHeader"))
+    if header:
+        return "H:" + (contract.hunk_header_of(header) or header.strip())
+
+    # 版本 5 以前的產物沒有 hunkHeader。那一版的讀法就是退回用 diffCode —— 同一個 hunk
+    # 切出來的文字一字不差，所以它在「位置解析成功」的情況下與標頭等價。
+    code = contract.plain(item.get("diffCode"))
+    if code:
+        return "C:" + code
+
+    return None
+
+
 def _group_by_hunk(findings):
-    """把指向**同一個 hunk** 的發現收成一組，回傳 [[item, ...], ...]。
+    """把指向**同一個位置**的發現收成一組，回傳 [[item, ...], ...]。
 
     模型對同一段程式碼常常分成好幾個 JSON 節點講（「這裡調高了上限」、「這會拖長失敗
-    時間」），而那幾筆的 diffCode 是同一段文字 —— 不分組的話，同一個 hunk 的收合區塊
-    會一字不差地重複貼好幾次，讀的人得自己比對才知道那是同一段。
+    時間」），而那幾筆的 hunkHeader 是同一個 —— 不分組的話，同一個 hunk 的收合區塊會
+    一字不差地重複貼好幾次，讀的人得自己比對才知道那是同一段。
 
-    鍵用 diffCode 本身而不是 hunk 標頭：那段文字由 contract.hunk_of() 從同一份 diff
-    切出來，同一個 hunk 必然一字不差，而標頭要再解析一次才拿得到 —— 多一份解析就多一份
-    會漂移的規則。
-
-    **沒有 diffCode 的各自成組。** 它們的 diffCode 都是空字串，當成鍵的話所有「位置
-    指不到」的發現會被併成一組，而它們之間毫無關係。
+    鍵見 _group_key()。用**模型回的位置**而不是切出來的 diffCode，是因為位置解析不出來
+    時 diffCode 全是空字串，那些發現於是無從分辨彼此 —— 而那恰好是最需要分組的情況之一
+    （新增檔案的標頭最容易被模型寫歪）。
 
     分組保持**首次出現的順序**，組內保持模型原本的相對順序。模型若交錯著講
-    （hunk A、hunk B、又回到 A），同一個 hunk 的幾筆會被收到一起 —— 必須如此，因為
-    diff 只掛在該組第一筆，後續各筆是靠「緊跟在後面」表達它們講的是同一段。
+    （位置 A、位置 B、又回到 A），同一個位置的幾筆會被收到一起 —— 必須如此，因為 diff
+    只出現在該組的最後一筆，中間各筆是靠「與它相鄰」表達它們講的是同一段。
     """
     groups = []
-    by_code = {}
+    by_key = {}
     for item in findings:
-        code = contract.plain(item.get("diffCode"))
-        if not code:
+        key = _group_key(item)
+        if key is None:
             groups.append([item])
             continue
-        bucket = by_code.get(code)
+        bucket = by_key.get(key)
         if bucket is None:
             bucket = [item]
-            by_code[code] = bucket
+            by_key[key] = bucket
             groups.append(bucket)       # 同一個 list 物件，後面 append 會一起長
         else:
             bucket.append(item)
@@ -108,11 +138,15 @@ def _group_by_hunk(findings):
 
 
 def _group_block(group):
-    """一組（同一個 hunk）的發現，組成報告裡的條目。
+    """一組（指向同一個位置）的發現，組成報告裡的條目。
 
     形狀：
 
         - <第一筆的標題>
+          - <理由>
+        - <第二筆的標題>
+          - <理由>
+        - <最後一筆的標題>
           - <理由>
           <details>
 
@@ -120,18 +154,28 @@ def _group_block(group):
           <diff>
           ```
           </details>
-        - <第二筆的標題>
-          - <理由>
 
-    **diff 只掛在該組的第一筆。** 每一筆各貼一次的話，同一段程式碼會在報告裡出現 N 次。
-    掛第一筆而不是最後一筆：讀的人先看到那段程式碼，接下來幾筆都是在講它；掛最後一筆則
-    是規格警告過的那個形狀（收合區塊落在尾端，讀起來像只有那一筆有對應的程式碼）。
+    **diff 只出現一次，放在該組的最後一筆。** 每一筆各貼一次的話，同一段程式碼會在報告裡
+    出現 N 次，讀的人得自己比對才知道那是同一段。放最後是「先把這一段要講的幾件事讀完，
+    再看那段程式碼」—— 整組的觀察先到位，程式碼收在尾端。
+
+    這與「理由的 diff 不得落入理由最後一行之下」那條**不衝突**：收合區塊縮排兩格，是那
+    一筆的理由子清單的**兄弟**，仍隸屬於該筆發現，而不是掛在某一句理由底下。
 
     整段縮排兩格是為了讓它留在該筆 bullet 之內；markdown 會把圍籬的縮排從內容行一併
     扣掉，所以 diff 本身不會多出兩格。
+
+    diff 取該組**第一筆有內容**的那一個。同一組的 diffCode 必然相同（同一個位置切出來的
+    同一段），但位置解析不出來時它們全是空字串 —— 取第一個非空的，所以「同組之中只有部分
+    筆解析成功」這種混合情況也拿得到那一段。
     """
     entries = [lines for lines in (_finding_lines(one) for one in group) if lines]
-    code = contract.plain(group[0].get("diffCode"))
+
+    code = ""
+    for one in group:
+        code = contract.plain(one.get("diffCode"))
+        if code:
+            break
 
     if not entries:
         # 整組都沒有標題也沒有理由。維持既有行為：有程式碼就原樣放，不縮排 ——
@@ -139,7 +183,7 @@ def _group_block(group):
         return _details(code) if code else ""
 
     if code:
-        entries[0].append(_indent(_details(code)))
+        entries[-1].append(_indent(_details(code)))
 
     return "\n".join("\n".join(entry) for entry in entries)
 

@@ -324,7 +324,11 @@ def parse_reply(data, diff_text=""):
             items.append(contract.finding(
                 title=contract.plain(item.get("title")),
                 reason=contract.plain(item.get("reason")),
-                diff_code=code))
+                diff_code=code,
+                # 模型原本指的位置，原樣留著 —— 報告靠它把指向同一個位置的數筆收成
+                # 一組。這裡存的是剝掉圍籬之後的字串，不是正規化過的標頭：正規化是
+                # 比對時的事，產物存的是來源說了什麼。
+                hunk_header=ref))
 
         # **空的發現清單也留著。** 模型老實回 `"a.cpp": []`（這個檔案看過了，沒有值得
         # 注意的地方）與它根本不提這個檔案，是兩件完全不同的事 —— 前者已經交代過了。

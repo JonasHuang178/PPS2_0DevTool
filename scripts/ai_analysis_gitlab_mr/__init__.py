@@ -1064,20 +1064,24 @@ def describe_gitlab_error(exc, repo):
 # 一起走，不能只存在於當次執行的參數裡。
 # 版本 5 相對於 4 多了 coverage —— 這次分析涵蓋了多少。同樣必須跟著產物走：報告要靠它
 # 說出「這份分析少了哪些檔案」，而步驟 5 收到的只有檔案。
-ANALYSIS_SCHEMA_VERSION = 5
+# 版本 6 相對於 5 在每一筆 finding 上多了 hunkHeader —— 模型原本指的那個位置。報告要靠它
+# 把「指向同一個位置的數筆發現」收成一組，而 diffCode 做不到這件事：位置解析不出來時
+# 它是空字串，那些發現於是無從分辨彼此，而那正是最需要分組的情況之一。
+ANALYSIS_SCHEMA_VERSION = 6
 
 # **讀**得懂的版本。寫出去的一律是 ANALYSIS_SCHEMA_VERSION。
 #
-# 規格要的是「依版本決定如何讀取」，而不是「只讀最新的一版」—— 版本 3、4 與 5 的差別都
-# 只有多一個選填欄位，讀 3 的方式就是「視為沒有種類」，讀 3、4 的方式是「視為沒有涵蓋
-# 範圍資訊」。那不是猜測，是兩條知道的讀法。
+# 規格要的是「依版本決定如何讀取」，而不是「只讀最新的一版」—— 3 到 6 的差別都只有多一個
+# 選填欄位：讀 3 是「視為沒有種類」，讀 3、4 是「視為沒有涵蓋範圍資訊」，讀 3、4、5 是
+# 「每一筆沒有位置」，而那一條的讀法就是退回用 diffCode 分組（見 default 的 merge_to_md）。
+# 那不是猜測，是三條知道的讀法。
 #
 # 實際的好處很具體：開發時常常單獨拿昨天的 03_summary.json 重跑步驟 5 來看版面，
 # 而那份檔案是舊版本寫的。只認最新版會讓那個迴路在每次改版時斷一次。
 #
 # 加一個版本進來之前先問：那一版的讀法真的知道嗎？不知道就不要加 —— 猜的下場是一份
 # 看起來正常、實際上少了幾段的報告，而它會回報成功。
-ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5)
+ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5, 6)
 
 
 # 一次分析的 JIRA 狀態。
@@ -1345,16 +1349,29 @@ def hunk_of(diff_text, path, hunk_header):
     return ""
 
 
-def finding(title, reason, diff_code=""):
-    """mrDiff 底下的一筆：標題、理由，以及（選配）相關的那段 diff。
+def finding(title, reason, diff_code="", hunk_header=""):
+    """mrDiff 底下的一筆：標題、理由、（選配）相關的那段 diff，以及它指向的位置。
 
     欄位名是 diffCode —— 與這個功能的既有產出一致。省略或給空字串都代表「這一筆
     沒有 diff」，渲染時不會留下一個空的程式碼區塊。
+
+    hunkHeader 是**模型原本指的那個位置**，原樣留著（版本 6 起）。它與 diffCode 是
+    兩回事：diffCode 是解析成功之後從差異切出來的那一段，解析不出來就是空的；
+    hunkHeader 則不論解析成不成功都在。
+
+    留著它的理由是版面：報告要把「指向同一個位置的數筆發現」收成一組，而那個判斷只能
+    靠位置本身。靠 diffCode 的話，位置解析不出來的那些（diffCode 全是空字串）就無從
+    分辨彼此 —— 而那恰好是最需要分組的情況之一。
+
+    與 mr_type、coverage 同一條理由：版面由產物推導，所以推導所需的事實必須跟著產物
+    一起走。改在上游把版面決定寫死（例如只給該組最後一筆 diffCode）會讓既有的產物
+    再也換不了版面，那與「斷行留在渲染端」是同一個原則。
     """
     return {
         "title": plain(title),
         "reason": plain(reason),
         "diffCode": _clip_diff(diff_code),
+        "hunkHeader": plain(hunk_header),
     }
 
 
@@ -2023,7 +2040,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.6"
+SCRIPT_VERSION = "2.7"
 
 
 def _link(text, url):
