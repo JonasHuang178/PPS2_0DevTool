@@ -487,6 +487,52 @@ def _ordered_points(text):
     return points or None
 
 
+# 全形冒號之後的換行 -----------------------------------------------------------
+#
+# `：` 在模型的回覆裡幾乎都是「標籤：內容」的分界（`原因：逾時從 3 秒拉到 30 秒`）。那兩
+# 半讀起來是不同層次的東西，擠在同一行時標籤會被內容淹掉。
+#
+# **只認全形，理由與句末標點完全相同。** 半形的 `:` 出現在 `C:\path`、`http://`、`10:30`、
+# 以及 `Api_URL` 用來切 shareCode 的那個分隔冒號 —— 認它就是在這些地方全部切壞。
+_COLON_RE = re.compile(u"：+")
+
+# 換行用 `<br>` 而不是 markdown 原生的「行尾兩個空白」。
+#
+# 理由是**縮排**：每一筆發現的理由排成縮排兩格的子清單，而行尾空白那種寫法要求續行自己
+# 對齊縮排，對不齊就變成新段落 —— 而這裡插入換行的時候還不知道外層會縮幾格（as_list 的
+# 呼叫端才知道）。`<br>` 是行內元素，縮多少格都成立。
+#
+# 行尾空白另外還會被編輯器、linter 與 strip() 清掉，而清掉之後看不出曾經有過。
+_MD_BREAK = u"<br>"
+
+
+def _break_after_colon(text):
+    """全形冒號之後補一個換行。沒有冒號時原樣回傳。
+
+    三種情況刻意不補：
+
+        冒號在結尾        補了只是一個懸空的換行，底下什麼都沒有
+        後面已經是 <br>   模型自己寫了，不疊第二個
+        連續數個冒號      整串當一個分界，只補一次（`：+`）
+
+    補完會把緊跟的空白吃掉 —— `原因： 太慢` 不補的話續行會以一個空白開頭。
+    """
+    out = []
+    last = 0
+    for match in _COLON_RE.finditer(text):
+        out.append(text[last:match.end()])
+        last = match.end()
+        rest = text[last:]
+        if not rest.strip():
+            continue
+        stripped = rest.lstrip()
+        if not stripped.startswith(_MD_BREAK):
+            out.append(_MD_BREAK)
+        last += len(rest) - len(stripped)
+    out.append(text[last:])
+    return "".join(out)
+
+
 def _sentence_points(text):
     """依全形句末標點把一段文字切開。標點留在前一段。"""
     points = []
@@ -517,6 +563,13 @@ def as_list(text):
     只斷得出一段時原樣回傳 —— 單項清單在視覺上是噪音，而「這份摘要只有一句話」本身就
     看得出來。
 
+    **接著在每一行之內，全形冒號之後補一個 `<br>`**（見 _break_after_colon）。`：` 在模型
+    的回覆裡幾乎都是「標籤：內容」的分界，那兩半是不同層次的東西。
+
+    這一層套用在上面後兩條的產物上，以及「只有一句、原樣回傳」那一種 —— 但**不套用在
+    「已有換行」那一條**。那條分支存在的理由就是來源自己做過版面決定了，而在它的行裡再
+    插入換行正是覆寫那個決定。
+
     不設點數上限：prompt 要的是三到五句，不會爆；設了上限反而會出現「有時是清單、有時是
     一整段」的不一致，那比條目多更難解釋。
     """
@@ -529,12 +582,12 @@ def as_list(text):
 
     points = _ordered_points(body)
     if points:
-        return "\n".join(points)
+        return "\n".join(_break_after_colon(one) for one in points)
 
     points = _sentence_points(body)
     if len(points) < 2:
-        return body
-    return "\n".join(u"- %s" % one for one in points)
+        return _break_after_colon(body)
+    return "\n".join(u"- %s" % _break_after_colon(one) for one in points)
 
 
 def render_code_review_section(body):
@@ -2147,7 +2200,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.8"
+SCRIPT_VERSION = "2.9"
 
 
 def _link(text, url):
