@@ -490,10 +490,15 @@ def main():
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], payload)
     ai_analysis_gitlab_mr.write_debug_log(
         params["debug_dir"],
-        "summary(%s) repo=%s mr=%s type=%r jira_state=%s files=%d "
+        # files 是「提到的檔案數／其中有發現的檔案數」。兩個都記，因為空的發現清單
+        # 現在留在 mrDiff 裡（見 default/summary.py 的 parse_reply）—— 只記一個的話，
+        # 「模型提了 20 個檔案但只有 2 個有話說」與「模型只提了 2 個」在 log 上長得
+        # 一模一樣，而那正是調 prompt 時要分辨的事。
+        "summary(%s) repo=%s mr=%s type=%r jira_state=%s files=%d/%d "
         "coverage=%d/%d/%d dropped=%d empty=%d missing=%d unknown=%d"
         % (owner, repo, mr_iid, mr_type, body.get("jira_state"),
            len(body.get("mrDiff") or {}),
+           sum(1 for one in (body.get("mrDiff") or {}).values() if one),
            body["coverage"]["files_reported"],
            body["coverage"]["files_sent"],
            body["coverage"]["files_changed"],

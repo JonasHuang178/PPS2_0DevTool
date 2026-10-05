@@ -1318,8 +1318,16 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
 
         dropped  差異超過送出上限，整個檔案沒有送進去     → 要調上限或分批
         empty    差異內容是空的（二進位、僅模式變更、來源沒給）→ 無能為力，但要說出來
-        missing  完整送進去了，但回報的發現裡沒有它        → 要調 prompt
+        missing  完整送進去了，但鉤子**完全沒提到**它      → 要調 prompt
         unknown  回報的路徑在差異中找不到對應的檔案        → 模型給了不存在的路徑
+
+    **「有回報」＝ mrDiff 裡有這個鍵，不要求它底下有發現。** 鉤子給一個空的發現清單
+    （`"a.cpp": []`）意思是「這個檔案看過了，沒有值得注意的地方」—— 那是交代過了，不是
+    漏掉。把它算進 missing 的話，報告會對一個誠實回答的模型指控「AI 沒有回報」，而使用者
+    照著那個訊息去調 prompt 是找錯方向。
+
+    因此 files_reported 數的是**鉤子提到的檔案數**，不是「有發現的檔案數」。報告裡實際
+    列出來的只有有發現的那些（渲染端對空清單整個略過），兩個數字可以不同，這是刻意的。
 
     合成單一個比例會把「要調什麼」重新藏起來，而那正是這份資料要解決的問題。
 
@@ -1934,7 +1942,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.4"
+SCRIPT_VERSION = "2.5"
 
 
 def _link(text, url):

@@ -313,15 +313,25 @@ def parse_reply(data, diff_text=""):
                 reason=contract.plain(item.get("reason")),
                 diff_code=code))
 
-        if items:
-            # 空的檔案整個不放：一個底下什麼都沒有的標題會讓人以為內容漏掉了。
-            mr_diff[clean] = items
+        # **空的發現清單也留著。** 模型老實回 `"a.cpp": []`（這個檔案看過了，沒有值得
+        # 注意的地方）與它根本不提這個檔案，是兩件完全不同的事 —— 前者已經交代過了。
+        #
+        # 這裡原本寫成 `if items:`，把空的整個丟掉，於是涵蓋範圍（它是從 mrDiff 的鍵
+        # 推出「回報了哪些」的）把這兩種情況併成同一類，報告於是對一個模型明說沒問題的
+        # 檔案指控「AI 沒有回報」。那個理由（底下什麼都沒有的標題會讓人以為內容漏掉了）
+        # 本身沒錯，但它該在**渲染**那一側解決，而那一側本來就是這樣做的：
+        # default/merge_to_md.py 的 _file_body() 對空清單回空，檔案整個不出現、編號也
+        # 不跳號。丟在這裡等於為了版面把涵蓋範圍需要的事實銷毀掉。
+        mr_diff[clean] = items
 
     if missed:
         logger.warn("有 %d 筆 hunk 標頭在 diff 裡找不到，那幾筆沒有程式碼：%s",
                     len(missed), "；".join(missed))
 
-    if not summary and not mr_diff:
+    # 比的是「有沒有任何一筆發現」，不是「mrDiff 有沒有鍵」。空的發現清單現在留在
+    # mrDiff 裡（見上），拿鍵的有無來判斷的話，一份只有空清單、連總覽都沒有的回覆
+    # 會被當成有內容 —— 而那正是這個分支要攔的東西。
+    if not summary and not any(mr_diff.values()):
         # 訊息帶上實際收到的鍵。這個分支最常見的成因是模型用了別的欄位名，而
         # 「都是空的」看不出那件事 —— 重問一次還是失敗的話，這一行就是要查的線索。
         raise ValueError(
