@@ -21,7 +21,7 @@
 # 自負。報告照實印出讀到的值，兩個版號都在眼前，對照得出來。
 #
 # default 也適用這條規則，沒有例外。
-VERSION = "2.4"
+VERSION = "2.5"
 
 # 這裡**刻意不宣告** STRICT_TYPE 與 CODE_REVIEW_SOURCE_HEADING。
 #

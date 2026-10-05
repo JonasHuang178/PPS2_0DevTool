@@ -60,6 +60,7 @@ __all__ = [
     "jira_url",
     "fence_for",
     "hunk_header_of",
+    "hunk_range_of",
     "hunk_of",
     "resolve_reported_path",
     "MAX_FINDING_DIFF_BYTES",
@@ -1178,6 +1179,10 @@ def _clip_diff(diff):
 # 一個 hunk 的標頭。git 會在 @@ 之後接上所在的函式名，比對時不看那一段。
 _HUNK_HEAD_RE = re.compile(r"@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@")
 
+# 同一行的寬鬆讀法：不要求結尾那對 @@、也容許行數省略。模型抄標頭時最常掉的就是結尾
+# 那對 @@（尤其是新增檔案的 `@@ -0,0 +1,433`），而那一串的行號其實是對的。
+_HUNK_RANGE_RE = re.compile(r"@@\s*-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?")
+
 # unified diff 的檔案分界。gitlab_utils.get_mr_plain_diff() 一定會寫出這一行
 # （檔頭三行是它自己補的），所以認得它就夠了。
 _DIFF_FILE_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
@@ -1194,6 +1199,53 @@ def hunk_header_of(text):
     """
     match = _HUNK_HEAD_RE.search(plain(text))
     return match.group(0) if match else ""
+
+
+def hunk_range_of(text):
+    """從一段文字裡抽出第一個 hunk 的行號，回 `(舊起點, 舊行數, 新起點, 新行數)`。
+    找不到回 None。
+
+    **這是 device 作者的公開 API。** 它與 hunk_header_of() 的差別只在寬容度：這一支
+    不要求結尾那對 `@@`，也把省略的行數補成 1（unified diff 的 `@@ -1 +1 @@` 就是
+    一行）。
+
+    為什麼需要寬容的那一支：模型抄標頭時最常掉的是結尾那對 `@@`，新增檔案尤其明顯
+    （`@@ -0,0 +1,433`）。那一串的**行號是對的**，只有收尾漏了 —— 以嚴格的讀法去比，
+    它會變成「沒給位置」，而那個訊號指不到真正的原因。
+
+    回的是數字而不是正規化後的字串，是因為呼叫端要的是比較：第二層比對要問「回報的
+    新側起點落在哪一個 hunk 的範圍裡」（見 hunk_of），分組要問「這幾筆指的是不是同一
+    個位置」（見 device 的 merge_to_md）。都得有行號才做得到。
+    """
+    match = _HUNK_RANGE_RE.search(plain(text))
+    if not match:
+        return None
+    old_len = match.group(2)
+    new_len = match.group(4)
+    return (int(match.group(1)), 1 if old_len is None else int(old_len),
+            int(match.group(3)), 1 if new_len is None else int(new_len))
+
+
+def _range_covers(candidate, wanted):
+    """diff 裡這個 hunk 的範圍，是不是回報的那個位置。
+
+    先整組行號完全相同 —— 模型多半是照抄的，這一條就過了。
+
+    否則看**新側起點落不落在候選 hunk 的新側範圍裡**。模型偶爾會指向 hunk 之中的某
+    一行（它想講的那一行）而不是標頭那一行，那仍然是同一個 hunk。
+
+    **只看新側。** 新增檔案的舊側一律是 `-0,0`，拿它比對等於什麼都沒比；而讀報告的
+    人要找的是改完之後的那段程式碼。
+
+    行數 0 的 hunk（整段刪除，新側 `+n,0`）用 max(..., 1)，否則那個範圍是空的、永遠
+    對不上自己的起點。
+    """
+    if not candidate:
+        return False
+    if candidate == wanted:
+        return True
+    start, length = candidate[2], candidate[3]
+    return start <= wanted[2] < start + max(length, 1)
 
 
 def _clean_path(value):
@@ -1275,11 +1327,17 @@ def resolve_reported_path(diff_text, path, hunk_headers=()):
             new_files.append((new_path, lines))
 
     if len(new_files) > 1:
-        wanted = [hunk_header_of(one) for one in hunk_headers]
+        # 用 hunk_range_of 而不是 hunk_header_of 來比：這裡收到的標頭是模型回的，而
+        # 走到這條路上的本來就是新增檔案 —— 正好是模型最容易把結尾那對 @@ 寫掉的情況。
+        # 嚴格讀法會把那些標頭全當成「沒給」，於是這一層縮小範圍永遠不會生效。
+        wanted = [hunk_range_of(one) for one in hunk_headers]
         wanted = [one for one in wanted if one]
         if wanted:
+            # 這一層比的是**整組行號完全相同**，不用 _range_covers() 的「落在範圍裡」。
+            # 新增檔案的位置一律從第 1 行起算，拿範圍去包的話每一個新增檔案都會對上
+            # 回報的那個起點 —— 這一層於是永遠縮不小。
             narrowed = [(new_path, lines) for new_path, lines in new_files
-                        if any(hunk_header_of(hunk[0]) in wanted
+                        if any(hunk_range_of(hunk[0]) in wanted
                                for hunk in _hunks(lines))]
             if narrowed:
                 new_files = narrowed
@@ -1327,25 +1385,74 @@ def _hunks(lines):
 
 
 def hunk_of(diff_text, path, hunk_header):
-    """從 diff 裡取出 path 這個檔案中、標頭為 hunk_header 的那一個 hunk。
+    """從 diff 裡取出 path 這個檔案中、hunk_header 指的那一個 hunk。
 
-    **這是 device 作者的公開 API。** 檔名對不上、標頭對不上、或根本沒給標頭，一律
+    **這是 device 作者的公開 API。** 檔名對不上、位置對不上、或根本沒給位置，一律
     回空字串 —— 呼叫端據此決定要不要記警告。
 
-    **只在對上的那個檔案裡找標頭，不跨檔搜尋。** 同一行 `@@ -12,7 +12,7 @@` 在不同
-    檔案裡各有一個是常態，跨過去取就是把另一個檔案的程式碼貼進這一筆發現，而每一步
-    都會回報成功。
+    **只在對上的那個檔案裡找，不跨檔搜尋。** 同一行 `@@ -12,7 +12,7 @@` 在不同檔案
+    裡各有一個是常態，跨過去取就是把另一個檔案的程式碼貼進這一筆發現，而每一步都會
+    回報成功。
+
+    在那個檔案之內依序三層，前一層找到就不往下走：
+
+        1. 標頭正規化後完全相同          模型照抄成功，絕大多數走這一條
+        2. 新側起點落在某一個 hunk 之內  模型抄歪了（見 hunk_range_of）或指向
+                                         hunk 中間某一行，但只能對上一個
+        3. 這個檔案只有一個 hunk         模型給了位置、只有一個可能的答案
+
+    **為什麼要二、三層。** 模型對新增檔案常回 `@@ -0,0 +1,433`（掉了結尾的 `@@`）。
+    只有第一層的話那一筆拿不到程式碼，報告上那個發現就沒有對應的 diff —— 而那串行號
+    其實是對的。
+
+    **第二層對不上一個以上就放棄**，不猜。猜錯是把別的 hunk 的程式碼貼到這一筆底下，
+    而那份報告看起來是完整的；回空字串至少是誠實的。
+
+    **第三層要求整個檔案只有一個 hunk。** 兩個以上時「唯一的答案」不存在，而第二層
+    已經試過用行號挑了。這一層救的是「模型把位置寫得完全不成形、但那個檔案本來就只
+    改了一段」—— 相當常見，而且在那個前提下不可能挑錯。
+
+    前兩層都要先有位置才做得到，所以完全讀不出行號、也湊不出標頭時直接回空字串：
+    第三層不能單獨成立，否則「模型根本沒提位置」會變成「拿該檔唯一的 hunk」。
     """
     wanted = hunk_header_of(hunk_header)
-    if not wanted:
+    wanted_range = hunk_range_of(hunk_header)
+    if not wanted and not wanted_range:
         return ""
 
-    for (old_path, new_path), lines in _file_sections(diff_text):
-        if not (_same_path(new_path, path) or _same_path(old_path, path)):
-            continue
-        for hunk in _hunks(lines):
+    # 先把對上這個路徑的所有區段攤平成 hunk 清單。**不能邊走邊放棄**：_same_path 是
+    # 寬鬆比對，可能有兩個區段都對上路徑，而標頭只在後面那一個裡 —— 在第一個區段就
+    # 套用退讓規則會拿到前面那一段的程式碼。
+    hunks = [hunk
+             for (old_path, new_path), lines in _file_sections(diff_text)
+             if _same_path(new_path, path) or _same_path(old_path, path)
+             for hunk in _hunks(lines)]
+    if not hunks:
+        return ""
+
+    if wanted:
+        for hunk in hunks:
             if hunk_header_of(hunk[0]) == wanted:
                 return "\n".join(hunk)
+
+    if wanted_range:
+        matched = [hunk for hunk in hunks
+                   if _range_covers(hunk_range_of(hunk[0]), wanted_range)]
+        if len(matched) == 1:
+            logger.warn("位置 %r 在 %s 裡找不到一模一樣的標頭，依新側行號對上 %r",
+                        plain(hunk_header), path, matched[0][0])
+            return "\n".join(matched[0])
+        if len(matched) > 1:
+            logger.warn("位置 %r 在 %s 裡依行號對上 %d 個 hunk —— 無法確定是哪一個，"
+                        "這一筆不附程式碼",
+                        plain(hunk_header), path, len(matched))
+            return ""
+
+    if len(hunks) == 1:
+        logger.warn("位置 %r 在 %s 裡對不上，而這個檔案只有一個 hunk %r，就取它",
+                    plain(hunk_header), path, hunks[0][0])
+        return "\n".join(hunks[0])
+
     return ""
 
 
@@ -2040,7 +2147,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.7"
+SCRIPT_VERSION = "2.8"
 
 
 def _link(text, url):
