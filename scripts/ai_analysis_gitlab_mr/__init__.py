@@ -76,6 +76,7 @@ __all__ = [
     "ai_timeout",
     "ai_retries",
     "ai_reask",
+    "ai_recheck",
     "DEFAULT_AI_TIMEOUT",
     "DEFAULT_AI_RETRIES",
     "DEFAULT_AI_REASK",
@@ -857,15 +858,34 @@ def ai_credentials(inputs):
 # 與 ai_utils 的同名常數目前同值，但**各自宣告**：那邊是「任何人用 ai_utils 問 AI 的
 # 預設」，這邊是「這個功能的預設」。綁成同一個的話，之後想單獨調其中一個就得先拆開。
 #
-# 三個一起決定最壞情況的等待時間：
+# 四個一起決定最壞情況的等待時間：
 #
-#     逾時 × (重試次數 + 1) × (重問次數 + 1) ＋ 退避
+#     逾時 × (重試次數 + 1) × (重問次數 + 1) × (重查次數 + 1) ＋ 退避
 #
-# 預設值（120 / 3 / 1）算出來約 16 分鐘。使用者要把等待封頂，三個都得調得動 —— 只開
-# 逾時的話，他把它設成 30 秒仍然可能等上四分半，而那會看起來像設定沒有生效。
+# 預設值（120 / 3 / 1 / 0）算出來約 16 分鐘。使用者要把等待封頂，每一個都得調得動 ——
+# 只開逾時的話，他把它設成 30 秒仍然可能等上四分半，而那會看起來像設定沒有生效。
+#
+# 三個次數各管一層，彼此不重疊：
+#
+#     Retry_Count    連線層  服務沒有回應（逾時、斷線、429、5xx）
+#     Reask_Count    內容層  服務回了，但解析不開（不是 JSON、結構不認得）
+#     Recheck_Count  涵蓋層  解析開了，但送進去的檔案有一部分沒被回報
+#
+# 三層的下一步完全不同，所以不合成一個數字：想關掉「服務很忙時不要再等」的人，不該
+# 連同「模型漏了檔案就再問一次」一起關掉。
 DEFAULT_AI_TIMEOUT = 120
 DEFAULT_AI_RETRIES = 3
 DEFAULT_AI_REASK = 1
+
+# 重查預設 **0（關閉）**。
+#
+# 不預設打開，是因為「送進去卻沒被回報」在目前的 prompt 之下**常常是正確的結果** ——
+# ROLE_PROMPT 與 OUTPUT_SPEC 都明著交代「沒有值得注意之處的檔案不要放進 code_changes」。
+# 預設打開等於替所有部署在大部分的 Merge Request 上都多付一趟 AI 的錢與時間，而第二次
+# 問回來的往往一模一樣（模型本來就在遵守指令）。
+#
+# 真的遇到模型漏回報的人把它設成 1 或 2 —— 那是他知道自己在換什麼。
+DEFAULT_AI_RECHECK = 0
 
 
 def _ai_number(inputs, key, default, setting, code, allow_zero, allow_float):
@@ -943,6 +963,30 @@ def ai_reask(inputs):
     """
     return _ai_number(inputs, "ai_reask", DEFAULT_AI_REASK,
                       "Reask_Count", "AI_REASK_INVALID",
+                      allow_zero=True, allow_float=False)
+
+
+def ai_recheck(inputs):
+    """送進去的檔案沒被全部回報時，重問的次數。沒給就是 DEFAULT_AI_RECHECK（0）。
+
+    **這一個不交給 ai_utils.ask()，由入口腳本自己跑迴圈。** 理由與涵蓋範圍由入口蓋章
+    同一條：判斷「回報得夠不夠」要拿鉤子的輸出對照入口手上的差異，而那是 ask() 看不到
+    的東西 —— 它只認得「服務有沒有回應」與「回來的東西解析得開不開」。
+
+    與另外兩個是**不同層**的東西：
+
+        ai_retries  連線層  服務沒有回應
+        ai_reask    內容層  服務回了，但解析不開
+        ai_recheck  涵蓋層  解析開了，但有檔案沒被回報
+
+    只看 missing 那一類缺口。dropped（太大沒送進去）與 empty（差異本身是空的）再問
+    幾次都不會變，unknown（回了一個不存在的路徑）則是另一種錯 —— 把它們一起算進來，
+    就會為了永遠補不回來的東西反覆付錢。
+
+    0 是合法值，而且是預設 —— 見 DEFAULT_AI_RECHECK 那一段的理由。
+    """
+    return _ai_number(inputs, "ai_recheck", DEFAULT_AI_RECHECK,
+                      "Recheck_Count", "AI_RECHECK_INVALID",
                       allow_zero=True, allow_float=False)
 
 
@@ -1890,7 +1934,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.3"
+SCRIPT_VERSION = "2.4"
 
 
 def _link(text, url):

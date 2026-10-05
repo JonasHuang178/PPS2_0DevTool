@@ -1251,14 +1251,18 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
     context.aiApiKey   = mode.value(QString("Api_Key")).toString();
     context.aiModel    = mode.value(QString("Model")).toString();
 
-    // 三個等待相關的設定。沒設定時留空字串，腳本據此採用自己的預設 —— Qt 不複製一份
+    // 四個等待相關的設定。沒設定時留空字串，腳本據此採用自己的預設 —— Qt 不複製一份
     // 預設值，否則同一個數字會有兩個來源，而它們可以不一致；而且命令列與 CI 那條路徑
     // 根本不經過 Qt。
     //
-    // 三個一起決定最壞情況的等待時間，所以要把等待封頂就得三個一起調（見 README）。
+    // 四個一起決定最壞情況的等待時間，所以要把等待封頂就得四個一起調（見 README）。
+    // 三個次數各管一層：Retry_Count 連線層、Reask_Count 內容層（解析不開）、
+    // Recheck_Count 涵蓋層（送進去的檔案沒被全部回報）。Qt 只是原樣轉送，不解讀 ——
+    // 「夠不夠」的判斷在腳本那一側，CI 那條路徑因此也拿得到同一個行為。
     context.aiTimeout  = configNumber(mode, QString("Timeout_Seconds"));
     context.aiRetries  = configNumber(mode, QString("Retry_Count"));
     context.aiReask    = configNumber(mode, QString("Reask_Count"));
+    context.aiRecheck  = configNumber(mode, QString("Recheck_Count"));
 
     context.jiraMode      = jiraMode();
     context.jiraKeyManual = m_widgets.jiraKeyEdit->text().trimmed();
@@ -1406,6 +1410,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         params.insert(QString("ai_timeout"),   context.aiTimeout);
         params.insert(QString("ai_retries"),   context.aiRetries);
         params.insert(QString("ai_reask"),     context.aiReask);
+        params.insert(QString("ai_recheck"),   context.aiRecheck);
         break;
 
     case 3:

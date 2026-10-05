@@ -16,7 +16,8 @@
           "Model": "gpt-4o",
           "Timeout_Seconds": "120",
           "Retry_Count": "3",
-          "Reask_Count": "1"
+          "Reask_Count": "1",
+          "Recheck_Count": "0"
         }
       ]
     },

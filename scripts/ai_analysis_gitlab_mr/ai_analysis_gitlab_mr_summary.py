@@ -65,6 +65,58 @@ def _fail(debug_dir, message, detail="", code=""):
     script_io.reply_fail(message, detail=detail, code=code)
 
 
+def _fail_hook(exc, where, debug_dir):
+    """鉤子在第一輪就失敗 —— 這一步失敗。**這個函式一定會結束行程。**
+
+    依型別分派，因為使用者的下一步完全不同。AiError 要排在通用那一條之前 —— 否則一個
+    429 會被報成「device X 的 summary.py 執行失敗」，把限流講成腳本寫壞了。
+    """
+    if isinstance(exc, ai_analysis_gitlab_mr.CredentialError):
+        # 設定沒填完，不是鉤子寫壞了。
+        _fail(debug_dir, str(exc), exc.detail, exc.code)
+
+    if isinstance(exc, ai_utils.AiError):
+        _fail(debug_dir, str(exc),
+              "端點：%s\n重試已經做過（見 stderr 的警告）。" % (exc.url or "(未知)"),
+              exc.code)
+
+    # 鉤子是使用者寫的，任何東西都可能從這裡冒出來。訊息要指得出是哪一支。
+    #
+    # detail 放完整的 traceback：鉤子裡出錯最常見的是改壞了 prompt 樣板或解析，而
+    # 「哪一行」是唯一真正有用的資訊。一行 "KeyError: xxx" 指不出位置。
+    _fail(debug_dir, "%s 執行失敗：%s" % (where, exc),
+          traceback.format_exc(), "DEVICE_HOOK_RUNTIME_ERROR")
+
+
+def _coverage_of(body, diff_info):
+    """這一輪的涵蓋範圍。由入口算，不採用鉤子提供的任何數字。"""
+    return ai_analysis_gitlab_mr.diff_coverage(
+        mr_diff=body.get("mrDiff"),
+        files_sent=diff_info["files"],
+        files_dropped=diff_info["dropped_files"],
+        files_empty=diff_info["empty_files"],
+        file_count=diff_info["file_count"],
+        truncated=diff_info["truncated"],
+        bytes_total=diff_info["bytes_total"],
+        bytes_sent=diff_info["bytes_sent"])
+
+
+def _round_writer(base_write, round_no):
+    """第二輪起把除錯檔名加上 `recheckN_` 前綴。
+
+    不加的話，第二輪的 ai_prompt.txt 與 ai_reply_1.txt 會把第一輪的蓋掉 —— 而第一輪
+    那一份正是「模型漏了什麼」的證據，也就是開著重查的人唯一想看的東西。
+
+    包在入口這一側，鉤子因此完全不必知道自己被問了第幾次。
+    """
+    if round_no <= 1:
+        return base_write
+
+    def write(name, content):
+        return base_write("recheck%d_%s" % (round_no - 1, name), content)
+    return write
+
+
 def _fetch_diff(repo, mr_iid, debug_dir):
     """取得這支 MR 的 unified diff，連同「取得過程中知道的事實」。
 
@@ -235,6 +287,9 @@ def main():
                           help="連線失敗時的重試次數；空字串代表用預設值"),
             script_io.arg("ai_reask", default="",
                           help="回覆格式不符時的重問次數；空字串代表用預設值"),
+            script_io.arg("ai_recheck", default="",
+                          help="送進去的檔案沒被全部回報時的重問次數；"
+                               "空字串代表用預設值（0，關閉）"),
             script_io.arg("debug_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
@@ -268,22 +323,24 @@ def main():
                 params["ai_mode_name"] or "(未指定)",
                 params["ai_model"] or "(未指定)",
                 params["jira_key"] or "(無)")
-    # 三個等待相關的設定在**取 diff 之前**就驗。打錯的話不該讓使用者先等完一趟 GitLab、
+    # 四個等待相關的設定在**取 diff 之前**就驗。打錯的話不該讓使用者先等完一趟 GitLab、
     # 再看到一個本來第一秒就能說的設定錯誤。
     #
-    # 三個一起決定最壞情況的等待時間（逾時 ×(重試+1)×(重問+1) ＋退避），所以也一起記進
-    # log —— 事後問「為什麼等了十六分鐘」時，這一行就是答案。
+    # 四個一起決定最壞情況的等待時間（逾時 ×(重試+1)×(重問+1)×(重查+1) ＋退避），所以
+    # 也一起記進 log —— 事後問「為什麼等了十六分鐘」時，這一行就是答案。
     try:
         ai_seconds = ai_analysis_gitlab_mr.ai_timeout(params)
         ai_retries = ai_analysis_gitlab_mr.ai_retries(params)
         ai_reask = ai_analysis_gitlab_mr.ai_reask(params)
+        ai_recheck = ai_analysis_gitlab_mr.ai_recheck(params)
     except ai_analysis_gitlab_mr.CredentialError as exc:
         _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
 
-    logger.info("AI 等待設定：逾時 %s 秒、重試 %d 次、重問 %d 次"
+    logger.info("AI 等待設定：逾時 %s 秒、重試 %d 次、重問 %d 次、重查 %d 次"
                 "（最壞情況約 %d 秒，不含退避）",
-                ai_seconds, ai_retries, ai_reask,
-                int(ai_seconds * (ai_retries + 1) * (ai_reask + 1)))
+                ai_seconds, ai_retries, ai_reask, ai_recheck,
+                int(ai_seconds * (ai_retries + 1) * (ai_reask + 1)
+                    * (ai_recheck + 1)))
 
     # 素材在呼叫鉤子**之前**備好。連線失敗要在這裡爆，而不是從使用者寫的鉤子裡
     # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
@@ -322,6 +379,10 @@ def main():
         "ai_model": params["ai_model"],
 
         # 已經正規化過，鉤子再呼叫一次那三支也只是原樣拿回去。
+        #
+        # **ai_recheck 刻意不在這裡。** 它是入口自己的迴圈次數（見底下那一段），鉤子
+        # 不需要也不該看到它 —— 傳進去就等於邀請 device 作者自己再實作一次同樣的迴圈，
+        # 而那會讓「回報得夠不夠」重新變成被檢查的一方自己說。
         "ai_timeout": ai_seconds,
         "ai_retries": ai_retries,
         "ai_reask": ai_reask,
@@ -344,46 +405,75 @@ def main():
         "debug_write": ai_analysis_gitlab_mr.debug_writer(params["debug_dir"]),
     }
 
-    try:
-        body = hook.analyze(inputs)
-    except ai_analysis_gitlab_mr.CredentialError as exc:
-        # 設定沒填完，不是鉤子寫壞了。
-        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
-    except ai_utils.AiError as exc:
-        # AI 服務那一端的問題。這一條要在通用的 except 之前 —— 否則一個 429 會被
-        # 報成「device X 的 summary.py 執行失敗」，把限流講成腳本寫壞了，而使用者
-        # 的下一步（稍後再試 vs 去改腳本）完全不同。
-        _fail(params["debug_dir"], str(exc),
-              "端點：%s\n重試已經做過（見 stderr 的警告）。" % (exc.url or "(未知)"),
-              exc.code)
-    except Exception as exc:                        # noqa: BLE001
-        # 鉤子是使用者寫的，任何東西都可能從這裡冒出來。訊息要指得出是哪一支。
-        #
-        # detail 放完整的 traceback：鉤子裡出錯最常見的是改壞了 prompt 樣板或解析，
-        # 而「哪一行」是唯一真正有用的資訊。一行 "KeyError: xxx" 指不出位置。
-        _fail(params["debug_dir"],
-              "%s 執行失敗：%s" % (where, exc),
-              traceback.format_exc(),
-              "DEVICE_HOOK_RUNTIME_ERROR")
-
-    # 版本與種類都由入口蓋章，鉤子不填 —— 讓它自己填，遲早有人複製範本時忘了改。
+    # 涵蓋層的重問（次數見 contract.ai_recheck，預設 0 = 關閉）。
     #
-    # 種類覆寫而不是「沒有才補」：鉤子若回了一個與實際解析結果不同的種類，那份產物會
-    # 讓步驟 5 挑到另一份版面，而兩步的說法互相矛盾卻都回報成功。
-    body["mr_type"] = mr_type
+    # **迴圈在入口，不在鉤子裡。** 理由與涵蓋範圍由入口蓋章完全相同：判斷「回報得夠不
+    # 夠」要拿鉤子的輸出對照入口手上的那份差異，而讓被檢查的一方決定自己要不要重做，
+    # 這個機制就等於不存在。放在這裡同時讓每一個 device 都免費得到這個行為，不必各自
+    # 實作一次 —— 鉤子完全不知道自己被問了第幾次。
+    #
+    # 只看 missing 那一類：dropped（太大沒送進去）與 empty（差異本身是空的）再問幾次
+    # 都不會變，unknown（回了一個不存在的路徑）是另一種錯。把它們算進來就會為了永遠
+    # 補不回來的東西反覆付錢。
+    #
+    # 已知代價：每一輪都重新呼叫 hook.analyze()，所以有 JIRA issue 的那幾次會多打一趟
+    # JIRA。要省掉它得把鉤子拆成「準備」與「問」兩段，而那會改掉所有 device 的介面 ——
+    # 對一個預設關閉的功能不值得。
+    best = None          # (missing 數, 輪次, body, coverage)
+    base_write = inputs["debug_write"]
 
-    # 涵蓋範圍也由入口蓋章，而且理由比種類更強：這份數字是用來檢查**鉤子回報了多少**的。
+    for round_no in range(1, ai_recheck + 2):
+        if round_no > 1:
+            # 這又是一段分鐘級的等待，要有屬於它自己的進度文字 —— 不報的話畫面上
+            # 留著的會是上一段**已經做完**的工作。
+            script_io.progress("AI 漏了 %d 個檔案，重新分析（第 %d 次）…"
+                               % (best[0], round_no - 1))
+            logger.info("重查第 %d 次：上一輪有 %d 個檔案沒被回報",
+                        round_no - 1, best[0])
+
+        # 第二輪起把除錯檔名加上前綴。覆寫的話，ai_reply_1.txt 會被下一輪蓋掉 ——
+        # 而「模型第一次漏了什麼」正是這個功能存在的理由，那份檔案不能丟。
+        round_inputs = dict(inputs,
+                            debug_write=_round_writer(base_write, round_no))
+
+        try:
+            body = hook.analyze(round_inputs)
+        except Exception as exc:                    # noqa: BLE001 - 分派見 _fail_hook
+            if round_no == 1:
+                # 第一輪失敗就是這一步失敗，行為與加入重查之前完全相同。
+                _fail_hook(exc, where, params["debug_dir"])     # 必定結束行程
+            # 重查那幾輪失敗**不該**把一份已經拿到的分析變成失敗 —— 那是把額外的
+            # 嘗試變成新的失敗來源，而使用者沒有因此得到任何東西。
+            logger.warn("重查第 %d 次失敗（%s），沿用第 %d 輪的結果：%s",
+                        round_no - 1, exc.__class__.__name__, best[1], exc)
+            break
+
+        # 版本與種類都由入口蓋章，鉤子不填 —— 讓它自己填，遲早有人複製範本時忘了改。
+        #
+        # 種類覆寫而不是「沒有才補」：鉤子若回了一個與實際解析結果不同的種類，那份產物會
+        # 讓步驟 5 挑到另一份版面，而兩步的說法互相矛盾卻都回報成功。
+        body["mr_type"] = mr_type
+
+        coverage = _coverage_of(body, diff_info)
+        missing = coverage["missing"]["count"]
+
+        # 取**最好的那一輪**而不是最後一輪：原樣重問拿到的是另一個樣本，它可能更差，
+        # 而把一份較完整的分析換成較殘缺的那一份，比不重問還糟。平手時留早的那一輪。
+        if best is None or missing < best[0]:
+            best = (missing, round_no, body, coverage)
+
+        if missing == 0:
+            break
+
+    missing, round_used, body, coverage = best
+    if round_used > 1 or missing:
+        logger.info("採用第 %d 輪的分析（共 %d 輪），仍有 %d 個檔案沒被回報",
+                    round_used, round_no, missing)
+
+    # 涵蓋範圍由入口蓋章，而且理由比種類更強：這份數字是用來檢查**鉤子回報了多少**的。
     # 讓被檢查的一方提供它，這個機制就等於不存在 —— 一支宣稱自己涵蓋全部的鉤子不會有
     # 任何一步發現它說謊。入口同時握有差異與鉤子的回傳，兩樣都在手上。
-    body["coverage"] = ai_analysis_gitlab_mr.diff_coverage(
-        mr_diff=body.get("mrDiff"),
-        files_sent=diff_info["files"],
-        files_dropped=diff_info["dropped_files"],
-        files_empty=diff_info["empty_files"],
-        file_count=diff_info["file_count"],
-        truncated=diff_info["truncated"],
-        bytes_total=diff_info["bytes_total"],
-        bytes_sent=diff_info["bytes_sent"])
+    body["coverage"] = coverage
 
     payload = ai_analysis_gitlab_mr.wrap_analysis(body)
 

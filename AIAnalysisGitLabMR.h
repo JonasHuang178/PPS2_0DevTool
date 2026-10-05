@@ -260,6 +260,7 @@ private:
         QString aiTimeout;
         QString aiRetries;
         QString aiReask;
+        QString aiRecheck;
         QString jiraMode;        // none / manual / auto
         QString jiraKeyManual;
         QMap<QString, QString> envVars;
