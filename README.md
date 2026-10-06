@@ -956,6 +956,16 @@ diff --git a/src/b.cpp b/src/b.cpp
 | N 個檔案已送進分析，但 AI 沒有回報 | 模型**完全沒提到**那個檔案 | 調 prompt，或換模型 |
 | N 筆回報的路徑在差異中找不到對應的檔案 | 模型給了一個不存在的路徑 | 調 prompt（通常是它自己編了檔名） |
 
+另外還有第五類，**不算缺口**：
+
+| 報告上的那一行 | 意思 | 怎麼處理 |
+|---|---|---|
+| N 個檔案依設定排除，沒有送進分析 | 命中了三個 `Skip_*` 設定之一（見「不必分析的檔案」） | 要改設定，或什麼都不必做 |
+
+它與上面四類並列但性質不同：那是**你的決定**，不是機制失手。所以沒有 ⚠️，`has_coverage_gap()`
+也不數它 —— 只有排除、沒有其他缺口時整節不出現（每份報告都加一句「依設定略過 2 個」是噪音，
+而那個設定是你自己填的）。但只要有別的缺口，那一節就會順便列出它。
+
 > **這兩類同時出現，幾乎一定是「同一個檔案的路徑寫法對不上」而不是兩件事** —— 模型回的
 > 那個路徑沒人認得（進第四類），它本來想指的檔案因此沒人認領（進第三類）。`debug.log` 會
 > 把兩邊的實際字串並排印出來：
@@ -1042,7 +1052,8 @@ diff --git a/src/b.cpp b/src/b.cpp
       "dropped": { "count": 69, "paths": ["cpp/big01.cpp"] },
       "empty":   { "count": 0,  "paths": [] },
       "missing": { "count": 18, "paths": ["cpp/a.cpp"] },
-      "unknown": { "count": 0,  "paths": [] }
+      "unknown": { "count": 0,  "paths": [] },
+      "skipped": { "count": 2,  "paths": ["cfg/strings.json"] }
     }
   }
 }
@@ -1060,19 +1071,20 @@ diff --git a/src/b.cpp b/src/b.cpp
 - `mr_type` 是這一筆的種類，決定步驟 5 用哪一份版面；沒有種類時是空字串。它由**入口
   腳本蓋章**，device 的鉤子不必填（填了也會被覆蓋）
 - 某個檔案的清單為空時，該檔案整個不出現，編號也只算實際出現的檔案
-- `coverage` 是這次分析涵蓋了多少（見上一節）。四類缺口各自有精確的 `count` 與一份
-  有長度上限的 `paths`。它同樣由**入口腳本蓋章**，鉤子填了會被覆蓋 —— 而且理由比
+- `coverage` 是這次分析涵蓋了多少（見上一節）。四類缺口加上 `skipped`（版本 7 起）各自
+  有精確的 `count` 與一份有長度上限的 `paths`。它同樣由**入口腳本蓋章**，鉤子填了會被覆蓋 —— 而且理由比
   `mr_type` 更強：這份數字就是用來檢查鉤子回報了多少的
 - `hunkHeader` 是**模型原本指的那個位置**，原樣留著（版本 6 起）。它與 `diffCode` 是
   兩回事：`diffCode` 是解析成功後從差異切出來的那一段，解析不出來就是空的；`hunkHeader`
   則不論解析成不成功都在。報告靠它把「指向同一個位置的數筆發現」收成一組 —— 只留
   `diffCode` 的話，位置寫歪的那些全是空值就再也分不開
-- `schema_version` 比對時寬鬆：`6`、`"6"`、`"6.0"` 是同一個版本；`"6.5"` 與 `true` 不收
-- **讀得懂版本 3 到 6**（寫出去的一律是 6）。版本 3 少的是 `mr_type`，讀法是「視為沒有
+- `schema_version` 比對時寬鬆：`7`、`"7"`、`"7.0"` 是同一個版本；`"7.5"` 與 `true` 不收
+- **讀得懂版本 3 到 7**（寫出去的一律是 7）。版本 3 少的是 `mr_type`，讀法是「視為沒有
   種類」；3、4 少的是 `coverage`，讀法是「視為沒有涵蓋範圍資訊」，報告就不印那一段；
-  3、4、5 少的是 `hunkHeader`，讀法是「每一筆沒有位置」，分組退回用 `diffCode`。那不是
-  猜測，是三條知道的讀法。實際的好處是開發時常常拿昨天的 `03_summary.json` 單獨重跑
-  步驟 5 看版面，只認最新版會讓那個迴路每次改版就斷一次
+  3、4、5 少的是 `hunkHeader`，讀法是「每一筆沒有位置」，分組退回用 `diffCode`；3 到 6
+  少的是 `coverage.skipped`，讀法是「視為沒有任何檔案被設定排除」—— 那正是那幾版的事實，
+  當時還沒有排除機制。那不是猜測，是四條知道的讀法。實際的好處是開發時常常拿昨天的
+  `03_summary.json` 單獨重跑步驟 5 看版面，只認最新版會讓那個迴路每次改版就斷一次
 - 建構用 `ai_analysis_gitlab_mr` 的 `finding()` 與 `analysis_body()`，不要自己寫
   dict literal —— 欄位名散在寫入側與讀取側兩邊，改名漏一邊就是安靜地少一段
 - `schema_version` **由入口腳本蓋章**，device 的鉤子只回 `analysis` 的內容。入口收到
@@ -1221,6 +1233,8 @@ debug console、崩潰時還會進 `crash.log`。端點印得出來是因為它�
 - 只看 `missing`。`dropped`（太大沒送進去）與 `empty`（差異本身是空的）再問幾次都不會
   變，`unknown`（回了一個不存在的路徑）是另一種錯 —— 把它們算進來只會為了永遠補不回來
   的東西反覆付錢
+- **依設定排除的那些不在 `missing` 裡**（見「不必分析的檔案」），所以不會觸發重查。少了
+  那一條，這個迴圈會為了一個你刻意排除的檔案一次又一次重問，而它永遠補不回來
 - 補齊了就**提早停**，不會把次數用完
 - 取**最好的那一輪**而不是最後一輪：原樣重問拿到的是另一個樣本，它可能更差，而把一份
   較完整的分析換成較殘缺的那一份比不重問還糟。平手時留早的那一輪
@@ -1399,7 +1413,7 @@ print(load_hook('summary')[0].build_prompt({
 | inputs | 內容 |
 |---|---|
 | `description` | MR 的原始描述，已扣掉上一輪的 AI 分析 |
-| `mr_diff` | unified diff 純文字，上限 `MAX_PROMPT_DIFF_BYTES`（目前 120000），超過截斷並註明 |
+| `mr_diff` | unified diff 純文字，**已扣掉依設定排除的檔案**（見「不必分析的檔案」），上限 `MAX_PROMPT_DIFF_BYTES`（目前 120000），超過截斷並註明 |
 | `fetch_jira` | `fetch_jira(key)` → dict 或 None，**函式而不是內容**，見下 |
 
 **這次是誰、哪一筆**
@@ -1728,12 +1742,15 @@ GITLAB_SERVER_URL    GITLAB_ACCESS_TOKEN    GITLAB_VERIFY_SSL
 JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
 ```
 
-同一條注入路徑上還有兩個不是憑證的值（都在 `Function` 底下、不在 `Service`，因為它們
+同一條注入路徑上還有幾個不是憑證的值（都在 `Function` 底下、不在 `Service`，因為它們
 只屬於這個功能）：
 
 ```
-PPS_DEVICE                               <- PPS_Device
-PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH   <- PPS_Scripts_CodeReview_File_StartsWith
+PPS_DEVICE                                 <- PPS_Device
+PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH     <- PPS_Scripts_CodeReview_File_StartsWith
+PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES     <- PPS_Project_AI_Analysis_Skip_Filenames
+PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS    <- PPS_Project_AI_Analysis_Skip_Extensions
+PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS          <- PPS_Project_AI_Analysis_Skip_Dirs
 ```
 
 `PPS_Scripts_CodeReview_File_StartsWith` 是第 4 步用來篩選 JIRA 附件的**檔名前綴**
@@ -1743,6 +1760,63 @@ PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH   <- PPS_Scripts_CodeReview_File_StartsWi
 
 比對**區分大小寫**、只認 `.md`、只認**開頭**（不是包含）。副檔名寫死在腳本裡不可配置：
 可配置的話有人會指到 `.docx` 或 `.zip`，於是二進位內容被貼進報告，而每一步都回報成功。
+
+#### 不必分析的檔案
+
+一支 MR 常常夾著幾個對「程式碼有什麼變化」毫無資訊的檔案：產生出來的 `.json`、翻譯檔、
+圖檔、第三方的整包來源。它們照樣吃掉 prompt 的位元組預算、照樣要付 token 的錢，而模型
+對它們能說的話沒人想看。三個設定各管一層，**任一命中就排除**：
+
+| 設定鍵 | 比對 | 例 |
+|---|---|---|
+| `PPS_Project_AI_Analysis_Skip_Filenames` | 檔名（basename）一模一樣 | `AUTHORS` 命中 `docs/AUTHORS`，不命中 `AUTHORS.md` |
+| `PPS_Project_AI_Analysis_Skip_Extensions` | 副檔名一模一樣，**不含那個點** | `json` 命中 `cfg/a.json`；`Makefile` 沒有副檔名，永遠不命中 |
+| `PPS_Project_AI_Analysis_Skip_Dirs` | 位於該目錄**或其子目錄**之下，路徑自根目錄起算 | `test/skip` 命中 `test/skip/x.cpp` 與 `test/skip/deep/y.cpp`，不命中 `test/skip_file.cpp` |
+
+```json
+"PPS_Project_AI_Analysis_Skip_Extensions": "json;ts;png;svg",
+"PPS_Project_AI_Analysis_Skip_Dirs": "third_party;tools/generated"
+```
+
+- **一個設定填多個值用分號 `;` 分隔。** 不是逗號 —— 逗號在 Linux 與 macOS 上是合法的
+  檔名字元，一個叫 `a,b.cpp` 的檔就永遠填不進來；分號在 Windows 與 POSIX 的路徑裡都不
+  合法。每一段會去頭尾空白，空段忽略
+- **比對區分大小寫，與 git 一致。** git 的路徑本來就分，不分的那一邊會在「同名但大小寫
+  不同的兩個檔」上排除掉一個你沒打算排除的檔案。代價是 `PNG` 填錯大小寫會安靜地不生效
+- **分成三個設定而不是一套樣式語法。** 一個寫成 `test` 的值，在三種意圖下分別是「叫
+  test 的檔」、「`.test` 結尾」、「`test/` 底下」。合成一個就得發明一套樣式語法，而使用者
+  得先學那套語法才能排除一個目錄
+- **目錄要連子目錄一起排除**，而且要求那個 `/` 邊界。只排除直接放在該目錄裡的檔案，等於
+  要求你把每一層子目錄都列進設定，新增一層就會安靜地漏掉；而少了 `/` 邊界就是字串前綴
+  比對，`src/a` 會順便打到 `src/abc/` 整個目錄
+- **副檔名只認最後一個點之後那一段。** `a.tar.gz` 的副檔名是 `gz`。設定值寫 `.json` 也
+  收（前導的點會去掉），兩種寫法都有人用，擋掉一種只是多一個坑
+- 三個都沒填時整層不啟用（`contract.skip_filter()` 回 `None`），`skipped` 是空清單而不是
+  「排除了 0 個」—— 兩者在日誌上看起來不同
+
+**排除發生在位元組上限之前。** 上限是逐檔累加到滿為止的一刀；篩在後面的話，一個你不打算
+分析的大檔已經吃掉預算、把真正要看的檔案推進 `dropped` 了 —— 而那一筆缺口指向「上限要調」，
+完全指錯方向。實測（上限 300 bytes、一個大 `.json` 排在中間）：
+
+| | 完整送出 | 超過上限 | 依設定排除 |
+|---|---|---|---|
+| 不排除 | `src/a.cpp` | `cfg/big.json`、`third_party/lib.c`、**`src/b.cpp`** | — |
+| 排除 `.json` 與 `third_party/` | `src/a.cpp`、`src/b.cpp` | 無 | `cfg/big.json`、`third_party/lib.c` |
+
+**涵蓋範圍知道這件事，這是必要的。** 被排除的檔案收在第五類 `skipped`，而且**不算進
+`missing`** —— 少了這一條，涵蓋層的重查（`Recheck_Count`）會為了一個你刻意排除的檔案一次
+又一次重問，而它永遠補不回來。`skipped` 不算缺口（`has_coverage_gap()` 不數它），所以只有
+排除、沒有其他缺口時報告不會多出一節；但只要有別的缺口，那一節就會順便列出被排除的那些，
+否則「我的檔案為什麼不在報告裡」完全看不出原因。`files_changed` 仍是這支 MR 真正的檔案數，
+不隨設定改變。
+
+**全部被排除時這一步失敗**，訊息點名三個環境變數與實際被排除的檔案（錯誤碼
+`MR_DIFF_ALL_SKIPPED`）。不沿用「GitLab 沒有提供差異內容」那一段：那段話叫人去找管理者調
+伺服器端的 diff 大小限制，而這裡真正的成因是自己填的規則太寬，改那邊也沒用。
+
+`gitlab_utils.get_mr_diff_detail()` 收的是一個通用的 `exclude`（可呼叫物件，收路徑回
+bool），**不認得這三個設定** —— 判斷哪些檔案不必分析是這個功能的政策，而那支是共用的
+GitLab 存取；把政策寫進去就等於讓每一個用它的功能都繼承別人的規則。
 
 > **注意這是每個部署只會撞一次的成本。** 第 4 步跑在第 3 步之後，所以設定檔少這個鍵時，
 > 使用者是**付完 AI 費用、等完那兩分鐘之後**才看到錯誤訊息，而那一次沒有報告。檢查刻意

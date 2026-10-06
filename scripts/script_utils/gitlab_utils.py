@@ -566,15 +566,26 @@ def _raw_entries(server_url, token, base, entries, overflow, timeout, verify_ssl
 
 
 def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
-                       timeout=DEFAULT_TIMEOUT, verify_ssl=True):
+                       timeout=DEFAULT_TIMEOUT, verify_ssl=True, exclude=None):
     """取得 merge request 的 unified diff，**連同取得過程中知道的事實**。
+
+    `exclude` 是一個可呼叫物件，收一個檔案路徑、回傳「要不要排除它」。被排除的檔案
+    完全不進 `text`，路徑收在 `skipped_files` 裡。None 表示不排除任何東西。
+
+    **排除發生在位元組上限之前**，這是刻意的：上限是逐檔累加到滿為止的一刀，排除放在
+    之後的話，一個不打算分析的大檔已經吃掉預算、把真正要看的檔案推進 `dropped_files`
+    了 —— 而那一筆缺口指向「上限要調」，完全指錯方向。
+
+    **本函式不決定排除什麼。** 判斷哪些檔案不必分析是呼叫端的政策，而這支是通用的
+    GitLab 存取 —— 把政策寫進來就等於讓每一個用它的功能都繼承別人的規則。
 
     回傳一個 dict：
 
         text          組好的 unified diff（截斷時含結尾那行說明）
         files         完整收進 text 的檔案路徑，依出現順序
         dropped_files 因為截斷而沒有完整收進去的檔案路徑
-        file_count    這支 merge request 共有幾個檔案變更（截斷前）
+        skipped_files 被 exclude 排除的檔案路徑
+        file_count    這支 merge request 共有幾個檔案變更（截斷前，含被排除的）
         empty_files   差異內容是空的那些檔案路徑（files 的子集合）
         truncated     是否因為超過 max_bytes 而截斷
         bytes_total   截斷前的位元組數
@@ -636,6 +647,24 @@ def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
         entries, overflow = _raw_entries(server_url, token, base, entries,
                                          overflow, timeout, verify_ssl)
 
+    # 排除要在組 chunks **之前**做：那些檔案的 diff 連編碼都不必（一個被排除的大檔
+    # 光編碼就是白花的時間），而 file_count 取的是排除前的 entries 長度 —— 它回答
+    # 「這支 MR 改了幾個檔案」，那是事實，不隨設定改變。
+    file_count = len(entries)
+    skipped_files = []
+    if exclude is not None:
+        kept = []
+        for one in entries:
+            path = _entry_path(one)
+            if exclude(path):
+                skipped_files.append(path)
+            else:
+                kept.append(one)
+        entries = kept
+        if skipped_files:
+            logger.info("MR %s：依呼叫端的規則排除 %d / %d 個檔案",
+                        mr_iid, len(skipped_files), file_count)
+
     collapsed_files = [_entry_path(one) for one in entries if one.get("collapsed")]
     too_large_files = [_entry_path(one) for one in entries if one.get("too_large")]
     if collapsed_files or too_large_files:
@@ -685,7 +714,8 @@ def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
         "text": raw.decode("utf-8", errors="replace") + truncated_note,
         "files": files,
         "dropped_files": dropped_files,
-        "file_count": len(entries),
+        "skipped_files": skipped_files,
+        "file_count": file_count,
         "empty_files": empty_files,
         "truncated": truncated,
         "bytes_total": bytes_total,

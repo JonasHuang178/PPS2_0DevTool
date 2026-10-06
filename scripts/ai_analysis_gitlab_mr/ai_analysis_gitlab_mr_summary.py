@@ -98,7 +98,8 @@ def _coverage_of(body, diff_info):
         file_count=diff_info["file_count"],
         truncated=diff_info["truncated"],
         bytes_total=diff_info["bytes_total"],
-        bytes_sent=diff_info["bytes_sent"])
+        bytes_sent=diff_info["bytes_sent"],
+        files_skipped=diff_info.get("skipped_files") or ())
 
 
 def _round_writer(base_write, round_no):
@@ -138,7 +139,11 @@ def _fetch_diff(repo, mr_iid, debug_dir):
         info = gitlab_utils.get_mr_diff_detail(
             server_url, token, project_id, mr_iid,
             max_bytes=ai_analysis_gitlab_mr.MAX_PROMPT_DIFF_BYTES,
-            verify_ssl=verify_ssl)
+            verify_ssl=verify_ssl,
+            # 排除規則由契約從環境變數組出來，在**取差異的時候**就套用 —— 不是取完再
+            # 篩。位元組上限是逐檔累加到滿為止的一刀，篩在後面的話，一個不打算分析的
+            # 大檔已經吃掉預算、把真正要看的檔案推進 dropped 了。
+            exclude=ai_analysis_gitlab_mr.skip_filter())
     except gitlab_utils.GitLabError as exc:
         message, detail, code = ai_analysis_gitlab_mr.describe_gitlab_error(
             exc, repo)
@@ -165,6 +170,26 @@ def _require_diff_content(info, repo, mr_iid, debug_dir):
         return                              # 這支 MR 本來就沒有變更，不是這裡的事
     if "@@" in info["text"]:
         return                              # 至少有一個 hunk，正常
+
+    # **全部被排除要先攔，而且訊息完全不同。** 底下那段話講的是伺服器端的 diff 大小
+    # 限制、叫使用者去找管理者改設定 —— 而這裡真正的成因是他自己填的排除規則太寬。
+    # 用同一段訊息會把人送到一個他根本不需要去的地方，而那個地方改了也沒用。
+    skipped = info.get("skipped_files") or []
+    if len(skipped) >= info["file_count"]:
+        _fail(debug_dir,
+              "這支 Merge Request 的每一個檔案都被排除規則擋掉了"
+              "（%s !%s 共 %d 個檔案）" % (repo, mr_iid, info["file_count"]),
+              "排除規則來自三個環境變數（由設定檔 Function 底下本功能區塊的\n"
+              "同名鍵注入）：\n"
+              "  PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES   檔名一模一樣\n"
+              "  PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS  副檔名一模一樣（不含點）\n"
+              "  PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS        位於該目錄或其子目錄之下\n\n"
+              "被排除的檔案：%s\n\n"
+              "請放寬其中一條規則，或換一支有其他檔案變更的 Merge Request。\n\n"
+              "不送進 AI 是刻意的：沒有任何程式碼差異的「程式碼分析」只能靠描述瞎猜，"
+              "而它會回報成功。"
+              % "、".join(skipped[:ai_analysis_gitlab_mr.MAX_COVERAGE_PATHS]),
+              "MR_DIFF_ALL_SKIPPED")
 
     reasons = []
     if info.get("too_large_files"):
@@ -349,9 +374,16 @@ def main():
     diff_info = _fetch_diff(repo, mr_iid, params["debug_dir"])
     mr_diff = diff_info["text"]
 
-    logger.info("素材：diff %d 字元，完整送出 %d / %d 個檔案%s",
+    skipped = diff_info.get("skipped_files") or []
+    logger.info("素材：diff %d 字元，完整送出 %d / %d 個檔案%s%s",
                 len(mr_diff), len(diff_info["files"]), diff_info["file_count"],
+                "，依設定排除 %d 個" % len(skipped) if skipped else "",
                 "（已截斷）" if diff_info["truncated"] else "")
+    if skipped:
+        # 路徑也記一筆。「為什麼報告裡沒有我的檔案」只有看到實際被排除的清單才答得出來，
+        # 而規則本身（三個變數的內容）在 skip_filter() 已經記過數量。
+        logger.info("依設定排除的檔案：%s",
+                    skipped[:ai_analysis_gitlab_mr.MAX_COVERAGE_PATHS])
 
     # 這一行描述的是**當下**：素材備好了，正要把它交給鉤子。
     #

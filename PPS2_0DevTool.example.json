@@ -31,6 +31,9 @@
         "Program": "python",
         "PPS_Device": "",
         "PPS_Scripts_CodeReview_File_StartsWith": "CodeReview_",
+        "PPS_Project_AI_Analysis_Skip_Filenames": "",
+        "PPS_Project_AI_Analysis_Skip_Extensions": "",
+        "PPS_Project_AI_Analysis_Skip_Dirs": "",
         "Skip_Title_StartsWith_List": [],
         "Skip_Title_EndsWith_List": [],
         "Skip_Title_Contains_List": [

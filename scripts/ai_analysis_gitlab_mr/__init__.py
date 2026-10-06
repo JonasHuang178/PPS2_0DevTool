@@ -63,6 +63,7 @@ __all__ = [
     "hunk_range_of",
     "hunk_of",
     "resolve_reported_path",
+    "skip_filter",
     "MAX_FINDING_DIFF_BYTES",
     "MAX_PROMPT_DIFF_BYTES",
     "MAX_COVERAGE_PATHS",
@@ -704,6 +705,7 @@ def render_coverage_section(analysis):
 
         - ⚠️ 69 個檔案的差異超過送出上限，沒有送進分析（送出 120000 / 原始 496320 bytes）
         - ⚠️ 18 個檔案已送進分析，但 AI 沒有回報
+        - 2 個檔案依設定排除，沒有送進分析
 
         <details>
 
@@ -743,6 +745,12 @@ def render_coverage_section(analysis):
     unknown = _count_of(coverage.get("unknown"))
     if unknown:
         parts.append("- ⚠️ %d 筆回報的路徑在差異中找不到對應的檔案" % unknown)
+    # 排除不是缺口，所以不用 ⚠️ —— 那個符號在這一節代表「有東西沒做到」，而這一行
+    # 說的是「這是你要的」。它只在**已經有別的缺口**時出現（這一節整段的條件），作用是
+    # 讓「我的檔案為什麼不在報告裡」有個答案。
+    skipped = _count_of(coverage.get("skipped"))
+    if skipped:
+        parts.append("- %d 個檔案依設定排除，沒有送進分析" % skipped)
     parts.append("")
 
     detail = []
@@ -750,6 +758,7 @@ def render_coverage_section(analysis):
     detail.extend(_coverage_list("差異內容是空的", coverage.get("empty")))
     detail.extend(_coverage_list("AI 沒有回報", coverage.get("missing")))
     detail.extend(_coverage_list("差異中找不到", coverage.get("unknown")))
+    detail.extend(_coverage_list("依設定排除", coverage.get("skipped")))
     if detail:
         parts.append("<details>")
         parts.append("")
@@ -873,6 +882,122 @@ def code_review_keyword():
             "症狀是議題上明明有附件、報告裡卻沒有那一段。",
             "CODE_REVIEW_FILE_STARTSWITH_MISSING")
     return keyword
+
+
+# --- 不必分析的檔案 ---------------------------------------------------------
+#
+# 一支 MR 常常夾著幾個對「程式碼有什麼變化」毫無資訊的檔案：產生出來的 .json、翻譯檔、
+# 圖檔、第三方的整包來源。它們照樣吃掉 prompt 的位元組預算、照樣要付 token 的錢，而模型
+# 對它們能說的話沒人想看。
+#
+# 三個變數各管一層，彼此獨立（任一命中就排除）：
+#
+#   SKIP_FILENAMES   檔名（basename）一模一樣
+#   SKIP_EXTENSIONS  副檔名一模一樣，設定值**不含那個點**
+#   SKIP_DIRS        位於該目錄或其子目錄之下，路徑自**根目錄**起算
+#
+# 分成三個而不是一個「樣式」設定，是因為三者的意圖不同而寫法又容易互相誤認：一個寫成
+# `test` 的值，在三種意圖下分別是「叫 test 的檔」、「.test 結尾」、「test/ 底下」。
+# 合成一個設定就得發明一套樣式語法，而使用者得先學那套語法才能排除一個目錄。
+_ENV_SKIP_FILENAMES = "PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES"
+_ENV_SKIP_EXTENSIONS = "PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS"
+_ENV_SKIP_DIRS = "PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS"
+
+# 一個變數裡填多個值時的分隔符號。
+#
+# **分號，不是逗號。** 逗號在 Linux 與 macOS 上是合法的檔名字元，一個叫 `a,b.cpp` 的檔
+# 就永遠填不進來；分號在 Windows 與 POSIX 的路徑裡都不合法，而且與 Windows PATH 的習慣
+# 一致。
+_SKIP_SEP = ";"
+
+
+def _skip_values(name):
+    """讀一個排除設定，回傳去空白、去空項之後的值清單。
+
+    大小寫原樣保留 —— 比對分大小寫（見 skip_filter）。
+    """
+    raw = os.environ.get(name, "")
+    return [one.strip() for one in raw.split(_SKIP_SEP) if one.strip()]
+
+
+def _norm_skip_path(value):
+    """把路徑統一成「以 / 分隔、根目錄起算、沒有 a/ b/ 前綴」的形式。
+
+    用的是 hunk_of 那一套既有的正規化（_clean_path + _strip_ab），不另寫一份 —— 兩份
+    規則會慢慢漂移，而症狀是某個檔案在涵蓋範圍裡對得上、在排除規則裡卻對不上。
+
+    GitLab 的 new_path 本來就是從根目錄起算、沒有前綴的（`test/skip/x.cpp`），剝 a/ b/
+    是防禦：萬一哪天換了來源、或使用者在設定裡照著 diff 的樣子寫了 `a/test`。
+    """
+    return _strip_ab(_clean_path(plain(value).strip())).strip("/")
+
+
+def skip_filter():
+    """依三個環境變數組出「這個檔案要不要排除」的判斷。都沒設定時回 None。
+
+    **這是 device 作者的公開 API**，但 device 通常用不到它 —— 排除在入口取差異時就做完
+    了，鉤子拿到的 `mr_diff` 裡已經沒有那些檔案。
+
+    回 None 而不是一個「永遠回 False」的函式，是為了讓呼叫端據此完全跳過那一層：
+    `skipped_files` 於是是空清單而不是「排除了 0 個」，兩者在日誌上看起來不同。
+
+    比對**分大小寫**，與 git 一致 —— git 的路徑本來就分，不分的那一邊會在「同名但大小寫
+    不同的兩個檔」上排除掉一個使用者沒打算排除的檔案。代價是 `PNG` 填錯大小寫就安靜地
+    不生效，所以呼叫端要把「哪一條規則一個檔都沒命中」記進診斷輸出（見入口腳本）。
+
+    三條規則的細節：
+
+        檔名      basename 完全相等。`AUTHORS` 命中 `docs/AUTHORS`，不命中 `AUTHORS.md`
+        副檔名    最後一個點之後的那一段完全相等。設定值寫 `json`，不是 `.json`；
+                  寫了點也收（去掉前導的點）—— 兩種寫法都有人用，而擋掉一種只是多一個坑。
+                  沒有副檔名的檔（`Makefile`）永遠不命中
+        目錄      路徑以「該目錄 + /」開頭。`test/skip` 命中 `test/skip/x.cpp` 與
+                  `test/skip/deep/y.cpp`，**不**命中 `test/skip_file.cpp`（它的目錄是
+                  `test`）也不命中 `test/skipper/y.cpp`
+
+    **目錄要連子目錄一起排除。** 只排除直接放在該目錄裡的檔案，等於要求使用者把每一層
+    子目錄都列進設定，而新增了一層就會安靜地漏掉 —— 而那正是這個設定想避免的事。
+
+    **目錄的比對要求那個 `/` 邊界。** 少了它就是字串前綴比對，`src/a` 會順便打到
+    `src/abc/` 整個目錄，而使用者看不出為什麼。
+    """
+    names = set(_skip_values(_ENV_SKIP_FILENAMES))
+    exts = set(one.lstrip(".") for one in _skip_values(_ENV_SKIP_EXTENSIONS))
+    exts.discard("")
+    dirs = [_norm_skip_path(one) for one in _skip_values(_ENV_SKIP_DIRS)]
+    dirs = [one for one in dirs if one]
+
+    if not (names or exts or dirs):
+        return None
+
+    logger.info("不必分析的檔案規則：檔名 %d 條、副檔名 %d 條、目錄 %d 條",
+                len(names), len(exts), len(dirs))
+
+    def exclude(path):
+        clean = _norm_skip_path(path)
+        if not clean:
+            return False
+
+        base = clean.rsplit("/", 1)[-1]
+        if base in names:
+            return True
+
+        # 只認最後一個點之後那一段。`a.tar.gz` 的副檔名是 `gz` —— 要排除 `tar.gz`
+        # 這種複合寫法得另立一條規則，而那條規則的使用者遠少於會被它弄糊的人。
+        #
+        # 前導點的檔案（`.gitignore`）沒有副檔名：rsplit 會切出 ("", "gitignore")，
+        # 而把 `gitignore` 當成它的副檔名會讓 SKIP_EXTENSIONS=gitignore 這種怪規則成立。
+        if exts and "." in base[1:]:
+            if base.rsplit(".", 1)[-1] in exts:
+                return True
+
+        for one in dirs:
+            if clean.startswith(one + "/"):
+                return True
+
+        return False
+
+    return exclude
 
 
 def ai_credentials(inputs):
@@ -1121,21 +1246,27 @@ def describe_gitlab_error(exc, repo):
 # 版本 6 相對於 5 在每一筆 finding 上多了 hunkHeader —— 模型原本指的那個位置。報告要靠它
 # 把「指向同一個位置的數筆發現」收成一組，而 diffCode 做不到這件事：位置解析不出來時
 # 它是空字串，那些發現於是無從分辨彼此，而那正是最需要分組的情況之一。
-ANALYSIS_SCHEMA_VERSION = 6
+# 版本 7 相對於 6 在 coverage 底下多了 skipped —— 依設定排除、一開始就沒打算送的那些
+# 檔案。它必須跟著產物走的理由與 coverage 本身完全相同：報告要靠它回答「我的檔案為什麼
+# 不在這份分析裡」，而步驟 5 收到的只有檔案。
+ANALYSIS_SCHEMA_VERSION = 7
 
 # **讀**得懂的版本。寫出去的一律是 ANALYSIS_SCHEMA_VERSION。
 #
 # 規格要的是「依版本決定如何讀取」，而不是「只讀最新的一版」—— 3 到 6 的差別都只有多一個
 # 選填欄位：讀 3 是「視為沒有種類」，讀 3、4 是「視為沒有涵蓋範圍資訊」，讀 3、4、5 是
 # 「每一筆沒有位置」，而那一條的讀法就是退回用 diffCode 分組（見 default 的 merge_to_md）。
-# 那不是猜測，是三條知道的讀法。
+# 讀 3 到 6 還多一條：「視為沒有任何檔案被設定排除」—— `skipped` 取不到就是 0，而那正是
+# 那幾版的事實（當時還沒有排除機制）。
+#
+# 那不是猜測，是四條知道的讀法。
 #
 # 實際的好處很具體：開發時常常單獨拿昨天的 03_summary.json 重跑步驟 5 來看版面，
 # 而那份檔案是舊版本寫的。只認最新版會讓那個迴路在每次改版時斷一次。
 #
 # 加一個版本進來之前先問：那一版的讀法真的知道嗎？不知道就不要加 —— 猜的下場是一份
 # 看起來正常、實際上少了幾段的報告，而它會回報成功。
-ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5, 6)
+ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5, 6, 7)
 
 
 # 一次分析的 JIRA 狀態。
@@ -1552,7 +1683,7 @@ def _coverage_bucket(paths):
 
 def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
                   files_empty=(), file_count=None, truncated=False,
-                  bytes_total=0, bytes_sent=0):
+                  bytes_total=0, bytes_sent=0, files_skipped=()):
     """算出這次分析涵蓋了多少，以及缺口分別落在哪一類。
 
     **由入口腳本呼叫，不給鉤子用。** 這份數字是用來檢查鉤子回報了多少的 —— 讓被檢查的
@@ -1565,6 +1696,19 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
         empty    差異內容是空的（二進位、僅模式變更、來源沒給）→ 無能為力，但要說出來
         missing  完整送進去了，但鉤子**完全沒提到**它      → 要調 prompt
         unknown  回報的路徑在差異中找不到對應的檔案        → 模型給了不存在的路徑
+
+    另外還有一類，**不算缺口**：
+
+        skipped  依設定排除，一開始就沒打算送                → 要改設定，或什麼都不必做
+
+    skipped 與那四類並列但性質不同：它是使用者的**決定**，不是機制失手。因此
+    has_coverage_gap() 不把它算進去 —— 每一份報告都加一段「依設定略過 2 個」是噪音，
+    而那個設定是他自己填的。但只要有其他缺口，那一節就會順便列出它（見
+    render_coverage_section）：否則「我的檔案為什麼不在報告裡」完全看不出原因。
+
+    **skipped 的那些不算進 missing**，與 empty 同一條理由，而且更強：模型根本沒看到那些
+    檔案，怪它沒回報是記在錯的一方頭上。少了這一條，涵蓋層的重查（見入口腳本的
+    ai_recheck）會為了一個使用者刻意排除的檔案一次又一次重問，而它永遠補不回來。
 
     **「有回報」＝ mrDiff 裡有這個鍵，不要求它底下有發現。** 鉤子給一個空的發現清單
     （`"a.cpp": []`）意思是「這個檔案看過了，沒有值得注意的地方」—— 那是交代過了，不是
@@ -1585,6 +1729,8 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
     sent = [plain(one) for one in files_sent]
     sent = [one for one in sent if one]
     empty = set(plain(one) for one in files_empty)
+    skipped = [plain(one) for one in files_skipped]
+    skipped = [one for one in skipped if one]
     # 形狀不對的 mrDiff 在這裡當成空的，不在這裡報錯 —— 型別由 validate_analysis()
     # 檢查，那裡的訊息指得出是哪一個 device 寫壞的。
     reported = [plain(one) for one in
@@ -1631,14 +1777,20 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
         "empty": _coverage_bucket([one for one in sent if one in empty]),
         "missing": _coverage_bucket(missing),
         "unknown": _coverage_bucket(unknown),
+        "skipped": _coverage_bucket(skipped),
     }
 
 
+# **只有這四類算缺口。** skipped 刻意不在裡面：它是使用者自己填的設定造成的，不是機制
+# 失手，而把它算成缺口會讓每一份設了排除規則的報告都多一段它不需要的警告。
 _COVERAGE_BUCKETS = ("dropped", "empty", "missing", "unknown")
 
 
 def has_coverage_gap(coverage):
     """涵蓋範圍裡有沒有任何一類缺口。四類全空時報告不印那一段。
+
+    **skipped 不算缺口**（見 _COVERAGE_BUCKETS）。一份「只有依設定排除的檔案」的分析是
+    完整的 —— 那些檔案本來就不打算分析。
 
     每一份報告都加一段「涵蓋 21/21，沒有缺口」是噪音 —— 絕大多數的 Merge Request 不會
     有缺口。常駐的訊號留在出處資訊那一行就夠了。
@@ -2200,7 +2352,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.9"
+SCRIPT_VERSION = "2.10"
 
 
 def _link(text, url):

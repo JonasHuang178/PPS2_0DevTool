@@ -80,6 +80,12 @@ const char *kServiceKey[] = {
     // code review 附件的檔名前綴，同上那條注入路徑。沒有預設值 —— 沒設定時步驟 4
     // 直接失敗並點名這個鍵，因為給了預設值會讓漏設的人靜默用到一個他沒選的前綴。
     "PPS_Scripts_CodeReview_File_StartsWith",
+    // 不必送進 AI 分析的檔案，三條規則各一個鍵。Qt **原樣轉送，不解讀** —— 分隔符號、
+    // 比對方式與大小寫全都是腳本的事；在這裡也解一次就有兩份規則，而命令列與 CI 那條
+    // 路徑根本不經過 Qt。
+    "PPS_Project_AI_Analysis_Skip_Filenames",
+    "PPS_Project_AI_Analysis_Skip_Extensions",
+    "PPS_Project_AI_Analysis_Skip_Dirs",
     "Gitlab_Server_URL",
     "Gitlab_Access_Token",
     "Gitlab_Verify_SSL",
