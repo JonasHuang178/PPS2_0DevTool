@@ -10,6 +10,8 @@
     http_utils.py    REST 呼叫的共用底層（session、逾時、重試、例外基底）
     gitlab_utils.py  GitLab REST
     jira_utils.py    Jira REST（Server/DC，/rest/api/2）
+    ai_utils.py      向 AI 服務提問：重試與退避、回覆解析（為特定一家地端服務寫的，
+                     不是通用的多供應商抽象）
 
 依功能分組會讓第二個功能需要同一個能力時無處可放。只服務單一功能的邏輯不
 屬於這裡，應該留在 scripts/<功能>/ 之下。
