@@ -1,0 +1,168 @@
+# PPS2_0DevTool —— AI Analysis GitLab MR 五步流程（GitLab CI）
+#
+# 複製到 repo 根目錄改名 .gitlab-ci.yml。
+#
+# 一個 stage、一個 job、五步照順序跑。任一步 exit 非 0 就整個 job 失敗並停下來
+# （GitLab 的 script 是一份 shell 腳本，前一行失敗就不會執行下一行）。
+#
+# 投遞方式：每一步寫一份請求信封 JSON，用 --request 餵給腳本。
+#   stdout = 結果信封（PASS/FAIL），直接留在 job log
+#   stderr = 診斷與進度，也留在 log
+#   exit 0 = PASS   exit 1 = FAIL   exit 2 = 用法錯誤
+#
+# log 不必做任何事就會出現在 job log（= GitLab CI/CD 頁面）—— logger 的每一個等級
+# 都走 stderr，而 job log 同時收 stdout 與 stderr。工具端 debug console 看到的
+# [ PY INFO ] / [ PY WARN ] 那些行，在這裡一字不差。
+#
+# -v 打開 DEBUG 等級（預設只到 INFO）。想少一點雜訊就把它拿掉。
+# ⚠️ job log 有大小上限（預設 4 MB，Admin → CI/CD → output_limit）。-v 加上一支大
+#    MR 有可能撞到，撞到的話尾端會被截掉 —— 那正是結果信封所在的位置。
+#
+# 步驟之間不靠 stdout 傳值，靠 out_path 寫出來的檔案 —— jira_key 與 mr_type 在
+# 02_mr_info.json，jira_state 在 03_summary.json。
+#
+# 不需要設 PYTHONPATH，每支腳本自己 bootstrap sys.path。
+#
+# 要先設成 CI/CD Variables（Masked + Protected）：
+#   GITLAB_ACCESS_TOKEN  JIRA_ACCESS_TOKEN  AI_API_URL  AI_API_KEY
+
+stages:
+  - ai-analysis
+
+ai-analysis:
+  stage: ai-analysis
+  image: python:3.11-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+  variables:
+    S: "$CI_PROJECT_DIR/scripts/ai_analysis_gitlab_mr"   # 腳本所在目錄
+    W: "$CI_PROJECT_DIR/pps-work"                        # 五步的產物
+    D: "$CI_PROJECT_DIR/pps-work/debug"                  # 除錯輸出，空字串=不寫
+
+    # 服務端點
+    GITLAB_SERVER_URL: "$CI_SERVER_URL"
+    GITLAB_VERIFY_SSL: "false"
+    JIRA_SERVER_URL: "https://jira.example.com"
+
+    PPS_DEVICE: "default"                                 # 步驟 2/3/4/5 都要
+    PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH: "CodeReview_" # 步驟 4 必填
+    AI_VERIFY_SSL: "false"
+
+    # 不送進 AI 分析的檔案。多個值用分號分隔，區分大小寫，留空不排除。
+    PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES: ""
+    PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS: "json;ts;png;svg"
+    PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS: "third_party"
+
+    AI_MODE_NAME: "Open AI"
+    AI_MODEL: "gpt-4o"
+
+  script:
+    - mkdir -p "$W" "$D"
+    - REPO="$CI_MERGE_REQUEST_PROJECT_PATH"
+    - IID="$CI_MERGE_REQUEST_IID"
+
+    # GitLab 的可收合區段：五步各自成一塊，可以折疊，而且標題旁會顯示那一步的耗時。
+    # 名稱只能用英數與下底線。\e[0K 是清到行尾，少了它那串控制碼會印出來。
+    - |
+      sec() { echo -e "\e[0Ksection_start:$(date +%s):$1\r\e[0K$2"; }
+      end() { echo -e "\e[0Ksection_end:$(date +%s):$1\r\e[0K"; }
+
+    # --- 步驟 1/5：取得 MR 描述 -> 01_description.md ---------------------------
+    # 產物已扣掉上一輪貼進去的 AI 分析；不扣的話 AI 會對自己上次的輸出再分析一次。
+    - |
+      cat > "$W/req1.json" <<EOF
+      {"action": "mr_description", "config": {}, "params": {
+        "repo": "$REPO", "mr_iid": "$IID",
+        "debug_dir": "$D", "out_path": "$W/01_description.md"}}
+      EOF
+    - sec pps1 "步驟 1/5：取得 MR 描述"
+    - python3 "$S/ai_analysis_gitlab_mr_description.py" --request "$W/req1.json" -v
+    - end pps1
+
+    # --- 步驟 2/5：JIRA key 與 MR 種類 -> 02_mr_info.json ----------------------
+    # 這一步自己連 GitLab 取 MR（抽 key 讀的是標題，步驟 1 的產物只有描述本文）。
+    # jira_mode: auto 從標題第一個方括號抽 / manual 用 jira_key_manual / none 不用。
+    - |
+      cat > "$W/req2.json" <<EOF
+      {"action": "mr_info", "config": {}, "params": {
+        "repo": "$REPO", "mr_iid": "$IID",
+        "jira_mode": "auto", "jira_key_manual": "",
+        "debug_dir": "$D", "out_path": "$W/02_mr_info.json"}}
+      EOF
+    - sec pps2 "步驟 2/5：JIRA key 與 MR 種類"
+    - python3 "$S/ai_analysis_gitlab_mr_info.py" --request "$W/req2.json" -v
+    - end pps2
+    - JIRA_KEY=$(python3 -c "import json,os;print(json.load(open(os.environ['W']+'/02_mr_info.json'))['jira_key'])")
+    - MR_TYPE=$(python3 -c "import json,os;print(json.load(open(os.environ['W']+'/02_mr_info.json'))['mr_type'])")
+
+    # --- 步驟 3/5：AI 分析 -> 03_summary.json ---------------------------------
+    # 唯一要錢、唯一要等分鐘級的一步。
+    # 描述走 description_path 不走 description（CI 手上有的是檔案）。
+    # AI 的四項走 params 不走環境變數，所以會落在 req3.json —— 不設 artifact，最後刪掉。
+    # ai_recheck 預設 0：漏檔時不重問。要開填 "1"，每多一輪就多一次完整的 AI 呼叫。
+    - |
+      cat > "$W/req3.json" <<EOF
+      {"action": "ai_summary", "config": {}, "params": {
+        "repo": "$REPO", "mr_iid": "$IID",
+        "description_path": "$W/01_description.md",
+        "jira_key": "$JIRA_KEY", "jira_mode": "auto", "mr_type": "$MR_TYPE",
+        "ai_mode_name": "$AI_MODE_NAME", "ai_api_url": "$AI_API_URL",
+        "ai_api_key": "$AI_API_KEY", "ai_model": "$AI_MODEL",
+        "ai_timeout": "120", "ai_retries": "3", "ai_reask": "1", "ai_recheck": "0",
+        "debug_dir": "$D", "out_path": "$W/03_summary.json"}}
+      EOF
+    - sec pps3 "步驟 3/5：AI 分析"
+    - python3 "$S/ai_analysis_gitlab_mr_summary.py" --request "$W/req3.json" -v
+    - end pps3
+    - rm -f "$W/req3.json"
+    - JIRA_STATE=$(python3 -c "import json,os;print(json.load(open(os.environ['W']+'/03_summary.json'))['analysis']['jira_state'])")
+
+    # --- 步驟 4/5：程式碼審閱報告 -> 04_code_review.json（可能不產生）----------
+    # 這一步永遠執行，「要不要真的去抓」由它自己依 jira_key 與 jira_state 決定 ——
+    # 在 CI 再判一次就有第二份規則。jira_state 來自步驟 3，不是步驟 2。
+    # 沒有 key、key 無效、或議題上沒有符合的附件，都是 PASS 但不落檔。
+    - rm -f "$W/04_code_review.json"
+    - |
+      cat > "$W/req4.json" <<EOF
+      {"action": "fetch_code_review", "config": {}, "params": {
+        "repo": "$REPO", "mr_iid": "$IID",
+        "jira_key": "$JIRA_KEY", "jira_state": "$JIRA_STATE",
+        "debug_dir": "$D", "out_path": "$W/04_code_review.json"}}
+      EOF
+    - sec pps4 "步驟 4/5：程式碼審閱報告"
+    - python3 "$S/ai_analysis_gitlab_mr_code_review.py" --request "$W/req4.json" -v
+    - end pps4
+
+    # --- 步驟 5/5：合併為 markdown -> 05_report.md ----------------------------
+    # 收的是檔案路徑，不是內容。路徑給了就必須存在，所以第 4 步沒落檔時
+    # code_review_json_file_path 整個鍵不放（不是放空字串）。
+    # 不傳 mr_type：它已經在 03_summary.json 裡，這一步本來就要讀那份檔案。
+    - |
+      CR=""
+      if [ -f "$W/04_code_review.json" ]; then
+        CR="\"code_review_json_file_path\": \"$W/04_code_review.json\","
+      fi
+      cat > "$W/req5.json" <<EOF
+      {"action": "merge_to_md", "config": {}, "params": {
+        "ori_md_file_path": "$W/01_description.md",
+        "mr_summary_json_file_path": "$W/03_summary.json",
+        $CR
+        "repo": "$REPO", "mr_iid": "$IID", "ai_mode": "$AI_MODE_NAME",
+        "debug_dir": "$D", "out_path": "$W/05_report.md"}}
+      EOF
+    - sec pps5 "步驟 5/5：合併為 markdown"
+    - python3 "$S/ai_analysis_gitlab_mr_merge_to_md.py" --request "$W/req5.json" -v
+    - end pps5
+    - cat "$W/05_report.md"
+
+  after_script:
+    # req3.json 裡有 AI 金鑰。after_script 連失敗的 job 也會跑。
+    - rm -f "$CI_PROJECT_DIR/pps-work/req3.json"
+
+  artifacts:
+    when: always          # 失敗時也要留，才查得出是哪一步、少了什麼
+    expire_in: 1 week
+    paths:
+      - pps-work/
+    expose_as: "AI Analysis Report"
