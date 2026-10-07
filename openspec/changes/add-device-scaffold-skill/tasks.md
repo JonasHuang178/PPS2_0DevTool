@@ -21,14 +21,30 @@
       把 `jira_key` 與 `mr_type` 的結果**並排**列出，`mr_type` 再經 `normalize_type()` 並標示
       對不對得上該 device 的種類目錄（`known_types()`）。驗證：標題 `mod:[PPS-1234][Bug] 修正重試上限`
       對 `default` 跑出 `jira_key=PPS-1234`、`mr_type=Bug -> bug`，且 `bug` 標示為無對應目錄。
-- [ ] 1.5 讓樣本標題可由命令列多次給定，也可由一個每行一個標題的檔案給定，使同一組樣本能重複跑
+- [ ] 1.5 實作「步驟 2 的輸出契約」檢查：兩支 `extract()` 的回傳必須是字串，`None` 要明確指出
+      （範本寫明「抽不到就回空字串 —— 不要回 `None`」），`mr_type` 非字串時比照
+      `normalize_type()` 的 `DEVICE_HOOK_BAD_RETURN` 報法。驗證：一支回 `None` 的
+      `jira_key.extract()` 被指名為違反契約，而回 `""` 的通過。
+- [ ] 1.6 實作「步驟 3 的輸出契約」檢查：以**空的 `ai_api_url`** 備好 `inputs`（含 `fetch_jira`、
+      `progress`、`debug_write` 三個可呼叫項的無作用替身）呼叫 `analyze()`，把回傳交給
+      `wrap_analysis()` 再 `validate_analysis(payload, source=...)`，`source` 帶上 device 與檔名；
+      不過就照入口腳本的做法把整份寫成 `bad_analysis.json` 供人檢視。另外檢查 overview 首行是否
+      言明未經過 AI（既有需求「未設定 AI 端點時……SHALL 於首行言明未經過 AI」）。驗證：對
+      `default` 跑出通過且首行言明的結果（見 `_stub_analysis()`）；對一支回傳 `{}` 的
+      `analyze()` 跑出 `AnalysisFormatError` 的訊息並產出 `bad_analysis.json`。
+- [ ] 1.7 實作「步驟 5 的輸出契約」檢查：備好 `inputs`（`analysis` 用一份通過驗證的最小結構，
+      形狀見 `03_t.json`）呼叫 `render()`，**明確檢查 `isinstance(section, str)`** —— 這是
+      `contract.plain()` 會靜默 `str()` 掉的那個缺口。執行期例外比照入口包成指名種類的
+      `DEVICE_HOOK_RUNTIME_ERROR`。驗證：一支回傳 dict 的 `render()` 被指名為違反契約；
+      對 `default` 跑出通過。
+- [ ] 1.8 讓樣本標題可由命令列多次給定，也可由一個每行一個標題的檔案給定，使同一組樣本能重複跑
       並進 CI。沒有給樣本時跳過 1.4 那一節並明說跳過了，不視為通過。驗證：命令列與檔案兩種給法
       對同一組樣本印出相同的表。
-- [ ] 1.6 定義結束碼：載入或宣告層面的錯誤（device 不存在、`VERSION` 缺漏、鉤子語法錯誤、
-      `STRICT_TYPE` 型別不對）為非 0；版號第一碼不一致、抽取結果對不上種類目錄等**判斷留給人**
-      的情況為 0 並印警告。驗證：對一個不存在的 device 名稱跑出非 0；對 `default` 跑出 0。
-- [ ] 1.7 在 `scripts/AUTHORING.md` 與 `README.md` 的 device 一節各加一段指向這支腳本的說明
-      （怎麼跑、它回答哪四個問題、以及它**不**回答什麼）。只加指路與用法，不重述鉤子介面。
+- [ ] 1.9 定義結束碼：載入或宣告層面的錯誤（device 不存在、`VERSION` 缺漏、鉤子語法錯誤、
+      `STRICT_TYPE` 型別不對）與**輸出格式違反契約**（1.5–1.7）為非 0；版號第一碼不一致、抽取結果
+      對不上種類目錄等**判斷留給人**的情況為 0 並印警告。驗證：對一個不存在的 device 名稱跑出非 0；對 `default` 跑出 0。
+- [ ] 1.10 在 `scripts/AUTHORING.md` 與 `README.md` 的 device 一節各加一段指向這支腳本的說明
+      （怎麼跑、它回答哪五個問題、以及它**不**回答什麼 —— 尤其「驗形狀不等於驗品質」）。只加指路與用法，不重述鉤子介面。
       驗證：照文件寫的指令原樣複製到終端機能跑出預期輸出。
 
 ## 2. skill 本體
@@ -46,16 +62,20 @@
       `_template/`、`AUTHORING.md`、`README.md`，不抄其介面說明（design D2）。驗證：對「只要
       `merge_to_md.py`、兩個種類」這組答案，產出的目錄樹恰好是 `__init__.py`、`merge_to_md.py`
       與兩個子目錄，且沒有多餘檔案。
-- [ ] 2.4 寫 `summary.py` 的兩條路（design D3）：預設產生照 `_type_template` 推薦寫法的
-      指派 prompt 常數後轉呼 `base.analyze` 那一種；使用者說要改解析或輸出結構時才產生自己的
-      `analyze()` 並明著 import 重用 `base.parse_reply`。兩種都在註解裡寫明為什麼是這個形狀。
-      驗證：兩種產出都能被 `load_hook("summary")` 載入，且 1.3 的表顯示 owner 是新 device。
+- [ ] 2.4 寫「輸入在哪、輸出要守什麼」那一節（design D3）：鷹架是 `_template/` **原樣複製**，
+      實作區留空給使用者；skill 指出每一支的輸入規格就在該檔的 docstring，並把四支的輸出契約
+      列成一張表（`extract()` 回字串、`analyze()` 回 `contract.analysis_body(...)`、`render()`
+      回 markdown 字串）。**不產生實作、不建議實作該長什麼樣。** 另以一句提示告知「想重用
+      `default/` 的零件就明著 import」，標明那是使用者的自由而非規定。驗證：產出的四支鉤子
+      實作區為空（或僅保留範本原有的佔位），且 `load_hook()` 四支都載入得到。
 - [ ] 2.5 寫 D4 那個例外的提示：使用者只要 `mr_type.py` 而標題格式與 default 不同時，指出
       `jira_key.py` 多半也得寫、說明症狀（報告末尾的 `JIRA: Alpha (invalid)`）、但**不替他決定**。
       驗證：以「標題 JIRA key 在第二個方括號、只要 mr_type」這組答案走一遍，提示出現且使用者
       維持原決定時流程照樣完成。
 - [ ] 2.6 寫最後的驗證那一節：呼叫 `tools/verify_device.py`，帶上訪談時收集的標題樣本，把輸出
-      原樣交給使用者並解讀警告。驗證：流程走完後，終端機上出現 1.3 與 1.4 那兩張表。
+      原樣交給使用者並解讀警告。使用者填完實作後**再跑一次**，因為 1.5–1.7 的輸出契約檢查
+      只有在實作存在時才有意義。驗證：流程走完後終端機上出現 1.3 與 1.4 兩張表；實作填完後
+      再跑一次會多出 1.5–1.7 的三段結果。
 
 ## 3. 端到端確認
 
@@ -65,5 +85,8 @@
 - [ ] 3.2 在那個暫時的 device 上**故意只寫 `mr_type.py`**，確認 1.4 的並排表讓「`jira_key`
       沿用 default 抽到錯的東西」看得出來。驗證：表上同一個標題的 `jira_key` 欄位是 default
       規則抽出的錯值，且該列有標示它來自 `default`。
-- [ ] 3.3 移除暫時的 device，確認 `known_devices()` 回到變更前的內容，`git status` 沒有殘留。
+- [ ] 3.3 在那個暫時的 device 上**故意讓 `render()` 回傳 dict**，確認 1.7 抓得到。驗證：驗證
+      腳本以非 0 結束並指名該檔違反輸出契約；而對照之下，不經驗證直接跑步驟 5 會產出一份把
+      `{'overview': ...}` 字面印進報告、且回報成功的結果 —— 兩者並列即為這項檢查的理由。
+- [ ] 3.4 移除暫時的 device，確認 `known_devices()` 回到變更前的內容，`git status` 沒有殘留。
       驗證：`python3 tools/verify_device.py default` 仍為 0，且工作區只剩本變更要交付的檔案。
