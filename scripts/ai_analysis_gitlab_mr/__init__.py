@@ -35,6 +35,11 @@ __all__ = [
     "CODE_REVIEW_HEADING",
     "CODE_REVIEW_TABLE_HEADING",
     "CODE_REVIEW_SOURCE_HEADING",
+    "REVIEW_RESULT_PASS",
+    "REVIEW_RESULT_FAIL",
+    "REVIEW_RESULT_UNKNOWN",
+    "REVIEW_RESULTS",
+    "code_review_parsed",
     "CODE_REVIEW_SCHEMA_VERSION",
     "ACCEPTED_CODE_REVIEW_VERSIONS",
     "MAX_CODE_REVIEW_BYTES",
@@ -286,6 +291,23 @@ CODE_REVIEW_TABLE_HEADING = "## 風險評估表"
 # 的產出格式，不是本工具的處理方式 —— 所以變的只有這個字串，擷取的演算法與報告的
 # 版面都只有一份。
 CODE_REVIEW_SOURCE_HEADING = "## 風險評估總表"
+
+# 這份 code review 的**結論**。三種，與 JIRA_STATES 同一套作法（字串 + 常數）：
+#
+#   pass   這份審閱判定通過
+#   fail   這份審閱判定不通過
+#   ""     判不出來（這個 device 不做判定，或舊版本的產物沒有這個欄位）
+#
+# **不是布林值。** 布林表達不了第三態，而這個專案明文擋掉布林（Python 的 True == 1，
+# 一個寫成 true 的設定會變成「一次」或「一秒」）。
+#
+# **叫 review_result 而不是 result。** 回應信封最外層已經有 result（PASS/FAIL），那是
+# 「這一支腳本這一步成不成功」。兩者的值都是 pass/fail 的字樣而意思完全不同 —— 名字裡
+# 的 review_ 前綴就是在講「這是那份審閱的結論，不是這一步的結果」。
+REVIEW_RESULT_PASS = "pass"
+REVIEW_RESULT_FAIL = "fail"
+REVIEW_RESULT_UNKNOWN = ""
+REVIEW_RESULTS = (REVIEW_RESULT_PASS, REVIEW_RESULT_FAIL, REVIEW_RESULT_UNKNOWN)
 
 
 def _heading_pattern(*headings):
@@ -594,10 +616,11 @@ def as_list(text):
 def render_code_review_section(body):
     """報告裡「Code Review 報告」那一段，由步驟 4 的結構渲染。
 
-    版面：段落標題、附件的日期／作者／連結三行、總表的小標題、表格本身。兩個標題都由
-    **這裡**寫出 —— 產生內容的步驟不自帶標題，因為它無從知道自己會被放在哪一層。
+    版面：段落標題、審閱結果與附件的日期／作者／連結共四行、總表的小標題、表格本身。
+    兩個標題都由**這裡**寫出 —— 產生內容的步驟不自帶標題，因為它無從知道自己會被放在
+    哪一層。
 
-    三行資訊中值為空的那一行整行不印。日期只取到日，不做時區換算 —— 印出的就是上傳者
+    結果那一行排在最前面（見底下），其餘三行是出處。四行中值為空的那一行整行不印。日期只取到日，不做時區換算 —— 印出的就是上傳者
     當時看到的那一天。
 
     取得失敗時（error 有值）三行**照樣印**，並在其後加一行說明。那時連結的價值最高：
@@ -624,6 +647,18 @@ def render_code_review_section(body):
     # linter 會把它清掉，而這一段的正確性就靠那兩個空白；中間空一行則會變成三個段落，
     # 多出來的間距與「三行一組的註記」不符。清單本來就是這三個欄位的形狀。
     meta = []
+
+    # 結果排在最前面。日期／作者／連結是「這份東西從哪來」，而結果是「它說了什麼」——
+    # 讀的人要的是後者，把它排在出處後面等於要他先讀完三行才看到結論。
+    #
+    # 判不出來（空字串）時整行不印，與底下三行同一條規則。那時**不能印 PASS 也不能印
+    # FAIL** —— 兩個都是在說一件我們並不知道的事。
+    verdict = plain(body.get("review_result"))
+    if verdict == REVIEW_RESULT_PASS:
+        meta.append("> - 結果: ✅ PASS")
+    elif verdict == REVIEW_RESULT_FAIL:
+        meta.append("> - 結果: ❌ FAIL")
+
     created = plain(body.get("created"))
     if created:
         meta.append("> - 日期: %s" % created[:10])
@@ -2056,8 +2091,13 @@ def fence_for(code):
 
 # 這份結構的版本。與 ANALYSIS_SCHEMA_VERSION 各自獨立編號：兩者是不同的產物，讓它們
 # 共用一個號碼會使其中一邊的改版莫名其妙地讓另一邊的舊檔失效。
-CODE_REVIEW_SCHEMA_VERSION = 1
-ACCEPTED_CODE_REVIEW_VERSIONS = (1,)
+# 版本 2 相對於 1 多了 review_result —— 那份審閱的結論（見 REVIEW_RESULTS）。它必須跟著
+# 產物走的理由與 coverage 相同：報告要靠它印出結果那一行，而步驟 5 收到的只有檔案。
+#
+# 讀版本 1 的產物時 review_result 取不到就是空字串，也就是「判不出來」—— 那正是那一版
+# 的事實（當時還沒有這個判定）。
+CODE_REVIEW_SCHEMA_VERSION = 2
+ACCEPTED_CODE_REVIEW_VERSIONS = (1, 2)
 
 # 總表內容的位元組上限。
 #
@@ -2251,21 +2291,49 @@ def extract_risk_table(text, heading):
 
 
 def code_review_body(risk_table="", filename="", created="", author="",
-                     url="", error=""):
+                     url="", error="", review_result=REVIEW_RESULT_UNKNOWN):
     """組出程式碼審閱結構的**內容**。
 
     刻意不含 schema_version —— 版本由入口腳本蓋章，與 analysis_body() 同一個理由。
 
     error 與 risk_table 可以同時有值也可以只有一邊：取得失敗時 error 有值而表格為空，
     而**附件資訊仍然要填** —— 那時連結的價值最高，讀者點進去就能自己看全文。
+
+    review_result 是那份審閱的結論（見 REVIEW_RESULTS），由 device 的 parse_code_review
+    鉤子判定。不認得的值收斂成「判不出來」而不是原樣留著 —— 報告會把它印成一行結果，
+    一個拼錯的值印出去比不印更糟。
     """
+    verdict = plain(review_result).strip().lower()
+    if verdict not in REVIEW_RESULTS:
+        logger.warn("review_result 是 %r，不是 %s —— 視為判不出來",
+                    review_result,
+                    "／".join(one or '""' for one in REVIEW_RESULTS))
+        verdict = REVIEW_RESULT_UNKNOWN
+
     return {
         "filename": plain(filename),
         "created": plain(created),
         "author": plain(author),
         "url": plain(url),
         "risk_table": _clip_code_review(risk_table),
+        "review_result": verdict,
         "error": plain(error),
+    }
+
+
+def code_review_parsed(risk_table="", review_result=REVIEW_RESULT_UNKNOWN):
+    """device 的 parse_code_review 鉤子要回傳的東西。
+
+    **這是 device 作者的公開 API。** 鉤子只負責這兩件事：擷取出總表、判定結論。附件的
+    檔名／上傳時間／作者／網址由入口填 —— 那四個來自議題系統的 metadata，鉤子拿不到，
+    而讓它回傳就等於邀請它編造。
+
+    用這一支組而不要自己寫 dict literal：欄位名散在鉤子與入口兩邊，改名漏一邊的症狀
+    是安靜地少一段。
+    """
+    return {
+        "risk_table": plain(risk_table),
+        "review_result": plain(review_result).strip().lower(),
     }
 
 
@@ -2310,9 +2378,10 @@ def validate_code_review(payload, source=""):
                "、".join(sorted(payload.keys())) or "(無)"),
             "CODE_REVIEW_MISSING_BODY")
 
-    # 六個欄位都必須是字串。空字串是合法的（沒有那一項），但型別不對就明確失敗 ——
+    # 七個欄位都必須是字串。空字串是合法的（沒有那一項），但型別不對就明確失敗 ——
     # 一個 dict 被 str() 起來會變成 "{'a': 1}" 然後原樣印進報告。
-    for key in ("filename", "created", "author", "url", "risk_table", "error"):
+    for key in ("filename", "created", "author", "url", "risk_table",
+                "review_result", "error"):
         value = body.get(key, "")
         if not isinstance(value, str):
             raise CodeReviewFormatError(
@@ -2320,6 +2389,17 @@ def validate_code_review(payload, source=""):
                 "讀到的型別是 %s。沒有這一項時請填空字串。"
                 % type(value).__name__,
                 "CODE_REVIEW_FIELD_BAD_TYPE")
+
+    # review_result 另外檢查值域。它會被印成報告上的一行結果，一個拼錯的值
+    # （"passed"、"PASS "、"ok"）印出去比不印更糟 —— 讀的人會以為那是真的結論。
+    verdict = body.get("review_result", "")
+    if verdict not in REVIEW_RESULTS:
+        raise CodeReviewFormatError(
+            "%s程式碼審閱結果的 review_result 不是認得的值：%r" % (where, verdict),
+            "認得的是 %s（空字串代表判不出來）。\n"
+            "請用 code_review_parsed() 組回傳值，它會把大小寫與前後空白收斂掉。"
+            % "、".join(one or '""' for one in REVIEW_RESULTS),
+            "CODE_REVIEW_RESULT_UNKNOWN")
 
     return body
 
@@ -2352,7 +2432,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.10"
+SCRIPT_VERSION = "2.11"
 
 
 def _link(text, url):

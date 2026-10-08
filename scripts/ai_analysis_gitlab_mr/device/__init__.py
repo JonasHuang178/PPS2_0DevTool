@@ -9,15 +9,19 @@ device，目錄名就是 device 名：
       ssd/              只放想覆寫的鉤子，缺的自動用 default 的
       _template/        底線開頭，不是 device
 
-四個鉤子，分成兩類 —— 差別在**解析時要不要考慮種類**：
+五個鉤子，分成兩類 —— 差別在**解析時要不要考慮種類**：
 
-    不因種類而異（在種類被決定之前執行）
-      jira_key.py     步驟 2：怎麼從 Merge Request 抽出 JIRA key
-      mr_type.py      步驟 2：怎麼從 Merge Request 抽出種類
+    不因種類而異
+      jira_key.py            步驟 2：怎麼從 Merge Request 抽出 JIRA key
+      mr_type.py             步驟 2：怎麼從 Merge Request 抽出種類
+      parse_code_review.py   步驟 4：怎麼看懂別人的 code review 報告
 
     因種類而異
       summary.py      步驟 3：問 AI 什麼、怎麼解析、組出什麼分析內容
       merge_to_md.py  步驟 5：AI 分析那一段的版面
+
+parse_code_review 不因種類而異是刻意的：那份報告的格式取決於**該產品線用哪一套 code
+review 工具**，而不是這一筆 MR 是 bug 還是 feature。
 
 種類（type）是第二個軸：同一個 device 底下，不同種類的 MR 可以走不同的 summary 與
 merge_to_md。種類以子目錄表示：
@@ -70,7 +74,7 @@ DEFAULT_DEVICE = "default"
 
 # 在種類被決定**之前**執行的鉤子。mr_type.py 就是決定它的那一支，所以種類這一層
 # 對這兩支沒有意義 —— 它們維持兩段解析（<device>/ -> default/）。
-UNTYPED_HOOKS = ("jira_key", "mr_type")
+UNTYPED_HOOKS = ("jira_key", "mr_type", "parse_code_review")
 
 # 因種類而異的鉤子。三段解析（<device>/<type>/ -> <device>/ -> default/）。
 TYPED_HOOKS = ("summary", "merge_to_md")
@@ -259,9 +263,12 @@ def code_review_source_heading(device=None, default=""):
     各條產品線的 code review 工具是各自的，產出格式不保證相同 —— 那一節不一定叫同一個
     名字。所以這個字串掛在 device 上。
 
-    **這是一個宣告，不是鉤子。** 步驟 4 不會因此載入或執行任何 device 的程式碼：擷取的
-    演算法與報告的版面都只有一份，變的只有「要找哪一節」這個字串。因此那一步不會出現
-    「哪一個 device 的鉤子壞了」這類失敗。
+    **這是一個宣告，不是鉤子。** 讀這個值本身不會載入或執行任何 device 的程式碼 ——
+    變的只有「要找哪一節」這個字串，所以宣告寫壞了可以在任何網路往來之前就擋下來。
+
+    步驟 4 本身**另外**會載入該 device 的 parse_code_review 鉤子（擷取與判定在那裡）。
+    這個宣告的值由入口讀出來、當 heading 傳給那支鉤子 —— 既有 device 的宣告因此不必改，
+    而「要找哪一節」仍然只有一個地方決定。
 
     default 由呼叫端明著傳入（入口腳本傳 ai_analysis_gitlab_mr.CODE_REVIEW_SOURCE_HEADING）
     而不是在這裡讀。這個模組是 ai_analysis_gitlab_mr 的子套件，反過來 import 母套件會
