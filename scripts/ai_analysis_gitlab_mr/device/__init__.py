@@ -412,7 +412,8 @@ def device_version(device=None):
     if not isinstance(version, str) or not version.strip():
         raise DeviceError(
             "device %s 沒有宣告 VERSION" % name,
-            "請在 device/%s/__init__.py 加上 VERSION = \"1.0\"。\n"
+            "請在 device/%s/__init__.py 加上 VERSION = \"2.0\"。\n"
+            "第一碼要與通用層的 SCRIPT_VERSION 一致，第二碼是這個 device 自己的修改次數。\n"
             "報告末尾會標示這個版本；改了產出方式就把它往上加，否則新舊報告在外觀上"
             "分不出來。" % name,
             "DEVICE_VERSION_MISSING")

@@ -233,6 +233,7 @@ scripts/
     http_utils.py
     gitlab_utils.py
     jira_utils.py
+    ai_utils.py
   <功能>/                        入口腳本依功能分組
     __init__.py                  這個功能自己的共用定義
     <功能>_<動作>.py
@@ -258,7 +259,8 @@ scripts/
 | 其他第三方套件 | 停下來問使用者，不要自己決定 |
 
 本專案的相依列在根目錄的 `requirements.txt`，目前只有一個：**`requests`**。所有走
-REST 的共用模組（`gitlab_utils`、`jira_utils`）都建立在它與 `http_utils` 之上。
+REST 的共用模組（`gitlab_utils`、`jira_utils`、`ai_utils`）都建立在它與 `http_utils`
+之上。
 
 **要打 REST 就用它們，不要自己用 `urllib` 再寫一份。** 認證、逾時、重試、錯誤轉例外
 在 `http_utils` 已經處理好了，各寫一份的結果是兩份錯誤處理慢慢長歪，而改了一邊忘了
@@ -427,6 +429,18 @@ script_utils/
         完整收進的檔案、檔案總數、內容為空的檔案與截斷與否 —— 要知道「少了幾個
         檔案」的用這一支
   jira_utils.py     Jira REST（Server/DC）
+  ai_utils.py       向 AI 服務提問
+    ask(api_url, prompt, history=None, file_ids=None, api_key="",
+        timeout=DEFAULT_TIMEOUT, retries=MAX_RETRIES, on_retry=None,
+        verify_ssl=True, parse=None, reask=0, reask_hint=REASK_HINT)
+        -> 模型回的那段文字
+        api_url 直接收設定檔的 Api_URL，shareCode 黏在尾端也沒關係（這裡會拆）
+    ask_json(api_url, prompt, require=(), reask=1, **kwargs) -> 解析過的 dict
+        require 列出一定要有的頂層鍵；缺了算格式不符，觸發重問
+        逾時預設 120 秒、重試 3 次 —— AI 是分鐘級的，不適用 http_utils 的 30 秒
+        429 帶 Retry-After 時等它指定的秒數；超過上限就不重試，讓使用者知道在限流
+        失敗時拋出 AiError（沿用 HttpError，.code 形如 "AI_401"）
+    **prompt 不進這個模組** —— 組 prompt 是 device 的 summary.py 的事
 ```
 
 這次要的東西已經有了，所以這支腳本只做轉接：收信封 → 呼叫它 → 整理 → 回信封。
@@ -492,8 +506,13 @@ ACTION           = "summarise_merge_requests"
 DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
 ```
 
-`TEMPLATE_VERSION` 是「這支腳本依據哪一版範本寫的」，日後範本改版時靠它辨識哪些腳本
-需要跟進。它不是你這支腳本的版本號。
+`TEMPLATE_VERSION` 是**信封模板的版本** —— 請求與回應長什麼樣，**全專案共用一個值**，
+只有信封格式本身改了才動。它不是你這支腳本的版本號，也不是「這支腳本依據哪一版範本寫的」。
+
+⚠️ **不要把它拿來當某個功能的版號。** 那樣它就會隨那個功能一直往上跳而其他功能停著不動，
+兩個本該代表同一份信封格式的數字於是分岔 —— 而它還會被 `--dump-config` 印成
+`_template_version` 給呼叫端看。功能自己的版號是**另一個宣告**：`SCRIPT_VERSION`，
+放在 `scripts/<功能>/__init__.py`，該功能每次修改就往上加（規則見 README「腳本的版號」）。
 
 ### 5.4 完整的腳本
 

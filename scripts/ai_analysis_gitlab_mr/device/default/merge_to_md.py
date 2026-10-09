@@ -267,12 +267,19 @@ def render(inputs):
         - <標題>
           - <理由第一句>
           - <理由第二句>
+          <details>
+
           ```diff
           <diff>
           ```
+          </details>
 
         ## 詳細資料
         - For more information, please refer to [<JIRA key>](<網址>)
+
+    diff 收在 <details> 裡（見 _details）—— 一個 hunk 可能幾十行，攤開來會把整份報告的
+    可讀性吃掉。指向同一個位置的多筆發現會收成一組，那段 diff 只貼一次、放在該組最後一筆
+    的底下，所以上面那張圖是「一組只有一筆」的情形；多筆的形狀見 _group_block。
 
     空的欄位整段不放：一個只有標題、底下什麼都沒有的區塊會讓人以為內容漏掉了。
     整個 mrDiff 為空時連 "## Code Changes" 都不出現。

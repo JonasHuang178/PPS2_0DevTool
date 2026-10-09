@@ -1,12 +1,23 @@
 # PPS 2.0 DevTool
 
-PPS 2.0 開發輔助工具。框架與腳本執行管線已完成，並帶有第一個功能 tab
-**Single Building**。
+PPS 2.0 開發輔助工具。框架、腳本執行管線與兩個功能 tab 均已完成：
+
+| 功能 tab | 做什麼 | 腳本 |
+|---|---|---|
+| **Single Building** | 從來源樹挑 `.cpp` 寫進暫存設定檔 | 4 支 |
+| **AI Analysis GitLab MR** | 取 Merge Request、送 AI 分析、產出 markdown 報告 | 6 支，外加 device 機制 |
+
+兩個功能走同一條管線（信封協定、處理中對話框、來源路徑掛勾），新增第三個功能
+不必動外殼 —— 見「新增一個功能」。五步分析流程也能脫離 Qt 直接在 CI 上跑，
+範例在 `ci/pps-ai-analysis.gitlab-ci.yml`。
 
 框架已在 Windows（Qt Creator + MinGW）與 macOS 上建置並驗證。外殼交付時延後的
 兩項驗收 —— 關閉 Debug console 時清理子行程、以及 Qt 與 Python 的訊息同時出現在
 console 中 —— 在 Single Building 交付後才具備觸發腳本的入口，**尚待在 Windows
 實機補驗**。
+
+> **功能完成不等於實機驗收完成。** 底下三則記的是尚未在 Windows 實機或真實資料上
+> 驗過的部分 —— 刻意留著的已知缺口，不是漏掉的待辦。
 
 > **Single Building 的 Windows 實機驗收尚未完成，change 已先行歸檔。**
 > 已在 Linux + Qt 5.15.13 完成 62 項自動化行為驗證；需要實機的部分共 46 項，
@@ -138,6 +149,10 @@ PPS2_0DevTool/
 │
 ├── tools/
 │   └── make_app_icon.py      圖示資產產生腳本（**不是**建置步驟）
+│
+├── ci/
+│   └── pps-ai-analysis.gitlab-ci.yml  五步分析流程的 GitLab CI 範例
+│                             （**不是**本專案的 pipeline，是給使用者的樣板）
 │
 ├── scripts/
 │   ├── AUTHORING.md          腳本撰寫手冊 ← 寫腳本之前先讀這份
@@ -373,7 +388,7 @@ markdown 呈現在結果視窗。
 > 真正的 HTTP）、附件選取、三類失敗、編碼、大小上限、貼回描述不累積，Qt 也以
 > `qmake && make` 編過且零警告。**未驗證的是 Qt 那一側的三件事**：勾選除錯時工作目錄
 > 的內容、未勾選時不留檔、以及缺設定鍵時錯誤訊息框的呈現。逐項驗法見
-> [`openspec/changes/add-jira-code-review-report/tasks.md`](openspec/changes/add-jira-code-review-report/tasks.md)
+> [`openspec/changes/archive/2026-09-30-add-jira-code-review-report/tasks.md`](openspec/changes/archive/2026-09-30-add-jira-code-review-report/tasks.md)
 > 第 6 節的 6.3～6.5。
 >
 > 其中 6.3 有個陷阱值得先知道：判定要看**附件檔名**這種「只有真的取得才會出現的字串」，
@@ -577,6 +592,8 @@ Title 欄用的是 `AlignLeft | AlignVCenter`，不是 `AlignLeft` —— 後者
 回報成功且不落檔）。這是為了讓同一批腳本能被 CI/CD 的 shell 直接串接 —— 分支若寫在
 Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 
+可照抄的 pipeline 範例在 `ci/pps-ai-analysis.gitlab-ci.yml`，說明見「在 CI 上跑五步流程」。
+
 **第 4 步刻意沒有「要不要取」的布林開關。** 由 `jira_key` 與 `jira_state` 兩個值同時
 承載「要不要做」與「對誰做」，就不會出現「開關為真但沒有 key」這種自相矛盾的狀態。
 `jira_state` 來自第 3 步 —— key 的有效性是那個 device 的政策、由它的鉤子判定，Qt 只是
@@ -658,7 +675,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 
 ---
 
-<sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.2`<br>**AI** Open AI | `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+<sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.10`<br>**AI** Open AI | `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 ````
 
 **`## 詳細資料` 只在這次真的用了 JIRA 議題時出現。** 條件是分析結構裡的 `jira_state`
@@ -1044,8 +1061,12 @@ diff --git a/src/b.cpp b/src/b.cpp
 幾個不是隨手決定的地方：
 
 **那一段只在有缺口時出現。** 絕大多數的 MR 不會有缺口，每份報告都加一段「涵蓋
-21/21」只是噪音。常駐的訊號在末尾出處那一行的 `Coverage: 3/21 檔案（MR 共 90）` ——
-送進去的不是全部時才會帶括號裡的總數。
+21/21」只是噪音。
+
+> 出處那一行**曾經**常駐一個 `Coverage: 3/21 檔案（MR 共 90）`，當作零成本的常駐訊號；
+> 重整出處版面那一輪與 JIRA 欄位一起移除了（出處收斂成四問，涵蓋範圍不屬於其中任何一問）。
+> 於是**沒有缺口時報告沒有任何涵蓋訊息** —— 失去的只有「一切正常」這個訊號，有缺口時這一段
+> 本來就會出現。要補回來的話補在這一段裡，不要補回出處。
 
 **第三類（AI 沒有回報）不等於出錯。** 一個只改了空白的檔案，模型略過它是合理的。
 那一行陳述的是事實，不是判定 —— 與另外三類並列，讀的人自己看得出哪一個才是問題。
@@ -1080,7 +1101,7 @@ diff --git a/src/b.cpp b/src/b.cpp
 
 ````json
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "analysis": {
     "model": "gpt-4o",
     "mr_type": "bug",
@@ -1118,8 +1139,8 @@ diff --git a/src/b.cpp b/src/b.cpp
   （不進 `coverage.missing`），而報告渲染時整個略過，編號也不跳號。這是「明說沒問題」與
   「根本沒提」唯一的區別方式
 - `jira_state` 是 `ok` / `none` / `invalid` 三選一。`invalid` 時 `jira_key` 留的是
-  **被拒絕的原值**，報告會印成 `JIRA: WIP (invalid)` —— 一眼看出標題的第一個方括號
-  放錯了東西
+  **被拒絕的原值**（例如標題第一個方括號放的是 `WIP`），但它只留在產物的資料裡 ——
+  `invalid` 時「詳細資料」那一節整個不出現，所以**報告上看不到**（出處也不印它，見「報告的版面」）
 - `model` 留在資料裡供其他消費者使用，**不進報告**
 - `mr_type` 是這一筆的種類，決定步驟 5 用哪一份版面；沒有種類時是空字串。它由**入口
   腳本蓋章**，device 的鉤子不必填（填了也會被覆蓋）
@@ -1626,8 +1647,10 @@ mod:[PPS-1234][Bug] 修正重試上限
 它與 `jira_key.py` 在**同一步、同一次 GitLab 取得**裡跑完，不會多一次連線。
 
 > ⚠️ 標題格式與 default 不同的 device，`jira_key.py` 與 `mr_type.py` **通常要一起寫**。
-> 只寫一支的話另一支會沿用 default 的規則，安靜地抽到錯的東西 —— 症狀是報告印出
-> `JIRA: Alpha (invalid)`，看得見，但要看報告才看得見。
+> 只寫一支的話另一支會沿用 default 的規則，安靜地抽到錯的東西 —— 而且**報告上看不出來**：
+> 抽錯 key 會讓 `jira_state` 變成 `invalid`，「詳細資料」那一節於是整個不出現，被拒絕的
+> 原值只留在 `02_mr_info.json` 與 log 裡；抽錯種類則是直接套上另一份版面，而每一步都回報
+> 成功。要查就看那兩個產物或 debug console，不要期待報告會告狀。
 
 #### 解析鏈：種類只在自己的 device 之內
 
@@ -1691,7 +1714,7 @@ STRICT_TYPE = True
       |
       |  Qt 轉送（case 2 那一行）
       v
-03_summary.json   { "schema_version": 6, "analysis": { "mr_type": "bug", ... } }
+03_summary.json   { "schema_version": 7, "analysis": { "mr_type": "bug", ... } }
                                                             |
                                                             |  步驟 5 讀這份檔案
                                                             v
@@ -1906,7 +1929,12 @@ GitLab 存取；把政策寫進去就等於讓每一個用它的功能都繼承�
 自簽憑證尚不確定，而驗證失敗會讓功能完全無法使用。代價是關閉驗證時存取權杖
 會暴露給連線中間人，且被攔截時沒有任何徵兆。確認伺服器有正規憑證之後，把
 `Service.Gitlab_Verify_SSL` 設為 `"true"` 即可，不需要重新建置。自簽但想驗證的話
-改設 `SSL_CERT_FILE` 指向公司的 CA 憑證。
+把 `REQUESTS_CA_BUNDLE` 指向公司的 CA 憑證。
+
+⚠️ **是 `REQUESTS_CA_BUNDLE`，不是 `SSL_CERT_FILE`。** 本專案的 REST 全走
+`requests`，而它只認 `REQUESTS_CA_BUNDLE` 與 `CURL_CA_BUNDLE`；`SSL_CERT_FILE`
+是 Python `ssl` 模組的變數，`requests` 不理它。設錯的症狀是「憑證明明指過去了還是
+驗證失敗」—— 看起來像憑證有問題，實際上那個變數從頭到尾沒被讀。
 
 **AI 服務的 TLS 驗證同樣預設關閉**，理由一樣（地端服務多半用自簽憑證）。它讀的是
 環境變數 `AI_VERIFY_SSL`，設為 `true` 才驗證。不放設定檔是因為 Qt 只注入
@@ -2541,13 +2569,65 @@ python get_gitlab_mr.py ... -v      # 打開 DEBUG 等級的診斷輸出
 因為 Qt 送的和人填的是同一個信封，失敗時可以把當次的信封存下來，
 直接拿到命令列上原樣重現。
 
+### 在 CI 上跑五步流程
+
+五步分析流程不需要 Qt —— 每一步都是讀信封、寫產物的獨立 Python 行程，所以 pipeline
+可以直接驅動它們。可照抄的範例：
+
+```
+ci/pps-ai-analysis.gitlab-ci.yml
+```
+
+那是**給使用者的樣板，不是本專案自己的 pipeline**。複製到你的 repo 根目錄改名
+`.gitlab-ci.yml` 即可。一個 stage、一個 job、五步照順序跑；GitLab 的 `script` 是一份
+shell 腳本，前一行失敗就不會執行下一行，所以「失敗即停並指出第幾步」與 Qt 那側一致，
+而且不必額外寫任何判斷。
+
+| | Qt 工具 | CI |
+|---|---|---|
+| 投遞 | 信封走 stdin | 每一步寫一份 `req<N>.json`，`--request` 餵進去 |
+| 設定來源 | 設定檔的 `Service` 區塊，由 Qt 注入成環境變數 | CI/CD Variables，runner 自行設定 |
+| 編排 | `runFunctionFlow()` | `script:` 的行序 |
+| 進度與診斷 | Debug console | job log（stderr 與 stdout 都進去） |
+| 產物 | 工作目錄（勾除錯時留時間戳目錄） | `artifacts.paths` |
+
+腳本端對兩個呼叫端**長得一模一樣**：憑證只從環境變數讀、產物只由 `out_path` 決定、
+log 全走 stderr。所以沒有「CI 專用的腳本路徑」要維護。
+
+要先設成 CI/CD Variables（**Masked + Protected**）的四個：
+
+```
+GITLAB_ACCESS_TOKEN   JIRA_ACCESS_TOKEN   AI_API_URL   AI_API_KEY
+```
+
+幾個範例裡刻意處理掉的坑：
+
+- **AI 金鑰會落在 `req3.json` 裡**（AI 四項走 `params`，不走環境變數），所以範例在步驟 3
+  之後立刻刪它，並在 `after_script` 再刪一次 —— `after_script` 連失敗的 job 也會跑，
+  而 `artifacts` 收的是整個 `pps-work/`
+- **步驟 4 永遠執行**，「要不要真的去抓附件」由它自己依 `jira_key` 與 `jira_state` 決定。
+  在 CI 再判一次就有了第二份規則，而兩份規則會漂移
+- **步驟 5 收的是檔案路徑，不是內容。** 路徑給了就必須存在，所以步驟 4 沒落檔時
+  `code_review_json_file_path` **整個鍵不放**（不是放空字串）
+- **`jira_state` 來自步驟 3，不是步驟 2** —— 步驟 2 抽出 key，步驟 3 才判定它有效與否
+- **`-v` 打開 DEBUG 等級**。job log 有大小上限（預設 4 MB），`-v` 加上一支大 MR 有可能
+  撞到，而被截掉的是尾端 —— 也就是結果信封所在的位置
+
+不需要設 `PYTHONPATH`：每支入口腳本自己把 `scripts/` 插進 `sys.path`（見「最高原則」
+末段）。
+
 ### 跨平台
 
 **Qt 工具只跑 Windows，但 Python 腳本必須在 Windows 與 Linux 都能跑。**
 
-- 路徑一律用 `pathlib`，不要自己接分隔符號
+- 路徑用 `os.path.join()`，**不要**自己串 `/` 或 `\\`
 - 外部執行檔不要寫死 `.exe`
 - 開檔一律明確指定 `encoding="utf-8"`
+- `source_path` 由呼叫端決定風格，**不要假設分隔符號**
+
+全專案用的是 `os.path`（`os.path.join` 15 處、`pathlib` 0 處）。兩套混用的話，
+同一條路徑在不同模組裡會是字串與 `Path` 兩種型別，而接縫處的 bug 只在其中一個
+平台出現。詳見 AUTHORING 3.10。
 
 ---
 
