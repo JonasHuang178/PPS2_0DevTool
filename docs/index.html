@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPS 2.0 DevTool — 文件</title>
+<link rel="stylesheet" href="ai-analysis-gitlab-mr/_doc.css">
+<style>
+  .idx { display: grid; gap: 14px; }
+  .idx-card {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--bg2); border: 1px solid var(--line);
+    border-radius: 14px; padding: 20px 24px;
+  }
+  .idx-card:hover { border-color: var(--accent); }
+  .idx-t { font-size: 19px; font-weight: 700; margin-bottom: 4px; }
+  .idx-t .tag {
+    font: 700 11px/1 var(--mono); letter-spacing: .06em;
+    padding: 4px 8px; border-radius: 20px; margin-left: 10px;
+    vertical-align: 2px;
+  }
+  .tag-pic { background: var(--accent-bg); color: var(--accent); }
+  .tag-ref { background: var(--line); color: var(--ink2); }
+  .idx-d { color: var(--ink2); font-size: 15px; line-height: 1.65; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>PPS 2.0 DevTool<br>文件</h1>
+  <p class="sub">圖解頁在這裡看。參考文件是 markdown，<br>
+  在 GitHub 上讀渲染過的版本比較舒服。</p>
+</header>
+
+<section>
+  <h2>AI Analysis GitLab MR</h2>
+  <h3>圖解</h3>
+  <div class="idx">
+    <a class="idx-card" href="ai-analysis-gitlab-mr/getting-started.html">
+      <div class="idx-t">第一次接觸這個功能<span class="tag tag-pic">圖解</span></div>
+      <div class="idx-d">四下操作、五步流程在做什麼、報告長什麼樣、第一次最常卡住的四個地方。</div>
+    </a>
+    <a class="idx-card" href="ai-analysis-gitlab-mr/cli.html">
+      <div class="idx-t">不開 Qt 跑（命令列與 CI）<span class="tag tag-pic">圖解</span></div>
+      <div class="idx-d">五步各自「吃什麼 → 做什麼 → 吐什麼」、產物怎麼串、CI 上長什麼樣、範例避開的坑。</div>
+    </a>
+    <a class="idx-card" href="ai-analysis-gitlab-mr/device-authoring.html">
+      <div class="idx-t">寫自己的 device<span class="tag tag-pic">圖解</span></div>
+      <div class="idx-d">五個鉤子掛在哪、三步開始、逐鉤子回退、每支收什麼回什麼、三個會靜默出錯的陷阱。</div>
+    </a>
+  </div>
+</section>
+
+<section>
+  <h2>參考文件</h2>
+  <h3>完整規則與欄位，在 GitHub 上讀</h3>
+  <div class="idx">
+    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/README.md">
+      <div class="idx-t">最外層 README<span class="tag tag-ref">參考</span></div>
+      <div class="idx-d">最高原則、目錄結構、建置、文件導覽。</div>
+    </a>
+    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/user-guide.md">
+      <div class="idx-t">使用這個工具<span class="tag tag-ref">參考</span></div>
+      <div class="idx-d">設定檔每一個鍵、設定檔與 git、Debug_Mode。</div>
+    </a>
+    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/contributing.md">
+      <div class="idx-t">加一個功能、寫一支腳本<span class="tag tag-ref">參考</span></div>
+      <div class="idx-d">改完程式文件要跟著改哪裡、外殼服務、多步驟流程、信封格式、跨平台。</div>
+    </a>
+    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/tree/add-ai-analysis-gitlab-mr/docs/single-building">
+      <div class="idx-t">Single Building<span class="tag tag-ref">參考</span></div>
+      <div class="idx-d">功能細節與不開 Qt 怎麼跑。</div>
+    </a>
+    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/tree/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr">
+      <div class="idx-t">AI Analysis GitLab MR 的參考文件<span class="tag tag-ref">參考</span></div>
+      <div class="idx-d">功能細節 902 行、完整參數 190 行、device 完整說明 699 行。</div>
+    </a>
+    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/scripts/AUTHORING.md">
+      <div class="idx-t">腳本撰寫手冊<span class="tag tag-ref">參考</span></div>
+      <div class="idx-d">寫任何腳本之前先讀這一份：硬性規則、禁止清單、AI 特別容易做錯的事。</div>
+    </a>
+  </div>
+</section>
+
+<footer>
+  這個站台發布自 <code>add-ai-analysis-gitlab-mr</code> 分支的 <code>/docs</code> 目錄。<br>
+  分支合併之後要在 repo 的 Settings → Pages 改指向 <code>main</code>，上面的參考文件連結也要跟著換。
+</footer>
+
+</main>
+</body>
+</html>
