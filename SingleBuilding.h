@@ -121,9 +121,30 @@ private:
     };
 
     // --- 腳本 ---
-    void runListSource(bool thenListTarget);
-    void runListTarget();
-    void runRecoverySetting(bool thenListSource);
+    //
+    // 這個功能的三支清單／清空腳本。進入功能與來源路徑變更各會**接續跑兩支**，
+    // 所以它們走流程介面（runFunctionFlow）而不是三個獨立的單步呼叫：處理中
+    // 對話框由整條流程持有，步驟之間不關閉也不重建。
+    //
+    // 單步呼叫串起來的代價是規格點名的「視窗閃爍與焦點重奪」—— 每支腳本各自
+    // 建立一次對話框，前一支的 closeProcessingDialog() 與下一支的 show() 之間
+    // 雖然在同一輪事件迴圈內（使用者點不到主視窗），畫面上仍然看得見。
+    enum Step
+    {
+        StepListSource,
+        StepListTarget,
+        StepRecoverySetting
+    };
+
+    // plan 是這一次要依序跑的步驟。長度 1 是合法的單步流程。
+    void runFlow(const QList<Step> &plan);
+    void applyStepResult(Step step,
+                         const PythonRunner::PythonRunnerResult &result);
+    void clearStepTarget(Step step);
+    static QString     stepLabel(Step step, int number, int total);
+    static const char *stepScript(Step step);
+    static QString     stepAction(Step step);
+
     void reportPendingErrors();
     static QList<FileEntry> parseFiles(const QJsonObject &data);
 

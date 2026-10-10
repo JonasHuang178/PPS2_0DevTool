@@ -212,20 +212,17 @@ void SingleBuilding::attachWidgets(const SingleBuildingWidgets &widgets)
 
 void SingleBuilding::enterFunction()
 {
-    m_pendingSourceError.clear();
-    m_pendingTargetError.clear();
-
     if (m_shell->getUI_sourcePathLineEditText().isEmpty()) {
         // 應用程式啟動時來源路徑尚未由使用者指定。把它當成失敗的話，使用者
         // 每次啟動都會看到一個無從避免的錯誤訊息框。
         QTDebug(QString("[%1] 來源路徑為空，略過取得來源清單")
                 .arg(functionName()));
         setSourceEntries(QList<FileEntry>());
-        runListTarget();
+        runFlow(QList<Step>() << StepListTarget);
         return;
     }
 
-    runListSource(true);
+    runFlow(QList<Step>() << StepListSource << StepListTarget);
 }
 
 void SingleBuilding::onSourcePathChanged(const QString &sourceFilePath,
@@ -242,99 +239,155 @@ void SingleBuilding::onSourcePathChanged(const QString &sourceFilePath,
     QTDebug(QString("[%1] 來源路徑變更為 %2，清空設定並重新載入")
             .arg(functionName(), sourceFilePath));
 
-    m_pendingSourceError.clear();
-    m_pendingTargetError.clear();
-    runRecoverySetting(true);
+    QList<Step> plan;
+    plan << StepRecoverySetting;
+
+    // 來源路徑為空時不排取得來源清單那一步 —— 那會是一次注定失敗的呼叫。
+    //
+    // 這個判斷在流程開始**之前**做，而原本的寫法是等清空那一支跑完才在它的
+    // callback 裡判斷。兩者等價：執行期間主視窗被互斥遮罩鎖定，使用者改不了
+    // 來源路徑，所以這個值在整條流程裡不會變。提前決定換到的是「這一次要跑
+    // 哪幾步」在一個地方看得完。
+    if (m_shell->getUI_sourcePathLineEditText().isEmpty())
+        setSourceEntries(QList<FileEntry>());
+    else
+        plan << StepListSource;
+
+    runFlow(plan);
 }
 
 // ---------------------------------------------------------------------------
 // 腳本
 // ---------------------------------------------------------------------------
 
-void SingleBuilding::runListSource(bool thenListTarget)
+// 依序跑 plan 裡的步驟，整條流程共用一個處理中對話框。
+//
+// 失敗**不中止**後續步驟：這個功能的兩步互相獨立（一步掃來源目錄、一步讀暫存
+// 設定檔），其中一步失敗時另一步的結果仍然有意義。失敗原因累積到流程結束才
+// 合併成一個訊息框。
+//
+// 這與 AI Analysis 的「失敗即停」相反，而兩者都對 —— 那條流程的每一步都吃上
+// 一步的產物，這一條沒有任何步驟吃別人的產物。
+void SingleBuilding::runFlow(const QList<Step> &plan)
 {
-    const bool started = m_shell->runFunctionScript(
-        functionName(), QString(kListSourceScript), QString("list_source"),
-        QJsonObject(),
-        [this, thenListTarget](const PythonRunner::PythonRunnerResult &result) {
-            if (result.success) {
-                setSourceEntries(parseFiles(result.data));
-            } else {
-                // 保留失敗前的舊內容會讓使用者誤以為那是當前來源的內容。
-                setSourceEntries(QList<FileEntry>());
-                m_pendingSourceError = failureReason(result);
-            }
+    if (plan.isEmpty())
+        return;
 
-            if (thenListTarget)
-                runListTarget();
-            else
-                reportPendingErrors();
-        });
+    m_pendingSourceError.clear();
+    m_pendingTargetError.clear();
 
-    if (!started) {
-        // 啟動失敗時外殼已經跳過錯誤訊息框（或是忙碌，那是程式缺陷不是
-        // 使用者操作錯誤），這裡再加一個訊息只是讓使用者多按一次確定。
+    // 決策函式只做路由，不含業務判斷。它在步驟之間同步執行，所以裡面不能有
+    // 任何會開巢狀事件迴圈的使用者互動。
+    PPS2_0DevTool::FlowDecider decide =
+            [plan](const QList<PythonRunner::PythonRunnerResult> &done)
+            -> PPS2_0DevTool::FlowStep {
+        if (done.size() >= plan.size())
+            return PPS2_0DevTool::FlowStep::done();
+
+        const Step step = plan.at(done.size());
+
+        PPS2_0DevTool::FlowStep flowStep;
+        flowStep.label      = SingleBuilding::stepLabel(
+                    step, done.size() + 1, plan.size());
+        flowStep.scriptPath = QString(SingleBuilding::stepScript(step));
+        flowStep.action     = SingleBuilding::stepAction(step);
+        return flowStep;
+    };
+
+    PPS2_0DevTool::FlowCallback finished =
+            [this, plan](const PPS2_0DevTool::FlowResult &result) {
+        // 結果依執行順序對上 plan。某一步啟動前就失敗時外殼會合成一筆失敗
+        // 結果再結束流程，所以短少的只有「流程停在中途、根本沒跑」的那幾步，
+        // 那幾步的清單保持原狀。
+        for (int i = 0; i < plan.size() && i < result.results.size(); ++i)
+            applyStepResult(plan.at(i), result.results.at(i));
+
+        reportPendingErrors();
+    };
+
+    if (m_shell->runFunctionFlow(functionName(), decide, finished))
+        return;
+
+    // 連第一步都沒啟動（腳本檔案不存在、Python 起不來，或忙碌）。外殼已經處理
+    // 了要不要跳訊息框，這裡只把畫面清乾淨 —— 保留失敗前的舊內容會讓使用者
+    // 誤以為那是當前來源的內容。
+    //
+    // 整條流程一起清掉，而不是只清第一步：原本串起來的寫法會在第一支啟動失敗
+    // 之後照樣去啟動第二支，於是同一個部署問題跳兩次錯誤訊息框。
+    for (int i = 0; i < plan.size(); ++i)
+        clearStepTarget(plan.at(i));
+
+    reportPendingErrors();
+}
+
+void SingleBuilding::applyStepResult(
+        Step step, const PythonRunner::PythonRunnerResult &result)
+{
+    // 失敗時一律換成空清單：保留失敗前的舊內容會讓使用者誤以為那是當前的內容。
+    const QList<FileEntry> entries = result.success ? parseFiles(result.data)
+                                                    : QList<FileEntry>();
+
+    switch (step) {
+    case StepListSource:
+        setSourceEntries(entries);
+        if (!result.success)
+            m_pendingSourceError = failureReason(result);
+        break;
+
+    // 清空那一支的腳本清完之後自己回讀，回傳的內容必為空 —— 不需要再串一支
+    // 讀取設定的腳本，所以它與讀取設定落在同一個處理。
+    case StepRecoverySetting:
+    case StepListTarget:
+        setTargetEntries(entries);
+        if (!result.success)
+            m_pendingTargetError = failureReason(result);
+        break;
+    }
+}
+
+void SingleBuilding::clearStepTarget(Step step)
+{
+    if (step == StepListSource)
         setSourceEntries(QList<FileEntry>());
-        if (thenListTarget)
-            runListTarget();
-        else
-            reportPendingErrors();
-    }
+    else
+        setTargetEntries(QList<FileEntry>());
 }
 
-void SingleBuilding::runListTarget()
+// 對話框標題列顯示的步驟名稱。序號由功能自己寫進去，外殼不編號。
+QString SingleBuilding::stepLabel(Step step, int number, int total)
 {
-    const bool started = m_shell->runFunctionScript(
-        functionName(), QString(kListTargetScript), QString("list_target"),
-        QJsonObject(),
-        [this](const PythonRunner::PythonRunnerResult &result) {
-            if (result.success) {
-                setTargetEntries(parseFiles(result.data));
-            } else {
-                setTargetEntries(QList<FileEntry>());
-                m_pendingTargetError = failureReason(result);
-            }
-            reportPendingErrors();
-        });
+    QString name;
 
-    if (!started) {
-        setTargetEntries(QList<FileEntry>());
-        reportPendingErrors();
+    switch (step) {
+    case StepListSource:      name = QString("取得來源清單");       break;
+    case StepListTarget:      name = QString("讀取已保存的設定");   break;
+    case StepRecoverySetting: name = QString("清空已保存的設定");   break;
     }
+
+    // 單步流程不編號 —— 「步驟 1/1」沒有告訴使用者任何事。
+    return total > 1
+            ? QString("步驟 %1/%2：%3").arg(number).arg(total).arg(name)
+            : name;
 }
 
-void SingleBuilding::runRecoverySetting(bool thenListSource)
+const char *SingleBuilding::stepScript(Step step)
 {
-    const bool started = m_shell->runFunctionScript(
-        functionName(), QString(kRecoverySettingScript),
-        QString("recovery_setting"), QJsonObject(),
-        [this, thenListSource](const PythonRunner::PythonRunnerResult &result) {
-            if (result.success) {
-                // 腳本清空後自己回讀，回傳的內容必為空 —— 不需要再串一支
-                // 讀取設定的腳本。
-                setTargetEntries(parseFiles(result.data));
-            } else {
-                setTargetEntries(QList<FileEntry>());
-                m_pendingTargetError = failureReason(result);
-            }
-
-            if (!thenListSource) {
-                reportPendingErrors();
-                return;
-            }
-
-            if (m_shell->getUI_sourcePathLineEditText().isEmpty()) {
-                setSourceEntries(QList<FileEntry>());
-                reportPendingErrors();
-            } else {
-                runListSource(false);
-            }
-        });
-
-    if (!started) {
-        setTargetEntries(QList<FileEntry>());
-        reportPendingErrors();
+    switch (step) {
+    case StepListSource:      return kListSourceScript;
+    case StepListTarget:      return kListTargetScript;
+    case StepRecoverySetting: return kRecoverySettingScript;
     }
+    return "";
+}
+
+QString SingleBuilding::stepAction(Step step)
+{
+    switch (step) {
+    case StepListSource:      return QString("list_source");
+    case StepListTarget:      return QString("list_target");
+    case StepRecoverySetting: return QString("recovery_setting");
+    }
+    return QString();
 }
 
 void SingleBuilding::reportPendingErrors()
@@ -416,9 +469,7 @@ void SingleBuilding::onRecoverySettingClicked()
     if (answer != QMessageBox::Yes)
         return;
 
-    m_pendingSourceError.clear();
-    m_pendingTargetError.clear();
-    runRecoverySetting(false);
+    runFlow(QList<Step>() << StepRecoverySetting);
 }
 
 // ---------------------------------------------------------------------------
