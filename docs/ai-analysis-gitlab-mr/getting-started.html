@@ -214,6 +214,46 @@
   </div>
 </section>
 
+<section>
+  <h2>常見問題</h2>
+  <h3>大家問過的</h3>
+
+  <div class="qa">
+    <div class="qa-item">
+      <div class="qa-q"><span>跑一次要多久？</span></div>
+      <div class="qa-a"><span>第 3 步問 AI 是<strong>分鐘級</strong>，其餘每一步幾秒。整體取決於這支 MR 改了多少東西。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>會花錢嗎？</span></div>
+      <div class="qa-a"><span>只有第 3 步會呼叫 AI 服務。其餘四步只跟 GitLab 與 JIRA 往來，不花錢。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>報告會自動貼回 MR 嗎？</span></div>
+      <div class="qa-a"><span><strong>不會。</strong>它只顯示在結果視窗，要不要貼回去由你決定。<br>貼回去也不會愈疊愈長 —— 下一輪的第 1 步會把上一輪的 AI 分析那一段扣掉。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>可以一次分析好幾支 MR 嗎？</span></div>
+      <div class="qa-a"><span>不行，一次一支。Repository 與 Merge Request 兩個清單<strong>都是單選</strong>。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>跑到一半可以停嗎？</span></div>
+      <div class="qa-a"><span>可以，處理中對話框上有取消。取消之後<strong>畫面完全不動</strong> —— 沒有半套結果需要你收拾，後續步驟也不會啟動。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>同一支 MR 可以重跑嗎？</span></div>
+      <div class="qa-a"><span>可以。重跑就是再完整跑一次五步，所以<strong>會再花一次 AI 的錢</strong>。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>沒有 JIRA 單號可以用嗎？</span></div>
+      <div class="qa-a"><span>可以。JIRA Key 選 <code>None</code>，第 4 步就不會去找 code review，報告裡少那一段而已。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>我的程式碼會被送到哪裡？</span></div>
+      <div class="qa-a"><span>第 3 步會把差異送到你在 <code>AI Mode</code> 選的那個端點。其餘步驟只跟 GitLab 與 JIRA 往來。</span></div>
+    </div>
+  </div>
+</section>
+
 <div class="closing">
   選一個專案 → 按重新整理 → 點一支 MR → 按 AI Analysis。<br>
   其餘的它自己跑，跑完給你一份可以直接貼回去的報告。

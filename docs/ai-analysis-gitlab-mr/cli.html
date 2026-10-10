@@ -315,6 +315,42 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
   </div>
 </section>
 
+<section>
+  <h2>常見問題</h2>
+  <h3>在命令列或 CI 上最常被問的</h3>
+
+  <div class="qa">
+    <div class="qa-item">
+      <div class="qa-q"><span>要先裝什麼？</span></div>
+      <div class="qa-a"><span>Python 3，加上<strong>一個</strong>第三方套件：<code>requests</code>（<code>pip install -r requirements.txt</code>）。沒有別的相依。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>可以只跑其中幾步嗎？</span></div>
+      <div class="qa-a"><span>可以 —— 每一步都是獨立行程。但要照相依關係把前面的產物餵進去，否則那一步沒有輸入可讀。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>一定要用 GitLab CI 嗎？</span></div>
+      <div class="qa-a"><span>不用。腳本<strong>不認得任何 CI</strong>，它只讀信封與環境變數。Jenkins、GitHub Actions 一樣跑得動 —— 只是可照抄的範例目前只有 GitLab 那一份。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>失敗了怎麼查？</span></div>
+      <div class="qa-a"><span>範例的 artifacts 設 <code>when: always</code>，失敗也留；加 <code>-v</code> 打開 DEBUG 等級；那一步的結果信封在 <strong>stdout 的最後</strong>，裡面有失敗原因。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>可以同時跑好幾支 MR 嗎？</span></div>
+      <div class="qa-a"><span>可以，各給各的工作目錄就行。腳本之間<strong>不共用任何狀態</strong>。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>權杖會不會外洩？</span></div>
+      <div class="qa-a"><span>GitLab 與 JIRA 的權杖走環境變數，<strong>不經過命令列</strong>，所以不會出現在行程清單上。<br>AI 的四項走 <code>params</code>，<strong>會落在第 3 步的請求檔裡</strong> —— 那個檔案用完要刪。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>產物一定要落檔嗎？</span></div>
+      <div class="qa-a"><span>不用。<code>out_path</code> 不給就不寫任何檔案，結果只出現在 stdout 的回應信封裡。</span></div>
+    </div>
+  </div>
+</section>
+
 <div class="closing">
   設好環境變數 → 依序跑五支 → 拿 <code>05_report.md</code>。<br>
   完整的參數表在 <a href="cli.md">cli.md</a>,可照抄的 pipeline 在 <code>ci/</code>。

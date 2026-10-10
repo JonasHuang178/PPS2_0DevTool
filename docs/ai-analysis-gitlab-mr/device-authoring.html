@@ -376,6 +376,46 @@ device/ssd/
   </div>
 </section>
 
+<section>
+  <h2>常見問題</h2>
+  <h3>開始寫之前會想問的</h3>
+
+  <div class="qa">
+    <div class="qa-item">
+      <div class="qa-q"><span>我一定要寫五支嗎？</span></div>
+      <div class="qa-a"><span>不用。<strong>一支都不寫也是合法的 device</strong>（只要 <code>__init__.py</code> 有 <code>VERSION</code>），只是行為與 <code>default</code> 完全相同。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>可以重用 <code>default</code> 已經寫好的程式碼嗎？</span></div>
+      <div class="qa-a"><span>可以，明著 import 就行：<br><code>from ai_analysis_gitlab_mr.device.default import summary as base</code><br>它是普通的 Python，沒有東西擋你。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>改了鉤子要重新建置嗎？</span></div>
+      <div class="qa-a"><span><strong>不用。</strong>每一步都是獨立的 Python 行程 —— 存檔之後下一次按按鈕就生效。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>怎麼知道我的 device 真的被載到了？</span></div>
+      <div class="qa-a"><span>跑一次，看報告末尾出處那一行的 <code>Device</code> 欄位。勾 Add Debug file 的話，中間產物也會留在你指定的目錄裡。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>device 名稱可以寫大寫嗎？</span></div>
+      <div class="qa-a"><span>設定檔可以 —— 比對前一律轉小寫，所以寫 <code>SSD</code> 找得到 <code>ssd</code>。但<strong>目錄名本身必須是小寫</strong>。連字號不行，會收到一則明確的訊息要你改成底線。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>兩個 device 可以共用程式碼嗎？</span></div>
+      <div class="qa-a"><span>可以，普通的 Python import。共用的東西放哪裡由你決定。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>一定要分種類（type）嗎？</span></div>
+      <div class="qa-a"><span>不用。沒有子目錄就是所有 MR 用同一份 <code>summary</code> 與 <code>merge_to_md</code>。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>寫壞了會怎樣？</span></div>
+      <div class="qa-a"><span>語法錯或 import 失敗 → 訊息<strong>帶檔名與行號</strong>；執行期例外 → 訊息<strong>點名是哪一個 device 的哪一支鉤子</strong>，並說明那是腳本問題不是來源文件問題。<br>但<strong>回傳值的形狀錯了多半不會報錯</strong> —— 見上面那三個陷阱。</span></div>
+    </div>
+  </div>
+</section>
+
 <div class="closing">
   複製範本 → 宣告 <code>VERSION</code> → 只留你要覆寫的那幾支。<br>
   確切的鍵名不必背，<strong>範本每個檔案的 docstring 就是權威來源</strong>。

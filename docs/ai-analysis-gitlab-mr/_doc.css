@@ -259,3 +259,26 @@ footer a { color: var(--accent); }
   .hook-row { grid-template-columns: 1fr; gap: 2px; padding: 12px 0; }
   .hook-name { white-space: normal; }
 }
+
+/* ---------- Q&A ----------
+ *
+ * 內容一定要包在單一子元素裡（.qa-q > span）。直接放文字的話，裡面的
+ * <strong> 與 <br> 會各自變成一個 grid 項目，被擠進只有 26px 寬的欄位。 */
+.qa { display: grid; gap: 12px; }
+.qa-item {
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg2); padding: 18px 22px;
+}
+.qa-q, .qa-a {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr);
+  gap: 12px; align-items: start;
+}
+.qa-q { font-size: 17px; font-weight: 700; line-height: 1.55; }
+.qa-a { margin-top: 10px; color: var(--ink2); font-size: 15px; line-height: 1.75; }
+.qa-q::before, .qa-a::before {
+  width: 26px; height: 26px; border-radius: 7px;
+  font: 700 13px/26px var(--mono); text-align: center;
+}
+.qa-q::before { content: "Q"; background: var(--accent); color: #fff; }
+.qa-a::before { content: "A"; background: var(--line);   color: var(--ink); }
+.qa-a strong { color: var(--ink); }
