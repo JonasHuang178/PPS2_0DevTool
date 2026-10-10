@@ -43,7 +43,6 @@ issue、pipeline…），以資料結構回傳，不做 UI、不讀設定檔、�
 
 import base64
 import datetime
-import time
 
 from script_utils import http_utils
 from script_utils import logger

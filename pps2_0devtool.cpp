@@ -111,9 +111,6 @@ void PPS2_0DevTool::UI_Init()
         "  color: #042C53;"
         "}"));
 
-    ui->progressBar->setRange(0, 100);
-    ui->progressBar->setValue(0);
-
     // 功能依 isFunctionVisible() 決定是否 removeTabByTitle()。
     if (!isFunctionVisible(SingleBuilding::functionName()))
         removeTabByTitle(SingleBuilding::functionName());

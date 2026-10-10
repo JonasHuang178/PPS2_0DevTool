@@ -217,8 +217,11 @@ def _jira_reason(exc, key):
     return "無法向 JIRA 取得議題 %s 的附件：%s" % (key, exc)
 
 
-def _read_attachment(item, base_url, token, out_path):
+def _read_attachment(item, token, out_path):
     """下載附件並讀出文字。回傳內容字串。
+
+    不收 base_url：下載網址是附件自己帶的 item["content"]（JIRA 回的是絕對網址），
+    所以這一支不需要知道伺服器在哪裡。
 
     存檔路徑固定為 <out_path 所在目錄>/04_code_review_src.md —— 勾選除錯分析檔時工作
     目錄**就是**除錯目錄，所以原始附件自動留在那裡；未勾選時工作目錄是流程結束後會被
@@ -323,7 +326,7 @@ def _gather(params, keyword, base_url, token, heading):
                 % (filename, size, limit))
 
         script_io.progress("下載 %s…" % filename)
-        text = _read_attachment(picked, base_url, token, params["out_path"])
+        text = _read_attachment(picked, token, params["out_path"])
 
         script_io.progress("解析程式碼審閱報告…")
         parsed = _parse_with_hook(text, heading, key, debug_dir)
