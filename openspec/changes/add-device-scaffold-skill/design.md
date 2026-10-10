@@ -17,8 +17,9 @@
   而且是入口腳本自己用的那一支（它的 docstring 記著當初為什麼要驗在產生它的那一步）。
   步驟 5 的 `render()` 沒有對應的驗證：回傳值直接交給 `contract.plain()`，而 `plain()` 吃得下
   任何型別。這個不對稱決定了 D3 要補的是哪一塊。
-- **範本的註解是這件事唯一的事實來源**，而且密度很高：四支鉤子的 docstring 把每個 inputs 鍵、
-  回傳契約與常見陷阱都寫了，外加 `AUTHORING.md` 與 `README.md` 的 device/type 兩節。
+- **範本的註解是這件事唯一的事實來源**，而且密度很高：五支鉤子的 docstring 把每個 inputs 鍵、
+  回傳契約與常見陷阱都寫了，外加 `AUTHORING.md` 與
+  `docs/ai-analysis-gitlab-mr/device-authoring.md` 的 device/type 兩節。
 
 ## Goals / Non-Goals
 
@@ -78,9 +79,17 @@ CI（`ci/pps-ai-analysis.gitlab-ci.yml` 已經在那裡，部署前就能擋掉�
 | `jira_key.extract(mr)` | `mr` 六個欄位 | 字串；抽不到回空字串，**不要回 `None`** | 沒人 |
 | `mr_type.extract(mr)` | 同上 | 字串 | `normalize_type()` 丟 `DeviceError` |
 | `summary.analyze(inputs)` | `inputs` 約二十個鍵 | `contract.analysis_body(...)` 的結果 | `validate_analysis()` |
+| `parse_code_review.parse(inputs)` | `inputs` 四個鍵 | `contract.code_review_parsed(...)` 的結果 | 入口擋非 dict；`code_review_body()` 收斂不認得的 `review_result` |
 | `merge_to_md.render(inputs)` | `inputs` 七個鍵 | **一段 markdown 字串** | 沒人 ← 見下面 |
 
-輸入規格**不由 skill 重述**，就是 `_template/` 四支檔案的 docstring（見 D2）。鷹架原樣複製，
+**`parse_code_review` 是唯一已經被兩段擋住的一支**，而它的來歷說明了為什麼：它比這份計畫
+晚出現（`e5c84eb`），而加它的那一輪順手把守衛一起寫了。它守住的兩件事剛好是這一節在講的
+兩端 —— 回傳不是 dict 時入口指名是哪一個 device，`review_result` 不在 `REVIEW_RESULTS`
+裡時收斂成「判不出來」並記一筆警告（理由寫在 `code_review_body()`：一個拼錯的結論印出去
+比不印更糟）。驗證腳本對它要做的不是補驗證，是**把那筆警告提前**到使用者寫完的那一刻，
+而不是留在跑完整條流程的 log 裡。
+
+輸入規格**不由 skill 重述**，就是 `_template/` 五支檔案的 docstring（見 D2）。鷹架原樣複製，
 使用者填實作區。中間怎麼寫是他的事 —— 要自己打 HTTP、要換一套 prompt 架構、要完全不問 AI，
 都可以。
 
@@ -150,7 +159,7 @@ skill 允許只建目錄不放鉤子。
 但不一致**只警告**，因為範本明寫「不一致不會讓執行失敗……忘了就是忘了，由開發者自負」。
 驗證不該比它所驗證的契約更嚴格。
 
-實際情況也站在這一邊：現在 `SCRIPT_VERSION = "2.10"` 而 `default` 的 `VERSION = "2.5"` ——
+實際情況也站在這一邊：現在 `SCRIPT_VERSION = "2.11"` 而 `default` 的 `VERSION = "2.6"` ——
 **連 default 都已經不一致了**。把它做成失敗會讓驗證第一次跑就對著 default 報錯，而使用者會
 學到的唯一一件事是「這個檢查要忽略」。
 
@@ -160,15 +169,19 @@ skill 允許只建目錄不放鉤子。
 |---|---|---|
 | device 被發現 | `known_devices()` / `resolve_name()` | 目錄名不是合法識別字（`ssd-gen4`）、放錯層、底線開頭 |
 | 宣告讀得到 | `device_version()`、`strict_type()`、`code_review_source_heading()` | 漏了必填的 `VERSION`；`STRICT_TYPE = "false"`（字串在 Python 裡是真值）|
-| 四支鉤子各自解析到哪 | `load_hook()` 回傳的第二個值 | 「我以為我覆寫了」—— 檔名打錯、放錯目錄，於是安靜落回 `default` |
+| 五支鉤子各自解析到哪 | `HOOK_NAMES` 逐支 `load_hook()`，取回傳的第二個值 | 「我以為我覆寫了」—— 檔名打錯、放錯目錄，於是安靜落回 `default` |
 | 真實標題跑抽取 | 兩支 `extract()` + `normalize_type()` | **D4 那個陷阱**：兩支並排列出，抽歪了一眼看得出來；種類正規化後對不對得上目錄 |
-| **輸出格式** | `wrap_analysis()` + `validate_analysis()`；`isinstance(section, str)` | **D3 那三件**：`analyze()` 回傳的結構不合契約、沒在首行言明未經過 AI、`render()` 回傳非字串而被 `plain()` 靜默轉成字面 |
+| **輸出格式** | `wrap_analysis()` + `validate_analysis()`；`code_review_body()`；`isinstance(section, str)` | **D3 那三件**：`analyze()` 回傳的結構不合契約、沒在首行言明未經過 AI、`render()` 回傳非字串而被 `plain()` 靜默轉成字面。外加 `parse()` 的 `review_result` 不在 `REVIEW_RESULTS` 內 —— 那一筆入口已經會記警告，這裡只是讓它早幾天被看到 |
 
 後三項是這支腳本存在的理由 —— 它們擋的都是**不會讓任何一步失敗**的失敗。前兩項是便利，
 第三到第五項是目前只能靠讀報告（或根本讀不出來）才發現的那幾類。
 
-輸入的標題樣本由使用者提供（訪談時就會問到）。腳本接受命令列參數或一個小檔案，讓同一組樣本
-可以重複跑、也可以進 CI。
+**鉤子名單一律讀 `HOOK_NAMES`（或 `UNTYPED_HOOKS` + `TYPED_HOOKS`），不在驗證腳本裡抄一份。**
+這份計畫自己就是證據：它寫的時候只有四支，第五支 `parse_code_review` 在那之後才加進來。抄一份
+的症狀不是報錯，是驗證腳本安靜地少驗一支 —— 而那正是這整支腳本要消滅的那一類失敗。
+
+輸入的標題樣本由使用者提供（訪談時就會問到）。code review 的樣本報告同理，覆寫那一支時才需要。
+腳本接受命令列參數或一個小檔案，讓同一組樣本可以重複跑、也可以進 CI。
 
 ## Risks / Trade-offs
 
