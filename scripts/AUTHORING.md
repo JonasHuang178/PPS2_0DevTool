@@ -512,7 +512,8 @@ DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
 ⚠️ **不要把它拿來當某個功能的版號。** 那樣它就會隨那個功能一直往上跳而其他功能停著不動，
 兩個本該代表同一份信封格式的數字於是分岔 —— 而它還會被 `--dump-config` 印成
 `_template_version` 給呼叫端看。功能自己的版號是**另一個宣告**：`SCRIPT_VERSION`，
-放在 `scripts/<功能>/__init__.py`，該功能每次修改就往上加（規則見 README「腳本的版號」）。
+放在 `scripts/<功能>/__init__.py`，該功能每次修改就往上加
+（規則見 `docs/contributing.md` 的「腳本的版號」）。
 
 ### 5.4 完整的腳本
 

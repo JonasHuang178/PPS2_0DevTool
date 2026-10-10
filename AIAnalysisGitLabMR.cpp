@@ -1261,7 +1261,8 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
     // 預設值，否則同一個數字會有兩個來源，而它們可以不一致；而且命令列與 CI 那條路徑
     // 根本不經過 Qt。
     //
-    // 四個一起決定最壞情況的等待時間，所以要把等待封頂就得四個一起調（見 README）。
+    // 四個一起決定最壞情況的等待時間，所以要把等待封頂就得四個一起調
+    // （見 docs/ai-analysis-gitlab-mr/device-authoring.md 的「呼叫 AI」）。
     // 三個次數各管一層：Retry_Count 連線層、Reask_Count 內容層（解析不開）、
     // Recheck_Count 涵蓋層（送進去的檔案沒被全部回報）。Qt 只是原樣轉送，不解讀 ——
     // 「夠不夠」的判斷在腳本那一側，CI 那條路徑因此也拿得到同一個行為。
