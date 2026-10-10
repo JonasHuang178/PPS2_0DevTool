@@ -2,7 +2,7 @@
 
 > 這個功能的細節：資料流、哪個操作觸發哪支腳本、已知行為。
 >
-> - 要不開 Qt 跑（命令列或 CI）→ [cli.md](cli.md)
+> - 要不開 Qt 跑（命令列或 CI）→ [cli.html](cli.html)（圖解）｜[cli.md](cli.md)（完整參數）
 > - 工具的整體架構 → [最外層 README](../../README.md)
 > - 規格 → [`openspec/specs/single-building/spec.md`](../../openspec/specs/single-building/spec.md)
 

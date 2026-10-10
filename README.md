@@ -174,11 +174,12 @@ PPS2_0DevTool/
 └── docs/                     文件。不限單一功能的放這一層，功能自己的各一個資料夾
     ├── user-guide.md         給用這個工具的人
     ├── contributing.md       給要動這個專案的人
+    ├── _doc.css              圖解頁共用的樣式（底線開頭，不是文件）
+    ├── index.html            文件首頁（GitHub Pages 的站台根目錄）
     ├── single-building/
     │   ├── README.md         功能細節
-    │   └── cli.md            不開 Qt 怎麼跑
+    │   └── cli.{html,md}     不開 Qt 怎麼跑
     └── ai-analysis-gitlab-mr/
-        ├── _doc.css          三份圖解頁共用的樣式（底線開頭，不是文件）
         ├── getting-started.html  入門圖解（第一次接觸先看這份）
         ├── README.md         功能細節
         ├── cli.{html,md}     不開 Qt 怎麼跑（命令列與 CI 是同一組指令）
@@ -247,7 +248,7 @@ qmake PPS2_0DevTool.pro && make
 
 | 功能 | 資料夾 | 裡面有什麼 |
 |---|---|---|
-| **Single Building** | [`docs/single-building/`](docs/single-building/) | [`README.md`](docs/single-building/README.md) 資料流、哪個操作觸發哪支腳本、已知行為<br>[`cli.md`](docs/single-building/cli.md) 四支腳本的介面與跑一次的指令 |
+| **Single Building** | [`docs/single-building/`](docs/single-building/) | [`README.md`](docs/single-building/README.md) 資料流、哪個操作觸發哪支腳本、已知行為<br>[`cli.html`](docs/single-building/cli.html)｜[`cli.md`](docs/single-building/cli.md) 四支腳本的介面與跑一次的指令 |
 | **AI Analysis GitLab MR** | [`docs/ai-analysis-gitlab-mr/`](docs/ai-analysis-gitlab-mr/) | [`README.md`](docs/ai-analysis-gitlab-mr/README.md) 畫面、五步流程、報告版面、涵蓋範圍、憑證、已知行為<br>[`getting-started.html`](docs/ai-analysis-gitlab-mr/getting-started.html) **第一次接觸先看這份**<br>[`cli.html`](docs/ai-analysis-gitlab-mr/cli.html)｜[`cli.md`](docs/ai-analysis-gitlab-mr/cli.md) 在命令列或 CI 上跑五步流程<br>[`device-authoring.html`](docs/ai-analysis-gitlab-mr/device-authoring.html)｜[`device-authoring.md`](docs/ai-analysis-gitlab-mr/device-authoring.md) 讓一條產品線有自己的分析邏輯與報告版面 |
 
 **每個功能資料夾裡都有 `README.md` 與 `cli.md`，名字固定。** 想知道這個功能怎麼用就看

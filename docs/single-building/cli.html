@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Single Building — 不開 Qt 跑</title>
+<link rel="stylesheet" href="../_doc.css">
+</head>
+<body>
+<main>
+
+<header>
+  <h1>不開 Qt<br>跑這四支</h1>
+  <p class="sub">Qt 那一側只是替你挑檔案、填信封。<br>
+  四支腳本都能直接在命令列執行。</p>
+  <div class="kin">
+    完整的參數與逐步指令 → <a href="cli.md">cli.md</a><br>
+    功能本身的行為 → <a href="README.md">README.md</a>
+  </div>
+</header>
+
+<!-- ============ 這個功能在做什麼 ============ -->
+<section>
+  <h2>這個功能在做什麼</h2>
+  <h3>從一個目錄挑出 <code>.cpp</code>，把選擇存成一份設定</h3>
+
+  <div class="ba">
+    <div class="ba-card">
+      <div class="ba-ico">📁</div>
+      <div class="ba-t">來源目錄</div>
+      <div class="ba-d">某一層底下的<br><code>.cpp</code> 檔案。</div>
+    </div>
+    <div class="ba-arrow">→</div>
+    <div class="ba-card">
+      <div class="ba-ico">📝</div>
+      <div class="ba-t">暫存設定檔</div>
+      <div class="ba-d">你挑中的那幾個，<br>每行一個絕對路徑。</div>
+    </div>
+  </div>
+
+  <p class="muted" style="font-size:15px;margin-top:18px">
+    設定檔放在作業系統的暫存目錄，檔名由
+    <code>scripts/single_building/__init__.py</code> 的 <code>SETTING_FILE_NAME</code>
+    決定一次（目前 <code>PPS2_0DevTool_single_building.txt</code>），三支讀寫它的腳本共用那一個宣告。
+  </p>
+</section>
+
+<!-- ============ 開跑之前 ============ -->
+<section>
+  <h2>開跑之前</h2>
+  <h3>什麼都不用設</h3>
+
+  <div class="term"><span class="c"># 不需要憑證、不需要 config、不需要環境變數。</span>
+<span class="c"># 只要 Python 3，連 requests 都用不到（那是給連 GitLab 的功能用的）。</span>
+
+cd scripts</div>
+
+  <p class="muted" style="font-size:15px;margin-top:16px">
+    這是它與 AI Analysis 最大的差別 —— 那一條要 GitLab、JIRA 與 AI 三組憑證，
+    這一條完全不連網，只碰本機的檔案系統。
+  </p>
+</section>
+
+<!-- ============ 四支各自做什麼 ============ -->
+<section>
+  <h2>四支各自做什麼</h2>
+  <h3>每一支：吃什麼 → 做什麼 → 吐什麼</h3>
+  <p class="lead muted">四支都<strong>不需要 <code>config</code></strong>。要給的只有
+  <code>source_path</code> 與（寫入那一支的）<code>params</code>。</p>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">掃</div>
+      <div>
+        <div class="io-t">列出來源目錄裡的 <code>.cpp</code></div>
+        <div class="io-s">..._list_source.py　action: list_source</div>
+      </div>
+      <div><span class="fl-tag tag-local">不連線</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><code>source_path</code><br>
+        <span class="muted">是<strong>目錄</strong>，不是檔案</span></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">列出<strong>那一層</strong>的 <code>.cpp</code>。
+        不遞迴，副檔名比對不分大小寫。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>data.files</code><br>
+        每筆有 <code>name</code> 與 <code>path</code></div>
+      </div>
+    </div>
+    <div class="io-note">四支裡<strong>只有這一支用得到 <code>source_path</code></strong>。
+    另外三支讀寫的是暫存設定檔，與來源路徑無關。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">讀</div>
+      <div>
+        <div class="io-t">讀出已保存的設定</div>
+        <div class="io-s">..._list_target.py　action: list_target</div>
+      </div>
+      <div><span class="fl-tag tag-local">不連線</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><span class="muted">什麼都不用給</span></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">讀暫存設定檔，每行一個絕對路徑。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>data.files</code><br>
+        形狀與 <code>list_source</code> 相同</div>
+      </div>
+    </div>
+    <div class="io-note">檔案不存在或內容為空<strong>不是錯誤</strong>，是「設定為空」—— 回成功、空清單。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">寫</div>
+      <div>
+        <div class="io-t">寫入設定</div>
+        <div class="io-s">..._modify_setting.py　action: modify_setting</div>
+      </div>
+      <div><span class="fl-tag tag-local">不連線</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><code>params.files</code><br>
+        絕對路徑的清單</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v"><strong>整份覆寫</strong>暫存設定檔。不是附加。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>data.count</code><br>
+        寫進去幾筆</div>
+      </div>
+    </div>
+    <div class="io-note"><code>list_source</code> 回的 <code>path</code> 可以直接當這裡的
+    <code>files</code> 用 —— 那正是 Qt 那一側在做的事，它不改這些值。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">清</div>
+      <div>
+        <div class="io-t">清空設定</div>
+        <div class="io-s">..._recovery_setting.py　action: recovery_setting</div>
+      </div>
+      <div><span class="fl-tag tag-local">不連線</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><span class="muted">什麼都不用給</span></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">清空暫存設定檔，<strong>然後自己回讀一次</strong>。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>data.files</code><br>
+        <span class="muted">必為空</span></div>
+      </div>
+    </div>
+    <div class="io-note">因為它清完會自己回讀，所以<strong>不需要再串一支 <code>list_target</code></strong>。</div>
+  </div>
+</section>
+
+<!-- ============ 跑一次 ============ -->
+<section>
+  <h2>跑一次</h2>
+  <h3>四個指令，下面的輸出是實際跑出來的</h3>
+
+  <div class="term"><span class="c"># 1) 列出來源目錄裡的 .cpp</span>
+echo '{"action":"list_source","source_path":"/path/to/src",
+       "config":{},"params":{}}' \
+  | python3 single_building/single_building_list_source.py --request-stdin</div>
+
+  <div class="term"><span class="g">{"result": "PASS", "message": "找到 2 個 .cpp 檔案",</span>
+ "detail": "來源路徑：/path/to/src",
+ "data": {"files": [{"name": "<span class="b">a10.cpp</span>", "path": "/path/to/src/a10.cpp"},
+                    {"name": "<span class="b">a2.cpp</span>",  "path": "/path/to/src/a2.cpp"}]}}</div>
+
+  <div class="term"><span class="c"># 2) 把挑好的絕對路徑寫進暫存設定檔</span>
+echo '{"action":"modify_setting","source_path":"","config":{},
+       "params":{"files":["/path/to/src/a2.cpp"]}}' \
+  | python3 single_building/single_building_modify_setting.py --request-stdin</div>
+
+  <div class="term"><span class="g">{"result": "PASS", "message": "已保存 1 筆設定",</span>
+ "detail": "設定檔：/tmp/PPS2_0DevTool_single_building.txt",
+ "data": {"count": 1}}</div>
+
+  <div class="term"><span class="c"># 3) 讀回來確認</span>
+echo '{"action":"list_target","source_path":"","config":{},"params":{}}' \
+  | python3 single_building/single_building_list_target.py --request-stdin
+
+<span class="c"># 4) 清空</span>
+echo '{"action":"recovery_setting","source_path":"","config":{},"params":{}}' \
+  | python3 single_building/single_building_recovery_setting.py --request-stdin</div>
+</section>
+
+<!-- ============ dump-config ============ -->
+<section>
+  <h2>不必記上面那些</h2>
+  <h3><code>--dump-config</code> 會把信封模板印給你</h3>
+
+  <div class="term">python3 single_building/single_building_modify_setting.py --dump-config</div>
+
+  <div class="term">{
+  "_template_version": "2.0.0",
+  "action": "modify_setting",
+  "source_path": "",
+  "config": {},
+  "params": { <span class="b">"files"</span>: [] },
+  "_help": {
+    "config": {},
+    "params": { <span class="b">"files"</span>: <span class="c">"要保存的絕對路徑清單，一個字串一筆"</span> }
+  }
+}</div>
+
+  <p class="muted" style="font-size:15px;margin-top:16px">
+    填完存成檔案，用 <code>--request</code> 餵進去即可。模板由參數宣告<strong>導出</strong>，
+    不是另外手寫的一份 —— 所以它不會與 <code>--help</code> 或實際接受的鍵不一致。
+  </p>
+</section>
+
+<!-- ============ 眉角 ============ -->
+<section>
+  <h2>一個會讓你以為壞掉的地方</h2>
+  <h3>排序由 Qt 做，不是腳本</h3>
+
+  <div class="stuck">
+    <div class="st">
+      <div class="st-q">命令列拿到的次序與畫面上不一樣</div>
+      <div class="st-a"><code>list_source</code> 回的是 <code>os.listdir()</code> 給的次序 ——
+      腳本裡<strong>沒有任何 <code>sorted()</code></strong>，所以那個次序不保證，會隨檔案系統而異。
+      上面的範例輸出剛好是 <code>a10.cpp</code> 在前。<br>
+      畫面上看到的自然排序（<code>a2.cpp</code> 在 <code>a10.cpp</code> 之前）在 Qt 的代理模型裡。
+      命令列使用者要同樣的次序得自己排。<br>
+      <strong>這是刻意的：排序是呈現，而腳本不負責呈現。</strong></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Q&A ============ -->
+<section>
+  <h2>常見問題</h2>
+  <h3>在命令列上最常被問的</h3>
+
+  <div class="qa">
+    <div class="qa-item">
+      <div class="qa-q"><span>要先裝什麼？</span></div>
+      <div class="qa-a"><span>只要 Python 3。<strong>連 <code>requests</code> 都用不到</strong> ——
+      這四支完全不連網。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>設定檔到底在哪裡？</span></div>
+      <div class="qa-a"><span>作業系統的暫存目錄（Windows 上是 <code>%TEMP%</code>）。
+      每一支的回應 <code>detail</code> 都會印出完整路徑，不必自己猜。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>可以挑 <code>.cpp</code> 以外的副檔名嗎？</span></div>
+      <div class="qa-a"><span>不能從命令列改 —— 它是功能專屬的定義，寫在
+      <code>scripts/single_building/__init__.py</code> 的 <code>SOURCE_SUFFIX</code>。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span><code>modify_setting</code> 是附加還是覆寫？</span></div>
+      <div class="qa-a"><span><strong>整份覆寫。</strong>要保留舊的就先 <code>list_target</code>
+      讀出來，自己合併之後再一起寫回去。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>會遞迴掃子目錄嗎？</span></div>
+      <div class="qa-a"><span>不會，只掃<strong>那一層</strong>。這是刻意的 ——
+      遞迴時一棵大樹會回來幾千筆。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>命令列改了設定，工具裡看得到嗎？</span></div>
+      <div class="qa-a"><span>看得到 —— 兩邊讀寫的是<strong>同一個檔案</strong>。
+      但工具不會自己重讀，要切走再切回那個分頁才會重新載入。</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="closing">
+  四支都不連網、不要憑證。<br>
+  <code>list_source</code> 的 <code>path</code> 直接餵給 <code>modify_setting</code> 的 <code>files</code>。
+</div>
+
+<footer>
+  同一個資料夾裡：<br>
+  <a href="cli.md">cli.md</a> — 四支腳本的完整參數與指令<br>
+  <a href="README.md">README.md</a> — 資料流、哪個操作觸發哪支腳本、已知行為<br>
+  <a href="../index.html">回到文件首頁</a>
+</footer>
+
+</main>
+</body>
+</html>
