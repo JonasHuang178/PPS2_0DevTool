@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Analysis GitLab MR — 不開 Qt 跑（命令列與 CI）</title>
+<link rel="stylesheet" href="_doc.css">
+</head>
+<body>
+<main>
+
+<header>
+  <h1>不開 Qt<br>跑這五步</h1>
+  <p class="sub">在命令列上跑，或讓 pipeline 跑。<br>
+  指令是同一組 —— CI 只是替你按下執行的那隻手。</p>
+  <div class="kin">
+    第一次接觸這個功能 → <a href="getting-started.html">getting-started.html</a><br>
+    完整的參數與欄位 → <a href="cli.md">cli.md</a>｜功能行為 → <a href="README.md">README.md</a>
+  </div>
+</header>
+
+<!-- ============ 為什麼跑得起來 ============ -->
+<section>
+  <h2>為什麼不用 Qt 也跑得起來</h2>
+  <h3>Qt 從來就不是執行者，它只是填表的人</h3>
+
+  <div class="ba">
+    <div class="ba-card">
+      <div class="ba-ico">🖱️</div>
+      <div class="ba-t">Qt 工具</div>
+      <div class="ba-d">幫你填好一份信封，<br>丟給腳本，收結果。</div>
+    </div>
+    <div class="ba-arrow">→</div>
+    <div class="ba-card">
+      <div class="ba-ico">⚙️</div>
+      <div class="ba-t">你 / CI</div>
+      <div class="ba-d">自己寫那份信封，<br>丟給<strong>同一批</strong>腳本。</div>
+    </div>
+  </div>
+
+  <p class="muted" style="font-size:15px;margin-top:18px">
+    腳本對兩個呼叫端長得一模一樣：憑證只從環境變數讀、產物只由 <code>out_path</code> 決定、
+    log 全走 stderr。所以沒有「CI 專用的腳本路徑」要維護。
+  </p>
+</section>
+
+<!-- ============ 準備 ============ -->
+<section>
+  <h2>開跑之前</h2>
+  <h3>設好環境變數,建一個工作目錄</h3>
+
+  <div class="term"><span class="c"># 憑證與設定走環境變數</span>
+export GITLAB_SERVER_URL=https://gitlab.example.com
+export GITLAB_ACCESS_TOKEN=<span class="y">...</span>
+export JIRA_SERVER_URL=https://jira.example.com
+export JIRA_ACCESS_TOKEN=<span class="y">...</span>
+export PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH=CodeReview_   <span class="c"># 第 4 步要,無預設值</span>
+export PPS_DEVICE=default                                   <span class="c"># 省略即 default</span>
+
+<span class="c"># 工作目錄:五步的產物都落在這裡</span>
+W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
+
+  <div class="stuck" style="margin-top:20px">
+    <div class="st">
+      <div class="st-q">AI 的四個設定<strong>不在</strong>環境變數裡</div>
+      <div class="st-a"><code>ai_api_url</code>、<code>ai_api_key</code>、<code>ai_model</code>、
+      <code>ai_mode_name</code> 走第 3 步的 <code>params</code>,所以會<strong>落在請求檔裡</strong>。
+      跑完立刻刪掉那個檔案;在 CI 上還要在 <code>after_script</code> 再刪一次 ——
+      它連失敗的 job 也會跑,而 artifacts 收的是整個工作目錄。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">不要設 <code>PYTHONPATH</code></div>
+      <div class="st-a">每支入口腳本自己把 <code>scripts/</code> 插進 <code>sys.path</code>。
+      設了反而測不出那條規則有沒有被遵守。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 五步各自做什麼 ============ -->
+<section>
+  <h2>五步各自做什麼</h2>
+  <h3>每一步:吃什麼 → 做什麼 → 吐什麼</h3>
+  <p class="lead muted">五步<strong>全部都要跑</strong>,不要自己判斷該跳過哪一步。
+  「要不要真的做事」由腳本看參數自己決定 —— 判斷寫在 shell 裡就會有第二份規則,而兩份一定會漂移。</p>
+
+  <!-- 1 -->
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">1<br>/5</div>
+      <div>
+        <div class="io-t">取得 MR 描述</div>
+        <div class="io-s">..._description.py　action: mr_description</div>
+      </div>
+      <div><span class="fl-tag tag-net">連 GitLab</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><code>repo</code><br><code>mr_iid</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">去 GitLab 取那支 MR 的描述,<strong>並扣掉上一輪貼回去的 AI 分析那一段</strong>。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>01_description.md</code></div>
+      </div>
+    </div>
+    <div class="io-note">不扣掉的話,AI 會對自己上次的輸出再分析一次,而每跑一輪報告就疊一段。</div>
+  </div>
+
+  <!-- 2 -->
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">2<br>/5</div>
+      <div>
+        <div class="io-t">抽出 JIRA key 與 MR 種類</div>
+        <div class="io-s">..._info.py　action: mr_info</div>
+      </div>
+      <div><span class="fl-tag tag-net">連 GitLab</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><code>repo</code><br><code>mr_iid</code><br>
+        <code>jira_mode</code>（<code>auto</code>／<code>manual</code>／<code>none</code>）<br>
+        <code>jira_key_manual</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">自己再連一次 GitLab 取 MR（抽 key 讀的是<strong>標題</strong>,
+        而第 1 步的產物只有描述本文）,交給 device 的兩支鉤子抽出 key 與種類。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>02_mr_info.json</code><br>
+        <span class="muted">內含 <code>jira_key</code>、<code>mr_type</code></span></div>
+      </div>
+    </div>
+    <div class="io-note">種類會決定第 3、5 步載入哪一份鉤子,所以這一步的輸出要讀出來餵給後面。</div>
+  </div>
+
+  <!-- 3 -->
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">3<br>/5</div>
+      <div>
+        <div class="io-t">AI 分析</div>
+        <div class="io-s">..._summary.py　action: ai_summary</div>
+      </div>
+      <div><span class="fl-tag tag-cost">要錢、要等</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><code>description_path</code> ← 第 1 步<br>
+        <code>jira_key</code>、<code>mr_type</code> ← 第 2 步<br>
+        AI 四項 + 四個等待設定</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">自己去 GitLab 取差異、組 prompt、問 AI、解析回覆。
+        組 prompt 與解析都在 device 的 <code>summary</code> 鉤子裡。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>03_summary.json</code><br>
+        <span class="muted">內含 <code>jira_state</code></span></div>
+      </div>
+    </div>
+    <div class="io-note">五步裡唯一要花錢、唯一會等到分鐘級的一步。沒設 AI 端點時<strong>不會失敗</strong>,
+    而是產出替代內容並在首行言明未經過 AI。</div>
+  </div>
+
+  <!-- 4 -->
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">4<br>/5</div>
+      <div>
+        <div class="io-t">取得程式碼審閱報告</div>
+        <div class="io-s">..._code_review.py　action: fetch_code_review</div>
+      </div>
+      <div><span class="fl-tag tag-net">連 JIRA</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><code>jira_key</code> ← 第 2 步<br>
+        <code>jira_state</code> ← <strong>第 3 步</strong></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">去那張單子上找檔名前綴相符的 <code>.md</code> 附件,
+        下載、解碼,交給 device 的 <code>parse_code_review</code> 鉤子擷取風險評估表。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>04_code_review.json</code><br>
+        <span class="muted">或<strong>什麼都不產生</strong></span></div>
+      </div>
+    </div>
+    <div class="io-note"><code>jira_state</code> 來自第 3 步而不是第 2 步 —— 第 2 步抽出 key,
+    第 3 步才判定它有不有效。沒 key、key 無效、單子上沒附件,三種都是 <strong>PASS 但不落檔</strong>。</div>
+  </div>
+
+  <!-- 5 -->
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">5<br>/5</div>
+      <div>
+        <div class="io-t">合併為 markdown</div>
+        <div class="io-s">..._merge_to_md.py　action: merge_to_md</div>
+      </div>
+      <div><span class="fl-tag tag-local">不連線</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">吃什麼</div>
+        <div class="io-v"><code>ori_md_file_path</code> ← 1<br>
+        <code>mr_summary_json_file_path</code> ← 3<br>
+        <code>code_review_json_file_path</code> ← 4</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">做什麼</div>
+        <div class="io-v">純排版,不再問任何人。分析那一段的版面由 device 的
+        <code>merge_to_md</code> 鉤子決定。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">吐什麼</div>
+        <div class="io-v"><code>05_report.md</code><br>
+        <span class="muted">可以直接貼回 MR</span></div>
+      </div>
+    </div>
+    <div class="io-note">它收的是<strong>檔案路徑,不是內容</strong>。路徑給了就必須存在 ——
+    第 4 步沒落檔時,<code>code_review_json_file_path</code> <strong>整個鍵不要放</strong>(不是放空字串)。</div>
+  </div>
+</section>
+
+<!-- ============ 產物怎麼串 ============ -->
+<section>
+  <h2>產物怎麼串</h2>
+  <h3>每一步的輸出是下一步的輸入</h3>
+
+  <div class="term"><span class="b">01_description.md</span>  ──┬────────────────────────────┐
+                            │                            │
+<span class="b">02_mr_info.json</span>    ──┼──┐                         │
+  jira_key, mr_type         │  │                         │
+                            ↓  │                         ↓
+                      <span class="g">步驟 3</span> │                   <span class="g">步驟 5</span>
+                            │  │                         ↑
+<span class="b">03_summary.json</span>    ←──┘  │                         │
+  jira_state           ──┐     │                         │
+                        ↓     ↓                         │
+                      <span class="g">步驟 4</span>                        │
+                        │                               │
+<span class="y">04_code_review.json</span> ←┘  <span class="c">（可能不存在）</span>  ─────────────┘
+                                                        ↓
+                                              <span class="b">05_report.md</span></div>
+
+  <p class="muted" style="font-size:15px;margin-top:16px">
+    步驟 1 與 2 可以互換順序,其餘不行。
+  </p>
+</section>
+
+<!-- ============ 跑完長什麼樣 ============ -->
+<section>
+  <h2>跑完長什麼樣</h2>
+  <h3>五個可收合的區段,加一包 artifacts</h3>
+
+  <div class="term"><span class="g">▸</span> 步驟 1/5：取得 MR 描述                        <span class="c">00:02</span>
+<span class="g">▸</span> 步驟 2/5：JIRA key 與 MR 種類                  <span class="c">00:03</span>
+<span class="g">▸</span> 步驟 3/5：AI 分析                             <span class="c">02:17</span>  <span class="y">← 唯一會久的</span>
+<span class="g">▸</span> 步驟 4/5：程式碼審閱報告                       <span class="c">00:04</span>
+<span class="g">▸</span> 步驟 5/5：合併為 markdown                      <span class="c">00:01</span>
+
+<span class="c">Uploading artifacts...</span>
+  pps-work/01_description.md
+  pps-work/02_mr_info.json
+  pps-work/03_summary.json
+  pps-work/04_code_review.json
+  <span class="g">pps-work/05_report.md</span>        <span class="c">← 這份就是報告</span></div>
+
+  <p class="muted" style="font-size:15px;margin-top:16px">
+    GitLab 的可收合區段會在標題旁顯示那一步的耗時,所以一眼看得出慢在哪裡。
+    失敗時 artifacts 照樣上傳(<code>when: always</code>),才查得出是哪一步少了什麼。
+  </p>
+</section>
+
+<!-- ============ 坑 ============ -->
+<section>
+  <h2>範例刻意處理掉的坑</h2>
+  <h3>照抄 <code>ci/pps-ai-analysis.gitlab-ci.yml</code> 就避開了</h3>
+
+  <div class="stuck">
+    <div class="st">
+      <div class="st-q">AI 金鑰會落在第 3 步的請求檔裡</div>
+      <div class="st-a">AI 四項走 <code>params</code> 不走環境變數。範例在步驟 3 之後立刻刪,
+      並在 <code>after_script</code> 再刪一次。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">不要在 shell 裡判斷「第 4 步要不要跑」</div>
+      <div class="st-a">永遠跑它,讓它自己依 <code>jira_key</code> 與 <code>jira_state</code> 決定。
+      在 CI 再判一次就有了第二份規則。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">第 4 步沒落檔時,第 5 步的那個鍵要<strong>整個拿掉</strong></div>
+      <div class="st-a">不是放空字串。步驟 5 收的是路徑,路徑給了就必須存在。</div>
+    </div>
+    <div class="st">
+      <div class="st-q"><code>-v</code> 會讓 job log 變很大</div>
+      <div class="st-a">它打開 DEBUG 等級。job log 有大小上限(預設 4 MB),
+      一支大 MR 有可能撞到 —— 而被截掉的是<strong>尾端</strong>,也就是結果信封所在的位置。</div>
+    </div>
+  </div>
+</section>
+
+<div class="closing">
+  設好環境變數 → 依序跑五支 → 拿 <code>05_report.md</code>。<br>
+  完整的參數表在 <a href="cli.md">cli.md</a>,可照抄的 pipeline 在 <code>ci/</code>。
+</div>
+
+<footer>
+  同一個資料夾裡：<br>
+  <a href="getting-started.html">getting-started.html</a> — 第一次接觸這個功能（用 Qt 工具的角度）<br>
+  <a href="cli.md">cli.md</a> — 六支腳本的完整參數、逐步指令、CI 對照表<br>
+  <a href="device-authoring.html">device-authoring.html</a> — 寫自己的 device（圖解）<br>
+  <a href="README.md">README.md</a> — 功能的完整行為規則
+</footer>
+
+</main>
+</body>
+</html>

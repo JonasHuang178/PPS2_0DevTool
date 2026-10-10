@@ -178,14 +178,16 @@ PPS2_0DevTool/
     │   ├── README.md         功能細節
     │   └── cli.md            不開 Qt 怎麼跑
     └── ai-analysis-gitlab-mr/
+        ├── _doc.css          三份圖解頁共用的樣式（底線開頭，不是文件）
         ├── getting-started.html  入門圖解（第一次接觸先看這份）
         ├── README.md         功能細節
-        ├── cli.md            不開 Qt 怎麼跑（命令列與 CI 是同一組指令）
-        └── device-authoring.md  寫自己的 device
+        ├── cli.{html,md}     不開 Qt 怎麼跑（命令列與 CI 是同一組指令）
+        └── device-authoring.{html,md}  寫自己的 device
 ```
 
 **每個功能資料夾裡的 `README.md` 與 `cli.md` 是固定的兩個名字**，新增功能時照這個
-形狀建。新增任何目錄或檔案時，這棵樹就是它的註冊處 —— 漏登記的症狀是它存在但沒人
+形狀建。同一個主題若另有圖解頁，**檔名相同、副檔名換成 `.html`** —— `.md` 是查得到
+每個欄位的參考，`.html` 是看得懂整件事的圖。新增任何目錄或檔案時，這棵樹就是它的註冊處 —— 漏登記的症狀是它存在但沒人
 找得到（`ci/` 就漏過一輪）。
 
 ---
@@ -246,7 +248,7 @@ qmake PPS2_0DevTool.pro && make
 | 功能 | 資料夾 | 裡面有什麼 |
 |---|---|---|
 | **Single Building** | [`docs/single-building/`](docs/single-building/) | [`README.md`](docs/single-building/README.md) 資料流、哪個操作觸發哪支腳本、已知行為<br>[`cli.md`](docs/single-building/cli.md) 四支腳本的介面與跑一次的指令 |
-| **AI Analysis GitLab MR** | [`docs/ai-analysis-gitlab-mr/`](docs/ai-analysis-gitlab-mr/) | [`README.md`](docs/ai-analysis-gitlab-mr/README.md) 畫面、五步流程、報告版面、涵蓋範圍、憑證、已知行為<br>[`getting-started.html`](docs/ai-analysis-gitlab-mr/getting-started.html) **第一次接觸先看這份**（瀏覽器開）<br>[`cli.md`](docs/ai-analysis-gitlab-mr/cli.md) 在命令列或 CI 上跑五步流程<br>[`device-authoring.md`](docs/ai-analysis-gitlab-mr/device-authoring.md) 讓一條產品線有自己的分析邏輯與報告版面 |
+| **AI Analysis GitLab MR** | [`docs/ai-analysis-gitlab-mr/`](docs/ai-analysis-gitlab-mr/) | [`README.md`](docs/ai-analysis-gitlab-mr/README.md) 畫面、五步流程、報告版面、涵蓋範圍、憑證、已知行為<br>[`getting-started.html`](docs/ai-analysis-gitlab-mr/getting-started.html) **第一次接觸先看這份**<br>[`cli.html`](docs/ai-analysis-gitlab-mr/cli.html)｜[`cli.md`](docs/ai-analysis-gitlab-mr/cli.md) 在命令列或 CI 上跑五步流程<br>[`device-authoring.html`](docs/ai-analysis-gitlab-mr/device-authoring.html)｜[`device-authoring.md`](docs/ai-analysis-gitlab-mr/device-authoring.md) 讓一條產品線有自己的分析邏輯與報告版面 |
 
 **每個功能資料夾裡都有 `README.md` 與 `cli.md`，名字固定。** 想知道這個功能怎麼用就看
 `README.md`，想不開 Qt 跑就看 `cli.md` —— 不必每次先找檔名。多出來的那一份

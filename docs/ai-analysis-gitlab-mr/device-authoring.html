@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Analysis GitLab MR — 寫自己的 device</title>
+<link rel="stylesheet" href="_doc.css">
+</head>
+<body>
+<main>
+
+<header>
+  <h1>寫自己的<br>device</h1>
+  <p class="sub">五個 Python 檔案，決定這條產品線要問 AI 什麼、<br>
+  報告要怎麼排。只寫你要改的那幾支。</p>
+  <div class="kin">
+    確切的鍵名與回傳契約 → <code>device/_template/</code> 各檔的 docstring（權威來源）<br>
+    這份講的是<strong>為什麼</strong>與<strong>怎麼開始</strong>｜完整說明 → <a href="device-authoring.md">device-authoring.md</a>
+  </div>
+</header>
+
+<!-- ============ 為什麼 ============ -->
+<section>
+  <h2>為什麼需要它</h2>
+  <h3>同一條流程，不同產品線要問的問題不一樣</h3>
+
+  <div class="ba">
+    <div class="ba-card">
+      <div class="ba-ico">🧩</div>
+      <div class="ba-t">不變的</div>
+      <div class="ba-d">五個步驟、取資料、<br>報告的外框、憑證處理。<br>這些你碰不到也不必管。</div>
+    </div>
+    <div class="ba-arrow">→</div>
+    <div class="ba-card">
+      <div class="ba-ico">✍️</div>
+      <div class="ba-t">你決定的</div>
+      <div class="ba-d">單號怎麼抽、問 AI 什麼、<br>怎麼看懂 code review、<br>分析那一段怎麼排版。</div>
+    </div>
+  </div>
+
+  <p class="muted" style="font-size:15px;margin-top:18px">
+    一個 device = 一個目錄。放進去就是新增一個，<strong>沒有註冊表要改</strong>。
+    用哪一個由環境變數 <code>PPS_DEVICE</code> 決定（Qt 從設定檔注入，CI 由 runner 設）。
+  </p>
+</section>
+
+<!-- ============ 五個鉤子掛在哪 ============ -->
+<section>
+  <h2>五個鉤子</h2>
+  <h3>掛在五步流程的哪幾個位置</h3>
+
+  <div class="hooks">
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 1</span><b>取得 MR 描述</b></div><div class="hook-none">不因 device 而異</div><div></div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 2</span><b>抽 JIRA key 與種類</b></div><div class="hook-name u">jira_key.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
+  <div class="hook-row"><div class="hook-step">&nbsp;</div><div class="hook-name u">mr_type.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 3</span><b>AI 分析</b></div><div class="hook-name t">summary.py</div><div class="hook-sig">analyze(inputs) → 分析結構</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 4</span><b>取得程式碼審閱報告</b></div><div class="hook-name u">parse_code_review.py</div><div class="hook-sig">parse(inputs) → 總表 + 結論</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 5</span><b>合併為 markdown</b></div><div class="hook-name t">merge_to_md.py</div><div class="hook-sig">render(inputs) → markdown 字串</div></div>
+  <div class="hook-legend"><b class="t">綠色兩支</b>可以再依<b class="t">種類</b>分開（見下面）；<b class="u">藍色三支</b>不行。</div>
+</div>
+
+  <p class="muted" style="font-size:15px;margin-top:16px">
+    前兩支不因種類而異，是因為它們在種類被決定<strong>之前</strong>就執行
+    （<code>mr_type.py</code> 正是決定它的那一支）。
+    <code>parse_code_review</code> 不因種類而異，是因為那份報告的格式取決於你們用哪一套
+    code review 工具，而不是這筆 MR 是 bug 還是 feature。
+  </p>
+</section>
+
+<!-- ============ 三步開始 ============ -->
+<section>
+  <h2>開始</h2>
+  <h3>三件事，不到五分鐘</h3>
+
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <div>
+        <div class="step-t">複製範本，改成你的名字</div>
+        <div class="step-d"><code>cp -r device/_template device/ssd</code><br>
+        目錄名會被當成<strong>模組名 import</strong>，所以必須是合法的 Python 識別字：
+        小寫英數與底線、不以數字開頭。<code>ssd_gen4</code> 可以，<code>ssd-gen4</code> 不行。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div>
+        <div class="step-t">在 <code>__init__.py</code> 宣告 <code>VERSION</code></div>
+        <div class="step-d"><strong>這一個一定要有，沒宣告會直接失敗。</strong>
+        它會印在報告末尾（<code>Device: ssd 1.2</code>）。改了產出方式就把它往上加 ——
+        不加的話，新舊兩套邏輯產生的報告會帶同一個版本號。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div>
+        <div class="step-t">刪掉你<strong>不想</strong>覆寫的那幾支</div>
+        <div class="step-d">五支全都是選用的。只想改報告版面？那就只留 <code>merge_to_md.py</code>，
+        其餘四支刪掉 —— 缺的會自動用 <code>default</code> 的。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="term" style="margin-top:20px"><span class="c"># 只想改報告版面的 device，合法而且推薦長這樣：</span>
+device/ssd/
+  __init__.py        <span class="y">VERSION = "1.0"</span>   <span class="c">← 必要</span>
+  merge_to_md.py     <span class="c">← 你唯一要寫的</span>
+
+<span class="c"># 其餘四支不存在，自動落回 default/</span></div>
+
+  <div class="stuck" style="margin-top:20px">
+    <div class="st">
+      <div class="st-q">不要修改 <code>device/default/</code></div>
+      <div class="st-a">它在 repo 裡，而每次建置都會<strong>無條件覆蓋</strong>。
+      你自己新增的目錄因為 repo 裡沒有同名檔案，不會被覆蓋也不會被刪。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 回退 ============ -->
+<section>
+  <h2>回退是逐鉤子的</h2>
+  <h3>不是「整個 device 找不到就用 default」，是一支一支找</h3>
+
+  <div class="term"><span class="c">PPS_DEVICE=ssd，這筆 MR 的種類是 bug</span>
+
+<span class="g">summary.py</span>（因種類而異，找三層）
+  ① device/ssd/<span class="g">bug</span>/summary.py   ← 有就用它，結束
+  ② device/ssd/summary.py         ← 再找這裡
+  ③ device/default/summary.py     ← 最後的後備
+
+<span class="b">jira_key.py</span>（不因種類而異，找兩層）
+  ① device/ssd/jira_key.py
+  ② device/default/jira_key.py
+
+<span class="y">PPS_DEVICE=sdd（打錯字）</span>
+  ✗ <span class="y">直接失敗</span>，訊息列出目前認得哪些 device</div>
+
+  <div class="stuck" style="margin-top:20px">
+    <div class="st">
+      <div class="st-q">認不得的 device 是<strong>錯誤</strong>，不是退回 default</div>
+      <div class="st-a">打錯字或忘記部署時，靜默改用通用邏輯會產出一份用錯邏輯、
+      而且每一步都回報成功的報告 —— 那比直接失敗糟得多。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">但認不得的<strong>種類</strong>相反，它視同「沒有種類」</div>
+      <div class="st-a">種類是 MR 作者在標題裡打的字，不是部署問題。
+      要讓它變成錯誤的話，在 <code>__init__.py</code> 宣告 <code>STRICT_TYPE = True</code>。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 每支鉤子的契約 ============ -->
+<section>
+  <h2>每一支鉤子</h2>
+  <h3>收什麼、要回什麼</h3>
+  <p class="lead muted">中間怎麼寫完全自由 —— 自己打 HTTP、換一套 prompt 架構、
+  完全不問 AI 都可以。契約只有兩端。</p>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">2</div>
+      <div>
+        <div class="io-t">jira_key.py</div>
+        <div class="io-s">extract(mr)</div>
+      </div>
+      <div><span class="fl-tag tag-net">不分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>mr</code> 六個欄位：<br>
+        <code>title</code>、<code>source_branch</code>、<code>target_branch</code>、
+        <code>description</code>、<code>repo</code>、<code>mr_iid</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v">一個<strong>字串</strong>。<br>
+        抽不到就回 <code>""</code>。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">default 的規則</div>
+        <div class="io-v">取標題的<strong>第一個方括號</strong>。</div>
+      </div>
+    </div>
+    <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口統一。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">2</div>
+      <div>
+        <div class="io-t">mr_type.py</div>
+        <div class="io-s">extract(mr)</div>
+      </div>
+      <div><span class="fl-tag tag-net">不分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v">與 <code>jira_key</code> <strong>完全相同</strong>的六個欄位。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v">一個<strong>字串</strong>。沒有就回 <code>""</code>。<br>
+        入口會去空白、轉小寫。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">可以做映射</div>
+        <div class="io-v">標題寫 <code>[FW-Update]</code>，<br>
+        這裡回 <code>"fw_update"</code>。</div>
+      </div>
+    </div>
+    <div class="io-note">回傳<strong>非字串</strong>會直接失敗（那是鉤子寫壞了）；
+    回傳不合法的字串（<code>緊急</code>、<code>bug fix</code>）視同沒有種類，不報錯。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">3</div>
+      <div>
+        <div class="io-t">summary.py</div>
+        <div class="io-s">analyze(inputs)</div>
+      </div>
+      <div><span class="fl-tag tag-local">可分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>description</code> 原始描述<br>
+        <code>mr_diff</code> 差異純文字<br>
+        <code>fetch_jira(key)</code> <strong>函式</strong><br>
+        <code>jira_key</code>、<code>mr_type</code><br>
+        AI 端點、金鑰、模型、逾時…</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v"><code>contract.analysis_body(...)</code> 的結果。<br>
+        <span class="muted">入口會驗證它的形狀。</span></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">能用的工具</div>
+        <div class="io-v"><code>ai_utils.ask()</code>／<code>ask_json()</code><br>
+        <code>contract.hunk_of()</code><br>
+        <code>contract.ai_credentials()</code></div>
+      </div>
+    </div>
+    <div class="io-note"><code>fetch_jira</code> 給的是<strong>函式而不是現成內容</strong>，
+    因為「這個 key 有沒有效」是你的政策。入口先抓的話，<code>[WIP]</code> 這種從方括號抽來的東西
+    每次都會白打一趟 JIRA。判定有效之後再呼叫它。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">4</div>
+      <div>
+        <div class="io-t">parse_code_review.py</div>
+        <div class="io-s">parse(inputs)</div>
+      </div>
+      <div><span class="fl-tag tag-net">不分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>text</code> 報告全文（現成的）<br>
+        <code>heading</code> 要找哪一節<br>
+        <code>jira_key</code>、<code>debug_write</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v"><code>contract.code_review_parsed(</code><br>
+        　<code>risk_table, review_result)</code><br>
+        結論是 <code>PASS</code>／<code>FAIL</code>／<code>UNKNOWN</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">default 的規則</div>
+        <div class="io-v">總表最後一欄是數量，<br>全部加總為 0 就判定通過。</div>
+      </div>
+    </div>
+    <div class="io-note">查附件、挑最新那份、擋大小上限、下載、解碼<strong>都不在這裡</strong> ——
+    那些要 JIRA 權杖，而權杖不交給 device 的程式碼。你拿到的是現成全文。
+    判不出結論就回 <code>UNKNOWN</code>，<strong>不要猜</strong>。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">5</div>
+      <div>
+        <div class="io-t">merge_to_md.py</div>
+        <div class="io-s">render(inputs)</div>
+      </div>
+      <div><span class="fl-tag tag-local">可分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>analysis</code> 第 3 步的結構<br>
+        <code>description</code>、<code>code_review</code><br>
+        <span class="muted">（後兩者是唯讀參考）</span></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v">一段 <strong>markdown 字串</strong>。<br>
+        只要「<code># AI 分析結果</code>底下的內容」。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">你管不到的</div>
+        <div class="io-v">標題那一行、原始描述那段、<br>
+        code review 那段、末尾出處。</div>
+      </div>
+    </div>
+    <div class="io-note"><code># AI 分析結果</code> 那一行<strong>不歸你管</strong>，因為它同時是下一輪
+    切出原始描述的邊界。某個 device 把它寫成別的字，下一輪就找不到邊界 ——
+    整份舊報告被當成原始描述，每跑一次疊一段，而每一步都回報成功。</div>
+  </div>
+</section>
+
+<!-- ============ 三個陷阱 ============ -->
+<section>
+  <h2>三個會靜默出錯的陷阱</h2>
+  <h3>它們都不會讓任何一步失敗</h3>
+
+  <div class="stuck">
+    <div class="st">
+      <div class="st-q">只寫了 <code>mr_type.py</code>，忘了 <code>jira_key.py</code></div>
+      <div class="st-a">如果你們的標題格式與 default 不同，<code>jira_key</code> 會沿用
+      default 的規則（取第一個方括號），於是<strong>安靜地抽到錯的東西</strong>。
+      症狀只有報告末尾一行 <code>JIRA: Alpha (invalid)</code> —— 要跑完、讀到末尾，
+      而且要知道那一行本來該長什麼樣，才看得出來。<br>
+      <strong>標題格式與 default 不同的話，這兩支通常要一起寫。</strong></div>
+    </div>
+    <div class="st">
+      <div class="st-q"><code>render()</code> 回傳了 dict 而不是字串</div>
+      <div class="st-a">入口把回傳交給 <code>contract.plain()</code>，而它會<strong>靜默</strong>
+      <code>str()</code> 非字串 —— 實測 <code>plain({'overview': 'x'})</code> 回的是
+      <code>"{'overview': 'x'}"</code>。那段字面會印進報告，而<strong>五個步驟全部回報成功</strong>。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">自己寫死三個反引號當程式碼圍籬</div>
+      <div class="st-a">內容本身含反引號的 diff（改到 markdown 檔就會）會讓程式碼區塊
+      <strong>提前結束</strong>，而報告仍然「成功」產出。用
+      <code>contract.fence_for(code)</code> 算長度。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 開發流程 ============ -->
+<section>
+  <h2>開發流程</h2>
+  <h3>寫、按按鈕、提交 —— 不必重建 Qt</h3>
+
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <div>
+        <div class="step-t">在執行檔旁邊的 <code>scripts/</code> 底下寫</div>
+        <div class="step-d">路徑是
+        <code>scripts/ai_analysis_gitlab_mr/device/&lt;你的名字&gt;/</code>。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div>
+        <div class="step-t">按 AI Analysis 測</div>
+        <div class="step-d">每一步都是獨立的 Python 行程，<strong>改完立刻生效</strong>，
+        不必重新建置 Qt。勾 Add Debug file 就看得到每一步的中間產物。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div>
+        <div class="step-t">把目錄提交進 repo</div>
+        <div class="step-d">CI 也就跟著有了 —— 它跑的是同一批腳本、同一個解析鏈。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="closing">
+  複製範本 → 宣告 <code>VERSION</code> → 只留你要覆寫的那幾支。<br>
+  確切的鍵名不必背，<strong>範本每個檔案的 docstring 就是權威來源</strong>。
+</div>
+
+<footer>
+  同一個資料夾裡：<br>
+  <a href="device-authoring.md">device-authoring.md</a> — 完整說明：產物格式、呼叫 AI、改 prompt、素材怎麼來、type 的細節<br>
+  <a href="getting-started.html">getting-started.html</a> — 第一次接觸這個功能<br>
+  <a href="cli.html">cli.html</a> — 不開 Qt 跑（圖解）｜<a href="cli.md">cli.md</a> — 完整參數<br>
+  <a href="README.md">README.md</a> — 功能的完整行為規則
+</footer>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,261 @@
+/* 這個資料夾裡三份圖解頁共用的樣式。
+ *
+ * 底線開頭 = 不是一份文件，與 device/_template 同一個慣例。
+ * 抽出來是為了「同類文件風格一致」這條規則 —— 三份各帶一份副本的話，
+ * 改了其中一份的顏色，另外兩份會安靜地長得不一樣。 */
+
+:root {
+  --bg:        #ffffff;
+  --bg2:       #f4f5f7;
+  --ink:       #16191d;
+  --ink2:      #5b636e;
+  --line:      #d8dce2;
+  --accent:    #2f6fd0;
+  --accent-bg: #e8f0fc;
+  --warn:      #9a6700;
+  --warn-bg:   #fdf6e3;
+  --ok:        #1f7a4d;
+  --ok-bg:     #e7f5ed;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #15181c;
+    --bg2:       #1d2126;
+    --ink:       #e8eaed;
+    --ink2:      #9aa3af;
+    --line:      #333a43;
+    --accent:    #74a7f0;
+    --accent-bg: #1c2a3f;
+    --warn:      #e3b341;
+    --warn-bg:   #2b2416;
+    --ok:        #5fd39b;
+    --ok-bg:     #16291f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 20px 100px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.75 -apple-system, "Noto Sans TC", "PingFang TC",
+        "Microsoft JhengHei", system-ui, sans-serif;
+}
+main { max-width: 860px; margin: 0 auto; }
+
+/* ---------- 標頭 ---------- */
+header { padding: 72px 0 8px; }
+h1 { font-size: 40px; line-height: 1.25; margin: 0 0 16px; letter-spacing: -.5px; }
+.sub { font-size: 20px; color: var(--ink2); margin: 0; }
+.kin {
+  margin-top: 26px; font-size: 14px; color: var(--ink2);
+  border-left: 3px solid var(--line); padding-left: 14px; line-height: 1.8;
+}
+.kin a { color: var(--accent); }
+
+/* ---------- 區塊 ---------- */
+section { margin-top: 76px; }
+h2 {
+  font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 6px; font-weight: 700;
+}
+h3 { font-size: 27px; line-height: 1.35; margin: 0 0 28px; letter-spacing: -.2px; }
+h4 { font-size: 19px; margin: 36px 0 14px; }
+
+p { margin: 0 0 18px; }
+.lead { font-size: 18px; }
+.muted { color: var(--ink2); }
+code {
+  font: 500 .88em/1.5 var(--mono);
+  background: var(--bg2); padding: .15em .4em; border-radius: 5px;
+}
+
+/* ---------- 前後對比 ---------- */
+.ba {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px;
+  align-items: stretch; margin: 0 0 8px;
+}
+.ba-card {
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 14px; padding: 26px 22px; text-align: center;
+}
+.ba-ico { font-size: 44px; line-height: 1; margin-bottom: 14px; }
+.ba-t { font-weight: 700; font-size: 18px; margin-bottom: 4px; }
+.ba-d { color: var(--ink2); font-size: 15px; line-height: 1.6; }
+.ba-arrow { display: flex; align-items: center; font-size: 30px; color: var(--accent); }
+
+/* ---------- 編號步驟 ---------- */
+.steps { display: grid; gap: 14px; }
+.step {
+  display: grid; grid-template-columns: 62px 1fr; gap: 20px; align-items: center;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 14px; padding: 20px 24px;
+}
+.num {
+  width: 62px; height: 62px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 27px; font-weight: 700;
+}
+.step-t { font-size: 19px; font-weight: 700; margin-bottom: 2px; }
+.step-d { color: var(--ink2); font-size: 15px; line-height: 1.6; }
+
+.press {
+  margin-top: 14px; text-align: center;
+  border: 2px dashed var(--accent); border-radius: 14px;
+  padding: 26px; background: var(--accent-bg);
+}
+.press-btn {
+  display: inline-block; background: var(--accent); color: #fff;
+  font-size: 19px; font-weight: 700; padding: 13px 34px; border-radius: 9px;
+}
+.press-d { color: var(--ink2); font-size: 15px; margin-top: 12px; }
+
+/* ---------- 流程列（一行一步） ---------- */
+.flow { display: grid; gap: 0; }
+.fl {
+  display: grid; grid-template-columns: 50px 1fr; gap: 20px;
+  padding: 20px 0; border-top: 1px solid var(--line);
+}
+.fl:last-child { border-bottom: 1px solid var(--line); }
+.fl-n {
+  width: 50px; height: 50px; border-radius: 12px;
+  background: var(--bg2); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; color: var(--accent);
+}
+.fl-t { font-size: 18px; font-weight: 700; margin-bottom: 3px; }
+.fl-d { color: var(--ink2); font-size: 15px; line-height: 1.65; }
+
+/* ---------- 標籤 ---------- */
+.fl-tag {
+  display: inline-block; font-size: 12px; font-weight: 700;
+  padding: 2px 9px; border-radius: 20px; margin-left: 8px;
+  vertical-align: 2px; letter-spacing: .02em;
+}
+.tag-net   { background: var(--accent-bg); color: var(--accent); }
+.tag-cost  { background: var(--warn-bg);   color: var(--warn); }
+.tag-local { background: var(--ok-bg);     color: var(--ok); }
+
+/* ---------- 吃什麼 / 做什麼 / 吐什麼 ---------- */
+.io { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 18px; }
+.io-head {
+  display: grid; grid-template-columns: 54px 1fr auto; gap: 16px;
+  align-items: center; padding: 18px 22px; background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+}
+.io-n {
+  width: 54px; height: 54px; border-radius: 13px;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; line-height: 1.15; text-align: center;
+}
+.io-t { font-size: 19px; font-weight: 700; }
+.io-s { font: 500 13px/1.5 var(--mono); color: var(--ink2); margin-top: 2px; }
+.io-body { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+.io-cell { padding: 16px 20px; border-right: 1px solid var(--line); }
+.io-cell:last-child { border-right: 0; }
+.io-k {
+  font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink2); margin-bottom: 8px;
+}
+.io-v { font-size: 14px; line-height: 1.65; }
+.io-v code { font-size: .92em; }
+.io-note {
+  padding: 14px 22px; border-top: 1px solid var(--line);
+  background: var(--warn-bg); color: var(--warn);
+  font-size: 14px; line-height: 1.65;
+}
+
+/* ---------- 檔案 / 終端機模擬 ---------- */
+.term {
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 20px 24px; font: 500 13.5px/1.9 var(--mono);
+  overflow-x: auto; white-space: pre; color: var(--ink);
+}
+.term .c  { color: var(--ink2); }
+.term .g  { color: var(--ok); font-weight: 700; }
+.term .y  { color: var(--warn); font-weight: 700; }
+.term .b  { color: var(--accent); font-weight: 700; }
+
+/* ---------- 兩欄對照 ---------- */
+.report { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.rb { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
+.rb:last-child { border-bottom: 0; }
+.rb-l { padding: 18px 22px; border-right: 1px solid var(--line); }
+.rb-r { padding: 18px 22px; background: var(--bg2); }
+.rb-h { font: 600 .9em/1.5 var(--mono); color: var(--accent); }
+.rb-d { color: var(--ink2); font-size: 15px; line-height: 1.6; }
+.rb-opt { font-size: 12px; color: var(--warn); font-weight: 700; }
+
+/* ---------- 警示卡 ---------- */
+.stuck { display: grid; gap: 14px; }
+.st {
+  background: var(--bg2); border: 1px solid var(--line);
+  border-left: 4px solid var(--warn); border-radius: 0 12px 12px 0;
+  padding: 18px 22px;
+}
+.st-q { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.st-a { color: var(--ink2); font-size: 15px; line-height: 1.7; }
+
+/* ---------- 收尾 ---------- */
+.closing {
+  margin-top: 76px; padding: 34px 30px;
+  background: var(--accent-bg); border-radius: 14px;
+  font-size: 21px; line-height: 1.6; font-weight: 600; text-align: center;
+}
+footer {
+  margin-top: 44px; padding-top: 22px; border-top: 1px solid var(--line);
+  color: var(--ink2); font-size: 14px; line-height: 1.9;
+}
+footer a { color: var(--accent); }
+
+@media (max-width: 680px) {
+  h1 { font-size: 31px; }
+  h3 { font-size: 22px; }
+  .ba { grid-template-columns: 1fr; }
+  .ba-arrow { justify-content: center; transform: rotate(90deg); }
+  .rb, .io-body { grid-template-columns: 1fr; }
+  .rb-l { border-right: 0; border-bottom: 1px solid var(--line); }
+  .io-cell { border-right: 0; border-bottom: 1px solid var(--line); }
+  .io-cell:last-child { border-bottom: 0; }
+  .step { grid-template-columns: 50px 1fr; gap: 14px; }
+  .num { width: 50px; height: 50px; font-size: 22px; }
+}
+
+/* ---------- 掛點圖（步驟 → 鉤子 → 簽章） ----------
+ *
+ * 用 grid 而不是在 <pre> 裡用空格對齊：等寬字型對 CJK 走的是後備字型，
+ * 字寬不保證是拉丁字元的兩倍，所以用字元數算出來的欄位在別台機器上會跑掉。 */
+.hooks {
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--bg2); padding: 22px 26px;
+}
+.hook-row {
+  display: grid; grid-template-columns: 1fr auto 1.1fr;
+  gap: 10px 22px; align-items: baseline; padding: 7px 0;
+}
+.hook-step { font-size: 15px; }
+.hook-step b { font-weight: 700; }
+.hook-step .s { color: var(--ink2); margin-right: 8px; }
+.hook-name {
+  font: 700 13.5px/1.6 var(--mono); white-space: nowrap;
+}
+.hook-name::before { content: "←\00a0"; color: var(--ink2); font-weight: 400; }
+.hook-name.t { color: var(--ok); }
+.hook-name.u { color: var(--accent); }
+.hook-sig { font: 500 13px/1.6 var(--mono); color: var(--ink2); }
+.hook-none { color: var(--ink2); font: 500 13px/1.6 var(--mono); }
+.hook-legend {
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  font-size: 14px; color: var(--ink2);
+}
+.hook-legend b.t { color: var(--ok); }
+.hook-legend b.u { color: var(--accent); }
+@media (max-width: 680px) {
+  .hook-row { grid-template-columns: 1fr; gap: 2px; padding: 12px 0; }
+  .hook-name { white-space: normal; }
+}
