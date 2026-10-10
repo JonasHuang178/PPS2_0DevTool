@@ -2,6 +2,8 @@
 
 > 這個功能的細節：畫面、五步流程、報告長什麼樣、產物與設定。
 >
+> - **第一次接觸這個功能 → [getting-started.html](getting-started.html)**
+>   （四下操作、五步流程、報告五塊、常見卡點。用瀏覽器開）
 > - 要寫自己的 device（客製分析邏輯與報告版面）→ [device-authoring.md](device-authoring.md)
 > - 要不開 Qt 跑（命令列或 CI）→ [cli.md](cli.md)
 > - 工具的整體架構 → [最外層 README](../../README.md)

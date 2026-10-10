@@ -178,6 +178,7 @@ PPS2_0DevTool/
     │   ├── README.md         功能細節
     │   └── cli.md            不開 Qt 怎麼跑
     └── ai-analysis-gitlab-mr/
+        ├── getting-started.html  入門圖解（第一次接觸先看這份）
         ├── README.md         功能細節
         ├── cli.md            不開 Qt 怎麼跑（命令列與 CI 是同一組指令）
         └── device-authoring.md  寫自己的 device
@@ -245,7 +246,7 @@ qmake PPS2_0DevTool.pro && make
 | 功能 | 資料夾 | 裡面有什麼 |
 |---|---|---|
 | **Single Building** | [`docs/single-building/`](docs/single-building/) | [`README.md`](docs/single-building/README.md) 資料流、哪個操作觸發哪支腳本、已知行為<br>[`cli.md`](docs/single-building/cli.md) 四支腳本的介面與跑一次的指令 |
-| **AI Analysis GitLab MR** | [`docs/ai-analysis-gitlab-mr/`](docs/ai-analysis-gitlab-mr/) | [`README.md`](docs/ai-analysis-gitlab-mr/README.md) 畫面、五步流程、報告版面、涵蓋範圍、憑證、已知行為<br>[`cli.md`](docs/ai-analysis-gitlab-mr/cli.md) 在命令列或 CI 上跑五步流程<br>[`device-authoring.md`](docs/ai-analysis-gitlab-mr/device-authoring.md) 讓一條產品線有自己的分析邏輯與報告版面 |
+| **AI Analysis GitLab MR** | [`docs/ai-analysis-gitlab-mr/`](docs/ai-analysis-gitlab-mr/) | [`README.md`](docs/ai-analysis-gitlab-mr/README.md) 畫面、五步流程、報告版面、涵蓋範圍、憑證、已知行為<br>[`getting-started.html`](docs/ai-analysis-gitlab-mr/getting-started.html) **第一次接觸先看這份**（瀏覽器開）<br>[`cli.md`](docs/ai-analysis-gitlab-mr/cli.md) 在命令列或 CI 上跑五步流程<br>[`device-authoring.md`](docs/ai-analysis-gitlab-mr/device-authoring.md) 讓一條產品線有自己的分析邏輯與報告版面 |
 
 **每個功能資料夾裡都有 `README.md` 與 `cli.md`，名字固定。** 想知道這個功能怎麼用就看
 `README.md`，想不開 Qt 跑就看 `cli.md` —— 不必每次先找檔名。多出來的那一份
