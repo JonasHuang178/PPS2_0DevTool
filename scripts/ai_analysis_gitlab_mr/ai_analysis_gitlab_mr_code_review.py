@@ -344,6 +344,9 @@ def _gather(params, keyword, base_url, token, heading):
 def _parse_with_hook(text, heading, key, debug_dir):
     """載入該 device 的 parse_code_review 鉤子並執行它。
 
+    **不依種類解析**：這一支雖然跑在步驟 4、種類已經解出來了，但審閱報告的格式是
+    device 的屬性 —— 一個 device 底下只有一種格式。詳見 device/__init__.py 的分組說明。
+
     回傳鉤子的結果；任何失敗都轉成 CodeReviewUnavailable —— 訊息進結構的 error 欄位、
     報告顯示那一段、**流程繼續**。這一步跑在 AI 分析之後，讓它失敗會把一份已經完成、
     已經付費的分析整份丟掉，而這一條對「鉤子壞了」與「文件不合約定」同樣成立。

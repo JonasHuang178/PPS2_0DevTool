@@ -60,10 +60,11 @@
 </div>
 
   <p class="muted" style="font-size:15px;margin-top:16px">
-    前兩支不因種類而異，是因為它們在種類被決定<strong>之前</strong>就執行
-    （<code>mr_type.py</code> 正是決定它的那一支）。
-    <code>parse_code_review</code> 不因種類而異，是因為那份報告的格式取決於你們用哪一套
-    code review 工具，而不是這筆 MR 是 bug 還是 feature。
+    藍色那三支的理由<strong>不一樣</strong>。<code>jira_key</code> 與
+    <code>mr_type</code> 在步驟 2 執行，<strong>看不到</strong>種類 —— 那時候它還不存在
+    （<code>mr_type.py</code> 正是產生它的那一支）。<br>
+    <code>parse_code_review</code> 在步驟 4 執行，<strong>看得到</strong>種類，但
+    <strong>刻意不用</strong>：審閱報告的格式是 device 的屬性，一個 device 底下只有一種。
   </p>
 </section>
 
@@ -408,6 +409,23 @@ device/ssd/
     <div class="qa-item">
       <div class="qa-q"><span>一定要分種類（type）嗎？</span></div>
       <div class="qa-a"><span>不用。沒有子目錄就是所有 MR 用同一份 <code>summary</code> 與 <code>merge_to_md</code>。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>我們的 code review 報告格式不一樣，要怎麼改？</span></div>
+      <div class="qa-a"><span>在你的 device 底下放一份 <code>parse_code_review.py</code>，
+      從 <code>_template/parse_code_review.py</code> 複製出來改。你會拿到<strong>現成的全文</strong>
+      （查附件、下載、解碼都在入口做完了），要做的只有兩件事：擷取要進報告的那一段、判定結論。<br>
+      節名與預設不同的話，在 <code>__init__.py</code> 宣告
+      <code>CODE_REVIEW_SOURCE_HEADING</code>，入口會把它當 <code>heading</code> 傳給你。<br>
+      <strong>不要放進種類目錄</strong> —— 這一支不依種類解析，放了也不會被載入。
+      需要支援第二種格式時，另開一個 device。</span></div>
+    </div>
+    <div class="qa-item">
+      <div class="qa-q"><span>為什麼 <code>parse_code_review</code> 不能依種類分？</span></div>
+      <div class="qa-a"><span>因為審閱報告的格式是 <strong>device 的屬性</strong> ——
+      一個 device 底下只有一種，不會因為這一筆 MR 是 bug 還是 feature 而不同。<br>
+      它跑在步驟 4，<strong>技術上看得到種類</strong>，所以這是刻意的決定而不是限制。
+      spec 把它寫成了禁令並用 scenario 鎖住，免得下一個人把它當成疏漏改掉。</span></div>
     </div>
     <div class="qa-item">
       <div class="qa-q"><span>寫壞了會怎樣？</span></div>

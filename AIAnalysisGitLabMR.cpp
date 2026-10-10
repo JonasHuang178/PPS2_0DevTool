@@ -1437,6 +1437,9 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         params.insert(QString("jira_state"),
                       done.at(2).data.value(QString("analysis")).toObject()
                               .value(QString("jira_state")).toString());
+        //
+        // **不轉送種類。** 這一步的鉤子不依種類解析 —— 審閱報告的格式是 device 的
+        // 屬性，一個 device 底下只有一種格式（見 device/__init__.py 的分組說明）。
         break;
 
     case 4:

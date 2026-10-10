@@ -31,8 +31,14 @@ cp -r device/_template/_type_template device/ssd/bug
   merge_to_md.py  步驟 5：AI 分析那一段的版面
 ```
 
-`jira_key.py` 與 `mr_type.py` **不會**。它們在種類被決定之前執行（後者就是決定它的
-那一支），所以種類對它們沒有意義 —— 放進種類目錄不會有任何作用。
+另外三支放進種類目錄**不會有任何作用**，但理由不一樣：
+
+`jira_key.py` 與 `mr_type.py` 在種類被決定**之前**執行（後者就是決定它的那一支），
+所以種類那一層對它們還不存在。
+
+`parse_code_review.py` 在步驟 4 執行，**看得到種類**，但刻意不依種類解析 —— 審閱報告的
+格式是 device 的屬性，一個 device 底下只有一種。要支援第二種格式就另開一個 device。
+這條寫在 spec 裡，而且有 scenario 鎖著：放進種類目錄也不會被載入。
 
 兩支都是選用的，只放你要覆寫的那一支。
 
