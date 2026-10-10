@@ -12,8 +12,8 @@
 
 ## 四支腳本的介面
 
-四支都**不需要憑證、不需要 `config`**。要給的只有 `source_path` 與（寫入那一支的）
-`params`。
+四支都**不需要憑證、不需要 `config`**，連 `requests` 都用不到 —— 這個功能完全不連網，
+只碰本機的檔案系統。對照 AI Analysis 那一條要 GitLab、JIRA 與 AI 三組憑證才跑得起來。
 
 | 腳本 | `action` | 要給什麼 | 做什麼 |
 |---|---|---|---|
@@ -22,12 +22,28 @@
 | `single_building_modify_setting.py` | `modify_setting` | `params.files`（絕對路徑清單） | 寫入暫存設定檔 |
 | `single_building_recovery_setting.py` | `recovery_setting` | — | 清空暫存設定檔並回讀 |
 
-`source_path` 是**目錄**，不是檔案。只有 `list_source` 會用到它；另外三支讀寫的是
-暫存設定檔，與來源路徑無關。
+`source_path` 是**目錄**，不是檔案。只有 `list_source` 會用到它 —— 另外三支讀寫的是暫存
+設定檔，而那份設定存的是**絕對路徑**，與當下的來源目錄無關。（這也是為什麼在工具裡換了
+來源目錄會把設定清空：原本保存的路徑不再指向使用者當下在看的檔案。）
+
+`list_source` **不遞迴**，只掃那一層。遞迴是刻意不做的 —— 一棵大樹會一次回來幾千筆，
+而使用者要的是「這一層有什麼」。副檔名比對**不分大小寫**：Windows 的檔案系統本身就不分，
+只收小寫會讓使用者看不到自己明明放在那裡的 `.CPP`。
+
+`list_target` 讀到檔案不存在或內容為空時**回成功、空清單**，不是失敗 —— 那代表「還沒保存
+過任何設定」，是正常狀態而不是錯誤。
 
 暫存設定檔的位置由 `scripts/single_building/__init__.py` 的 `SETTING_FILE_NAME`
-決定一次（目前 `PPS2_0DevTool_single_building.txt`，放在作業系統的暫存目錄），
-三支讀寫它的腳本共用那一個宣告。
+決定一次（目前 `PPS2_0DevTool_single_building.txt`），三支讀寫它的腳本共用那一個宣告。
+三支各寫一份字面路徑的話，指不一致的症狀是「寫進去讀不出來」—— 而且從任何一支腳本單獨
+看都毫無異狀。
+
+它放在作業系統的暫存目錄，所以**重新開機之後會消失**，那是預期行為。要跨重啟保留的話，
+改 `setting_file_path()` 一個函式即可。
+
+**`modify_setting` 是整份覆寫，不是附加。** 要保留先前的選擇就得自己先 `list_target`
+讀出來、合併之後再一起寫回去 —— 以為是附加的人會安靜地弄丟原本保存的內容，而那一步
+仍然回報成功。
 
 ## 跑一次
 
@@ -69,8 +85,8 @@ echo '{"action":"recovery_setting","source_path":"","config":{},"params":{}}' \
   | python3 single_building/single_building_recovery_setting.py --request-stdin
 ```
 
-`list_source` 的 `data.files` 的 `path` 可以直接當 `modify_setting` 的
-`params.files` 用 —— 那正是 Qt 那一側在做的事，它不改這些值。
+`list_source` 的 `data.files` 的 `path` 可以直接當 `modify_setting` 的 `params.files`
+用 —— 那正是 Qt 那一側在做的事，它不改這些值。Qt 只負責讓使用者挑，挑完原樣轉送。
 
 ## 不必記上面那些
 
