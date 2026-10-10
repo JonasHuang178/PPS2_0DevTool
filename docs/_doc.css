@@ -282,3 +282,25 @@ footer a { color: var(--accent); }
 .qa-q::before { content: "Q"; background: var(--accent); color: #fff; }
 .qa-a::before { content: "A"; background: var(--line);   color: var(--ink); }
 .qa-a strong { color: var(--ink); }
+
+/* ---------- 離站連結 ----------
+ *
+ * 文件站台關掉了 Jekyll（為了讓 _doc.css 這種底線開頭的檔案發布得出去），
+ * 代價是 .md 在站台上以純文字送出。所以參考文件一律連到 github.com —— 它把
+ * markdown 渲染得比任何東西都好。這個標記讓讀者知道自己要離開站台了。 */
+.ext::after {
+  content: "GitHub";
+  font: 700 10px/1 var(--mono); letter-spacing: .06em;
+  background: var(--line); color: var(--ink2);
+  padding: 3px 6px; border-radius: 5px; margin-left: 6px;
+  vertical-align: 1px;
+}
+
+/* 索引頁上連往 GitHub 的那幾張卡片 */
+.idx-card.ext-card .idx-t::after {
+  content: "GitHub";
+  font: 700 10px/1 var(--mono); letter-spacing: .06em;
+  background: var(--line); color: var(--ink2);
+  padding: 3px 6px; border-radius: 5px; margin-left: 8px;
+  vertical-align: 2px;
+}

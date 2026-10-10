@@ -67,27 +67,27 @@
   <h2>參考文件</h2>
   <h3>完整規則與欄位，在 GitHub 上讀</h3>
   <div class="idx">
-    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/README.md">
+    <a class="idx-card ext-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/README.md">
       <div class="idx-t">最外層 README<span class="tag tag-ref">參考</span></div>
       <div class="idx-d">最高原則、目錄結構、建置、文件導覽。</div>
     </a>
-    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/user-guide.md">
+    <a class="idx-card ext-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/user-guide.md">
       <div class="idx-t">使用這個工具<span class="tag tag-ref">參考</span></div>
       <div class="idx-d">設定檔每一個鍵、設定檔與 git、Debug_Mode。</div>
     </a>
-    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/contributing.md">
+    <a class="idx-card ext-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/contributing.md">
       <div class="idx-t">加一個功能、寫一支腳本<span class="tag tag-ref">參考</span></div>
       <div class="idx-d">改完程式文件要跟著改哪裡、外殼服務、多步驟流程、信封格式、跨平台。</div>
     </a>
-    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/tree/add-ai-analysis-gitlab-mr/docs/single-building">
+    <a class="idx-card ext-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/tree/add-ai-analysis-gitlab-mr/docs/single-building">
       <div class="idx-t">Single Building<span class="tag tag-ref">參考</span></div>
       <div class="idx-d">功能細節與不開 Qt 怎麼跑。</div>
     </a>
-    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/tree/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr">
+    <a class="idx-card ext-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/tree/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr">
       <div class="idx-t">AI Analysis GitLab MR 的參考文件<span class="tag tag-ref">參考</span></div>
       <div class="idx-d">功能細節 902 行、完整參數 190 行、device 完整說明 699 行。</div>
     </a>
-    <a class="idx-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/scripts/AUTHORING.md">
+    <a class="idx-card ext-card" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/scripts/AUTHORING.md">
       <div class="idx-t">腳本撰寫手冊<span class="tag tag-ref">參考</span></div>
       <div class="idx-d">寫任何腳本之前先讀這一份：硬性規則、禁止清單、AI 特別容易做錯的事。</div>
     </a>
@@ -96,7 +96,13 @@
 
 <footer>
   這個站台發布自 <code>add-ai-analysis-gitlab-mr</code> 分支的 <code>/docs</code> 目錄。<br>
-  分支合併之後要在 repo 的 Settings → Pages 改指向 <code>main</code>，上面的參考文件連結也要跟著換。
+  <strong>分支合併時有兩件事要做</strong>：在 repo 的 Settings → Pages 改指向 <code>main</code>；
+  把所有指向 GitHub 的連結裡的分支名換成 <code>main</code> —— 那些連結散在這一頁與四份圖解頁，
+  用 <code>grep -rn 'add-ai-analysis-gitlab-mr' docs/</code> 一次找得到。<br>
+  <br>
+  參考文件連到 github.com 而不是這個站台，是因為站台關掉了 Jekyll（否則
+  <code>_doc.css</code> 這種底線開頭的檔案不會被發布），而關掉之後 <code>.md</code>
+  在站台上是純文字。GitHub 把 markdown 渲染得比任何東西都好。
 </footer>
 
 </main>
