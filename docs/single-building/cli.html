@@ -259,43 +259,27 @@ echo '{"action":"recovery_setting","source_path":"","config":{},"params":{}}' \
 </section>
 
 <!-- ============ Q&A ============ -->
+<!-- ============ 常見問題 ============
+
+     這一節的題目全部清空了，等使用者逐題提出需求再加回來。
+
+     要加第一題時：把這整段註解的頭尾拿掉，然後照下面的形狀填。
+     答案裡有 strong 或 br 這類標籤時，**一定**要包在內層那一個 span 裡 ——
+     .qa-a 是 grid，直接放的話每個標籤都會變成獨立的格子，被擠成一行一個字。
+
 <section>
   <h2>常見問題</h2>
   <h3>在命令列上最常被問的</h3>
 
   <div class="qa">
     <div class="qa-item">
-      <div class="qa-q"><span>要先裝什麼？</span></div>
-      <div class="qa-a"><span>只要 Python 3。<strong>連 <code>requests</code> 都用不到</strong> ——
-      這四支完全不連網。</span></div>
-    </div>
-    <div class="qa-item">
-      <div class="qa-q"><span>設定檔到底在哪裡？</span></div>
-      <div class="qa-a"><span>作業系統的暫存目錄（Windows 上是 <code>%TEMP%</code>）。
-      每一支的回應 <code>detail</code> 都會印出完整路徑，不必自己猜。</span></div>
-    </div>
-    <div class="qa-item">
-      <div class="qa-q"><span>可以挑 <code>.cpp</code> 以外的副檔名嗎？</span></div>
-      <div class="qa-a"><span>不能從命令列改 —— 它是功能專屬的定義，寫在
-      <code>scripts/single_building/__init__.py</code> 的 <code>SOURCE_SUFFIX</code>。</span></div>
-    </div>
-    <div class="qa-item">
-      <div class="qa-q"><span><code>modify_setting</code> 是附加還是覆寫？</span></div>
-      <div class="qa-a"><span><strong>整份覆寫。</strong>要保留舊的就先 <code>list_target</code>
-      讀出來，自己合併之後再一起寫回去。</span></div>
-    </div>
-    <div class="qa-item">
-      <div class="qa-q"><span>會遞迴掃子目錄嗎？</span></div>
-      <div class="qa-a"><span>不會，只掃<strong>那一層</strong>。這是刻意的 ——
-      遞迴時一棵大樹會回來幾千筆。</span></div>
-    </div>
-    <div class="qa-item">
-      <div class="qa-q"><span>命令列改了設定，工具裡看得到嗎？</span></div>
-      <div class="qa-a"><span>看得到 —— 兩邊讀寫的是<strong>同一個檔案</strong>。
-      但工具不會自己重讀，要切走再切回那個分頁才會重新載入。</span></div>
+      <div class="qa-q"><span>問題寫這裡？</span></div>
+      <div class="qa-a"><span>答案寫這裡。</span></div>
     </div>
   </div>
 </section>
+
+============ 常見問題結束 ============ -->
 
 <div class="closing">
   四支都不連網、不要憑證。<br>
