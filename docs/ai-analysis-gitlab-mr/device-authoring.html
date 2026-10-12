@@ -382,167 +382,137 @@ device/ssd/
   <h3>開始寫之前會想問的</h3>
 
   <div class="qa">
+
     <div class="qa-item">
-      <div class="qa-q"><span>如果想要新增一個 device，該怎麼做？</span></div>
+      <div class="qa-q"><span>怎麼新增一個 device？</span></div>
       <div class="qa-a"><span>
-        <strong>一、複製範本，目錄名就是 device 名</strong><br>
-        <code>cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_mr/device/ssd</code><br>
-        名字會被當成<strong>模組名 import</strong>，所以必須通過
-        <code>^[a-z_][a-z0-9_]*$</code> —— 小寫英數與底線、不以數字開頭。
-        <code>ssd_gen4</code> 可以，<code>ssd-gen4</code> 不行（會收到一則訊息要你改成底線）。<br>
-        <br>
-        <strong>二、在 <code>__init__.py</code> 宣告 <code>VERSION</code></strong><br>
-        <strong>這一個沒有就直接失敗。</strong>它會印在報告末尾的出處，改了產出方式就往上加 ——
-        不加的話，新舊兩套邏輯產生的報告會帶同一個版本號。<br>
-        <br>
-        <strong>三、只留你要覆寫的鉤子，其餘刪掉</strong><br>
-        五支全是選用的。<strong>回退是「逐支鉤子」的，不是「逐 device」的</strong> ——
-        不是「你的 device 找不到就整個用 default」，而是<strong>每一支各自去找</strong>。
-        你放了哪幾支，就只有那幾支是你的。<br>
-        <br>
-        找的順序：<br>
-        <code>jira_key</code>、<code>mr_type</code>、<code>parse_code_review</code> 找兩層 ——
-        <code>&lt;你的&gt;/</code> → <code>default/</code><br>
-        <code>summary</code>、<code>merge_to_md</code> 找三層 ——
-        <code>&lt;你的&gt;/&lt;種類&gt;/</code> → <code>&lt;你的&gt;/</code> → <code>default/</code><br>
-        <br>
-        三個例子，底下每一條都是實際建出那個目錄、跑一次載入器印出來的結果：<br>
-        <br>
-        <strong>① 目錄裡只有 <code>__init__.py</code></strong> —— 合法。五支全部用
-        <code>default</code> 的，行為與不指定 device 完全相同。那是一個只宣告了版本號的
-        device，之後再慢慢往裡面加。<br>
-        <br>
-        <strong>② 只放了 <code>merge_to_md.py</code></strong>（只想改報告版面）<br>
-        <code>merge_to_md</code> → 你的那一份<br>
-        其餘四支 → <code>default</code> 的<br>
-        這就是「只想改版面不必複製一整支 summary」的意思 —— 複製過去的那一份會跟著
-        <code>default</code> 漂移，而你不會發現。<br>
-        <br>
-        <strong>③ 放了 <code>summary.py</code>，另外開一個 <code>bug/</code> 裡面放
-        <code>summary.py</code> 與 <code>merge_to_md.py</code></strong><br>
-        這一筆 MR 的種類是 <code>bug</code> 時：<br>
-        <code>summary</code> → <code>你的/bug/summary.py</code>　<code>merge_to_md</code> →
-        <code>你的/bug/merge_to_md.py</code><br>
-        這一筆<strong>沒有</strong>種類時：<br>
-        <code>summary</code> → <code>你的/summary.py</code>（退一層）<br>
-        <code>merge_to_md</code> → <code>default/merge_to_md.py</code>（<strong>退兩層</strong>，
-        因為你的 device 那一層根本沒放這一支）<br>
-        <br>
-        最後那一行是整個機制的重點：<strong>每一支鉤子、每一層都各自獨立判斷</strong>，
-        不會因為同一個目錄裡有別的檔案就跟著命中。<br>
-        <br>
-        <strong>四、告訴工具要用它</strong><br>
-        設定檔 <code>Function</code> 區塊的 <code>PPS_Device</code> 填你的名字；
-        CI 則設環境變數 <code>PPS_DEVICE</code>。比對前一律轉小寫，所以設定檔寫
-        <code>SSD</code> 也找得到 <code>ssd</code>。<br>
-        <strong>打錯字是錯誤，不會退回 default</strong> —— 靜默用通用邏輯會產出一份用錯
-        邏輯、而每一步都回報成功的報告。<br>
-        <br>
-        <strong>五、跑一次確認它真的被載到</strong><br>
-        看報告末尾出處那一行的 <code>Device</code> 欄位。勾 Add Debug file 的話，
-        中間產物也會留在你指定的目錄裡。<br>
-        <br>
-        <strong>⚠️ 不要改 <code>device/default/</code></strong> —— 它在 repo 裡，而每次建置
-        都會<strong>無條件覆蓋</strong> <code>scripts/</code>。你自己新增的目錄因為 repo 裡沒有
-        同名檔案，不會被覆蓋也不會被刪。<br>
-        <br>
-        每一步的細節見上面的<strong>「開始」</strong>與<strong>「每一支鉤子」</strong>兩節。
+        <div class="spec">
+          <div class="spec-k">1</div>
+          <div class="spec-v">複製範本：<code>cp -r device/_template device/ssd</code><br>
+            <span class="dim">目錄名就是 device 名，必須是合法識別字（<code>ssd_gen4</code> 可以，<code>ssd-gen4</code> 不行）</span></div>
+          <div class="spec-k">2</div>
+          <div class="spec-v">在 <code>__init__.py</code> 宣告 <code>VERSION</code>
+            <span class="dim">—— 沒有就直接失敗</span></div>
+          <div class="spec-k">3</div>
+          <div class="spec-v">只留你要覆寫的鉤子，其餘刪掉
+            <span class="dim">—— 缺的各自用 <code>default</code> 的</span></div>
+          <div class="spec-k">4</div>
+          <div class="spec-v">設定檔 <code>PPS_Device</code> 填名字（CI 設環境變數 <code>PPS_DEVICE</code>）</div>
+          <div class="spec-k">5</div>
+          <div class="spec-v">跑一次，看報告末尾出處的 <code>Device</code> 欄位</div>
+        </div>
+        <p class="spec-note">⚠️ 不要改 <code>device/default/</code> —— 每次建置會覆蓋它。
+        你新增的目錄不會被動到。</p>
       </span></div>
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span><code>default</code> 怎麼抽出 JIRA key？我要用自己的規則怎麼改？</span></div>
+      <div class="qa-q"><span>回退機制：沒放的鉤子會用哪一份？</span></div>
       <div class="qa-a"><span>
-        <strong>default 的規則：標題的第一個方括號。</strong><br>
-        <code>[PPS-1234] 修正重試上限的競態</code> → <code>PPS-1234</code><br>
-        實作就是一條 <code>\[([^\]\n]*)\]</code>，取第一個命中、去掉前後空白。
-        抽不到就回空字串。<br>
-        <br>
-        <strong>它不判定有效性 —— 抽到什麼就回什麼。</strong>所以
-        <code>[WIP] [PPS-1234] ...</code> 這種標題，這一支會回 <code>WIP</code>，
-        而不是跳過它去找下一個。判定「這像不像一個 key」是 <code>summary.py</code> 的事，
-        兩者同屬一個 device，放在一起才不會各自漂移。<br>
-        <br>
-        <strong>要寫自己的：</strong>在你的 device 底下放 <code>jira_key.py</code>，
-        從 <code>_template/jira_key.py</code> 複製出來改 <code>extract(mr)</code>。<br>
-        你收到的 <code>mr</code> 有六個欄位：<code>title</code>、<code>source_branch</code>、
-        <code>target_branch</code>、<code>description</code>、<code>repo</code>、
-        <code>mr_iid</code> —— 所以規則不限於標題，從分支名抽也可以。<br>
-        <strong>回字串；抽不到回 <code>""</code>，不要回 <code>None</code></strong>，
-        那個表示法由入口統一。<br>
-        <br>
-        ⚠️ <strong>標題格式與 default 不同的話，<code>mr_type.py</code> 多半要一起寫。</strong>
-        只寫這一支的話，種類會沿用 default 的規則（第二個方括號）去抽，而那多半是錯的位置。
+        <strong>逐支鉤子各自找</strong>，不是整個 device 一起退。
+        <div class="spec">
+          <div class="spec-k">兩層</div>
+          <div class="spec-v"><code>jira_key</code>、<code>mr_type</code>、<code>parse_code_review</code><br>
+            <span class="dim"><code>&lt;你的&gt;/</code> → <code>default/</code></span></div>
+          <div class="spec-k">三層</div>
+          <div class="spec-v"><code>summary</code>、<code>merge_to_md</code><br>
+            <span class="dim"><code>&lt;你的&gt;/&lt;種類&gt;/</code> → <code>&lt;你的&gt;/</code> → <code>default/</code></span></div>
+          <div class="spec-k">範例</div>
+          <div class="spec-v"><span class="dim">device 放了 <code>summary.py</code>，另有 <code>bug/merge_to_md.py</code></span>
+            <div class="spec-pre">種類 bug   summary → 你的/summary.py
+           merge_to_md → 你的/bug/merge_to_md.py
+沒有種類   summary → 你的/summary.py
+           merge_to_md → default/merge_to_md.py</div></div>
+        </div>
+        <p class="spec-note">最後一行是重點：<code>merge_to_md</code> 退了<strong>兩層</strong>，
+        因為你的 device 那一層沒放這一支。每一支、每一層都各自判斷。</p>
       </span></div>
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span><code>default</code> 怎麼抽出種類？我要用自己的規則怎麼改？</span></div>
+      <div class="qa-q"><span>JIRA key 怎麼抽的？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
-        <strong>default 的規則：標題的第二個方括號。</strong>第一個留給 JIRA key。<br>
-        <code>mod:[PPS-1234][Bug] 修正重試上限</code><br>
-        　　　　<code>[PPS-1234]</code> 第一個 → JIRA key<br>
-        　　　　<code>[Bug]</code> 第二個 → 種類 <code>Bug</code><br>
-        實作是把標題裡所有方括號依序抓出來，取第 2 個（程式裡是
-        <code>_BRACKET_INDEX = 1</code>）。<strong>那個常數是這份規則唯一的可變之處</strong> ——
-        取第三個方括號的 device，複製這個檔案改那一行就好。<br>
-        <br>
-        <strong>回傳值會被入口正規化</strong>：去前後空白、轉小寫、檢查形狀必須是
-        <code>^[a-z_][a-z0-9_]*$</code>。所以回 <code>"Bug"</code> 會對應到
-        <code>bug/</code> 目錄，你不必自己處理大小寫。<br>
-        <br>
-        <strong>不合法的字串視同「沒有種類」，不是錯誤</strong> ——
-        <code>[緊急]</code>、<code>[bug fix]</code>（有空白）都會被當成沒抽到。
-        那是 MR 作者打的字，不是部署的問題。後果是走該 device 的通用版；
-        除非你在 <code>__init__.py</code> 宣告 <code>STRICT_TYPE = True</code>，那時會失敗。<br>
-        <strong>回傳非字串則是直接失敗</strong> —— 那是鉤子寫壞了，不是「這筆沒有種類」。<br>
-        <br>
-        <strong>要寫自己的：</strong>放一份 <code>mr_type.py</code>，改 <code>extract(mr)</code>。
-        收到的欄位與 <code>jira_key</code> 完全相同。<br>
-        <strong>可以做映射</strong>：標題寫 <code>[FW-Update]</code>、這裡回
-        <code>"fw_update"</code>。目錄名必須是合法識別字，而標題長什麼樣是你們自己的約定，
-        中間怎麼換由你決定。
+        <div class="spec">
+          <div class="spec-k">規則</div>
+          <div class="spec-v">標題的<strong>第一個</strong>方括號</div>
+          <div class="spec-k">範例</div>
+          <div class="spec-v"><code>[PPS-1234] 修正重試上限</code> → <code>PPS-1234</code><br>
+            <code>[WIP] [PPS-1234] 修正…</code> → <code>WIP</code>
+            <span class="dim">（不判定有效性，抽到什麼就回什麼）</span></div>
+          <div class="spec-k">範本</div>
+          <div class="spec-v"><code>device/_template/jira_key.py</code></div>
+          <div class="spec-k">改哪裡</div>
+          <div class="spec-v"><code>extract(mr)</code></div>
+          <div class="spec-k">輸入</div>
+          <div class="spec-v"><code>mr</code> 六個欄位：<code>title</code>、<code>source_branch</code>、
+            <code>target_branch</code>、<code>description</code>、<code>repo</code>、<code>mr_iid</code></div>
+          <div class="spec-k">輸出</div>
+          <div class="spec-v">字串。抽不到回 <code>""</code>
+            <span class="dim">（不要回 <code>None</code>）</span></div>
+        </div>
+        <p class="spec-note">⚠️ 標題格式與 default 不同的話，<code>mr_type.py</code> 多半要一起寫 ——
+        不然種類會用 default 的規則去抽，位置是錯的。</p>
       </span></div>
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span><code>default</code> 怎麼看懂 code review 報告、怎麼判定通過？我要用自己的規則怎麼改？</span></div>
+      <div class="qa-q"><span>種類怎麼抽的？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
-        這件事分成兩段，<strong>兩段的改法不一樣</strong>。<br>
-        <br>
-        <strong>第一段：找到那一節（入口做的，由一個宣告決定）</strong><br>
-        入口在報告全文裡找 <code>CODE_REVIEW_SOURCE_HEADING</code> 指定的那一節，
-        預設是 <code>## 風險評估總表</code>，然後把<strong>那一節裡的第一張表格</strong>
-        交給鉤子。三件事是刻意的：<br>
-        範圍<strong>限制在下一個標題之前</strong> —— 否則那一節剛好沒有總表時會抓到下一節的
-        表格，貼進報告看起來完全正常；<br>
-        程式碼圍籬內的標題與表格<strong>都不算</strong>；<br>
-        只檢查<strong>形狀</strong>（表頭 + 分隔列），<strong>不檢查欄位名稱</strong>。<br>
-        <br>
-        <strong>第二段：判定通過（鉤子做的）</strong><br>
-        default 的規則是 <strong>最後一欄當數量，全部列加總為 0 就是 pass</strong>。<br>
-        <code>-</code>、<code>–</code>、<code>—</code>、<code>n/a</code>、<code>none</code>、
-        <code>無</code>、空格一律當 0（中文文件很常這樣表示「這一列沒有項目」）。<br>
-        <strong>只收純數字</strong> —— <code>3 件</code>、<code>~5</code>、<code>&gt;10</code>
-        都會報錯而不是猜，因為猜錯會讓一筆有風險的審閱被判成通過。<br>
-        合計列<strong>不必偵測</strong>：數量不會是負的，所以重複加不可能翻轉結論。<br>
-        一列資料都沒有（只有表頭）也是 0，也就是 pass —— 那張表的意思就是「沒有要列的項目」。<br>
-        <br>
-        <strong>要改哪一段：</strong><br>
-        只是<strong>節名不同</strong> → 在 <code>__init__.py</code> 宣告
-        <code>CODE_REVIEW_SOURCE_HEADING</code>，<strong>不必寫鉤子</strong>。<br>
-        <strong>表格形狀或判定規則不同</strong> → 放一份 <code>parse_code_review.py</code>。
-        你拿到的是<strong>現成的全文</strong>（查附件、挑最新那份、擋大小上限、下載、解碼
-        都在入口做完了，那些要 JIRA 權杖），要做的只有擷取與判定兩件事。<br>
-        回 <code>contract.code_review_parsed(risk_table, review_result)</code>，結論是
-        <code>PASS</code> / <code>FAIL</code> / <code>UNKNOWN</code>。
-        判不出來回 <code>UNKNOWN</code>，<strong>不要猜</strong> —— 印一個假結論出去，
-        讀的人會以為那是真的。<br>
-        擷取不到就 <code>raise contract.RiskTableError(訊息, 細節, 錯誤碼)</code>：
-        訊息會進報告那一段，而<strong>流程繼續</strong> —— 這一步跑在 AI 分析之後，
-        讓它失敗會把一份已經完成、已經付費的分析整份丟掉。
+        <div class="spec">
+          <div class="spec-k">規則</div>
+          <div class="spec-v">標題的<strong>第二個</strong>方括號
+            <span class="dim">（第一個留給 JIRA key）</span></div>
+          <div class="spec-k">範例</div>
+          <div class="spec-v"><code>mod:[PPS-1234][Bug] 修正…</code> → <code>Bug</code> → 對應 <code>bug/</code> 目錄</div>
+          <div class="spec-k">範本</div>
+          <div class="spec-v"><code>device/_template/mr_type.py</code></div>
+          <div class="spec-k">改哪裡</div>
+          <div class="spec-v"><code>extract(mr)</code><br>
+            <span class="dim">只是要換第幾個方括號的話，複製 <code>default/mr_type.py</code> 改
+            <code>_BRACKET_INDEX</code> 一行就好</span></div>
+          <div class="spec-k">輸入</div>
+          <div class="spec-v">與 <code>jira_key</code> 完全相同的六個欄位</div>
+          <div class="spec-k">輸出</div>
+          <div class="spec-v">字串。沒有就回 <code>""</code><br>
+            <span class="dim">入口會去空白、轉小寫，所以回 <code>"Bug"</code> 就對得上 <code>bug/</code>。
+            也可以映射：<code>[FW-Update]</code> → 回 <code>"fw_update"</code></span></div>
+        </div>
+        <p class="spec-note">抽到不合法的字（<code>緊急</code>、<code>bug fix</code>）視同<strong>沒有種類</strong>，
+        不是錯誤 —— 那是 MR 作者打的字。回傳非字串才是失敗。</p>
       </span></div>
     </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>code review 報告怎麼判定通過？要換規則怎麼寫？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-k">規則</div>
+          <div class="spec-v">在 <code>## 風險評估總表</code> 那一節取第一張表，
+            <strong>最後一欄當數量，加總為 0 就是 pass</strong></div>
+          <div class="spec-k">範例</div>
+          <div class="spec-v"><div class="spec-pre">| 類別   | 風險等級 | 數量 |
+| 記憶體 | 高       | 0    |   加總 0 → pass
+| 執行緒 | 中       | 2    |   加總 2 → fail</div>
+            <span class="dim"><code>-</code>、<code>無</code>、<code>n/a</code> 都當 0；
+            <code>3 件</code>、<code>~5</code> 會報錯而不猜</span></div>
+          <div class="spec-k">範本</div>
+          <div class="spec-v"><code>device/_template/parse_code_review.py</code></div>
+          <div class="spec-k">改哪裡</div>
+          <div class="spec-v"><code>parse(inputs)</code></div>
+          <div class="spec-k">輸入</div>
+          <div class="spec-v"><code>text</code> 報告全文、<code>heading</code> 要找的節名、
+            <code>jira_key</code>、<code>debug_write</code><br>
+            <span class="dim">查附件、下載、解碼都在入口做完了，你拿到的是現成全文</span></div>
+          <div class="spec-k">輸出</div>
+          <div class="spec-v"><code>contract.code_review_parsed(risk_table, review_result)</code><br>
+            <span class="dim">結論三選一：<code>PASS</code> / <code>FAIL</code> /
+            <code>UNKNOWN</code>。判不出來回 <code>UNKNOWN</code>，不要猜</span></div>
+        </div>
+        <p class="spec-note">💡 <strong>只是節名不同的話不必寫鉤子</strong> ——
+        在 <code>__init__.py</code> 宣告 <code>CODE_REVIEW_SOURCE_HEADING</code> 就好。</p>
+      </span></div>
+    </div>
+
   </div>
 </section>
 

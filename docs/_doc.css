@@ -304,3 +304,32 @@ footer a { color: var(--accent); }
   padding: 3px 6px; border-radius: 5px; margin-left: 8px;
   vertical-align: 2px;
 }
+
+/* ---------- Q&A 裡的規格表 ----------
+ *
+ * 每一支鉤子的答案都是同一組欄位：規則、範例、範本、改哪裡、輸入、輸出。
+ * 用固定欄位而不是散文，讀者比較三支時眼睛不必重新找位置。 */
+.spec {
+  display: grid; grid-template-columns: 4.5em minmax(0, 1fr);
+  gap: 6px 16px; margin: 4px 0 2px;
+}
+.spec-k {
+  font-size: 13px; font-weight: 700; color: var(--ink);
+  text-align: right; padding-top: 1px;
+}
+.spec-v { font-size: 14.5px; line-height: 1.7; }
+.spec-v code { font-size: .92em; }
+.spec-v .dim { color: var(--ink2); }
+.spec-note {
+  margin: 12px 0 0; padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 14px; line-height: 1.7;
+}
+.spec-pre {
+  font: 500 12.5px/1.7 var(--mono); white-space: pre;
+  overflow-x: auto; color: var(--ink2);
+}
+@media (max-width: 680px) {
+  .spec { grid-template-columns: 1fr; gap: 2px 0; }
+  .spec-k { text-align: left; margin-top: 8px; }
+}
