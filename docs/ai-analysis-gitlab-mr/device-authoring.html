@@ -377,27 +377,48 @@ device/ssd/
   </div>
 </section>
 
-<!-- ============ 常見問題 ============
-
-     這一節的題目全部清空了，等使用者逐題提出需求再加回來。
-
-     要加第一題時：把這整段註解的頭尾拿掉，然後照下面的形狀填。
-     答案裡有 strong 或 br 這類標籤時，**一定**要包在內層那一個 span 裡 ——
-     .qa-a 是 grid，直接放的話每個標籤都會變成獨立的格子，被擠成一行一個字。
-
 <section>
   <h2>常見問題</h2>
   <h3>開始寫之前會想問的</h3>
 
   <div class="qa">
     <div class="qa-item">
-      <div class="qa-q"><span>問題寫這裡？</span></div>
-      <div class="qa-a"><span>答案寫這裡。</span></div>
+      <div class="qa-q"><span>如果想要新增一個 device，該怎麼做？</span></div>
+      <div class="qa-a"><span>
+        <strong>一、複製範本，目錄名就是 device 名</strong><br>
+        <code>cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_mr/device/ssd</code><br>
+        名字會被當成<strong>模組名 import</strong>，所以必須通過
+        <code>^[a-z_][a-z0-9_]*$</code> —— 小寫英數與底線、不以數字開頭。
+        <code>ssd_gen4</code> 可以，<code>ssd-gen4</code> 不行（會收到一則訊息要你改成底線）。<br>
+        <br>
+        <strong>二、在 <code>__init__.py</code> 宣告 <code>VERSION</code></strong><br>
+        <strong>這一個沒有就直接失敗。</strong>它會印在報告末尾的出處，改了產出方式就往上加 ——
+        不加的話，新舊兩套邏輯產生的報告會帶同一個版本號。<br>
+        <br>
+        <strong>三、只留你要覆寫的鉤子，其餘刪掉</strong><br>
+        五支全是選用的。只想改報告版面就只留 <code>merge_to_md.py</code>，
+        缺的會自動用 <code>default</code> 的那一份。<br>
+        <br>
+        <strong>四、告訴工具要用它</strong><br>
+        設定檔 <code>Function</code> 區塊的 <code>PPS_Device</code> 填你的名字；
+        CI 則設環境變數 <code>PPS_DEVICE</code>。比對前一律轉小寫，所以設定檔寫
+        <code>SSD</code> 也找得到 <code>ssd</code>。<br>
+        <strong>打錯字是錯誤，不會退回 default</strong> —— 靜默用通用邏輯會產出一份用錯
+        邏輯、而每一步都回報成功的報告。<br>
+        <br>
+        <strong>五、跑一次確認它真的被載到</strong><br>
+        看報告末尾出處那一行的 <code>Device</code> 欄位。勾 Add Debug file 的話，
+        中間產物也會留在你指定的目錄裡。<br>
+        <br>
+        <strong>⚠️ 不要改 <code>device/default/</code></strong> —— 它在 repo 裡，而每次建置
+        都會<strong>無條件覆蓋</strong> <code>scripts/</code>。你自己新增的目錄因為 repo 裡沒有
+        同名檔案，不會被覆蓋也不會被刪。<br>
+        <br>
+        每一步的細節見上面的<strong>「開始」</strong>與<strong>「每一支鉤子」</strong>兩節。
+      </span></div>
     </div>
   </div>
 </section>
-
-============ 常見問題結束 ============ -->
 
 <div class="closing">
   複製範本 → 宣告 <code>VERSION</code> → 只留你要覆寫的那幾支。<br>
