@@ -387,6 +387,7 @@ device/ssd/
       <div class="qa-q"><span>怎麼新增一個 device？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
+          <div class="spec-grp">照這個順序</div>
           <div class="spec-k">1</div>
           <div class="spec-v">複製範本：<code>cp -r device/_template device/ssd</code><br>
             <span class="dim">目錄名就是 device 名，必須是合法識別字（<code>ssd_gen4</code> 可以，<code>ssd-gen4</code> 不行）</span></div>
@@ -397,7 +398,8 @@ device/ssd/
           <div class="spec-v">只留你要覆寫的鉤子，其餘刪掉
             <span class="dim">—— 缺的各自用 <code>default</code> 的</span></div>
           <div class="spec-k">4</div>
-          <div class="spec-v">設定檔 <code>PPS_Device</code> 填名字（CI 設環境變數 <code>PPS_DEVICE</code>）</div>
+          <div class="spec-v">設定檔 <code>PPS_Device</code> 填名字
+            <span class="dim">（CI 設環境變數 <code>PPS_DEVICE</code>）</span></div>
           <div class="spec-k">5</div>
           <div class="spec-v">跑一次，看報告末尾出處的 <code>Device</code> 欄位</div>
         </div>
@@ -411,18 +413,20 @@ device/ssd/
       <div class="qa-a"><span>
         <strong>逐支鉤子各自找</strong>，不是整個 device 一起退。
         <div class="spec">
+          <div class="spec-grp">解析順序</div>
           <div class="spec-k">兩層</div>
           <div class="spec-v"><code>jira_key</code>、<code>mr_type</code>、<code>parse_code_review</code><br>
             <span class="dim"><code>&lt;你的&gt;/</code> → <code>default/</code></span></div>
           <div class="spec-k">三層</div>
           <div class="spec-v"><code>summary</code>、<code>merge_to_md</code><br>
             <span class="dim"><code>&lt;你的&gt;/&lt;種類&gt;/</code> → <code>&lt;你的&gt;/</code> → <code>default/</code></span></div>
-          <div class="spec-k">範例</div>
-          <div class="spec-v"><span class="dim">device 放了 <code>summary.py</code>，另有 <code>bug/merge_to_md.py</code></span>
-            <div class="spec-pre">種類 bug   summary → 你的/summary.py
-           merge_to_md → 你的/bug/merge_to_md.py
-沒有種類   summary → 你的/summary.py
-           merge_to_md → default/merge_to_md.py</div></div>
+          <div class="spec-grp">例子：device 放了 summary.py，另有 bug/merge_to_md.py（種類為 bug 時）</div>
+          <div class="spec-k">有種類</div>
+          <div class="spec-v"><div class="spec-pre">summary     → 你的/summary.py
+merge_to_md → 你的/bug/merge_to_md.py</div></div>
+          <div class="spec-k">無種類</div>
+          <div class="spec-v"><div class="spec-pre">summary     → 你的/summary.py
+merge_to_md → default/merge_to_md.py</div></div>
         </div>
         <p class="spec-note">最後一行是重點：<code>merge_to_md</code> 退了<strong>兩層</strong>，
         因為你的 device 那一層沒放這一支。每一支、每一層都各自判斷。</p>
@@ -433,12 +437,14 @@ device/ssd/
       <div class="qa-q"><span>JIRA key 怎麼抽的？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
           <div class="spec-k">規則</div>
           <div class="spec-v">標題的<strong>第一個</strong>方括號</div>
           <div class="spec-k">範例</div>
           <div class="spec-v"><code>[PPS-1234] 修正重試上限</code> → <code>PPS-1234</code><br>
             <code>[WIP] [PPS-1234] 修正…</code> → <code>WIP</code>
             <span class="dim">（不判定有效性，抽到什麼就回什麼）</span></div>
+          <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
           <div class="spec-v"><code>device/_template/jira_key.py</code></div>
           <div class="spec-k">改哪裡</div>
@@ -459,11 +465,13 @@ device/ssd/
       <div class="qa-q"><span>種類怎麼抽的？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
           <div class="spec-k">規則</div>
           <div class="spec-v">標題的<strong>第二個</strong>方括號
             <span class="dim">（第一個留給 JIRA key）</span></div>
           <div class="spec-k">範例</div>
           <div class="spec-v"><code>mod:[PPS-1234][Bug] 修正…</code> → <code>Bug</code> → 對應 <code>bug/</code> 目錄</div>
+          <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
           <div class="spec-v"><code>device/_template/mr_type.py</code></div>
           <div class="spec-k">改哪裡</div>
@@ -486,6 +494,7 @@ device/ssd/
       <div class="qa-q"><span>code review 報告怎麼判定通過？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
           <div class="spec-k">規則</div>
           <div class="spec-v">在 <code>## 風險評估總表</code> 那一節取第一張表，
             <strong>最後一欄當數量，加總為 0 就是 pass</strong></div>
@@ -495,6 +504,7 @@ device/ssd/
 | 執行緒 | 中       | 2    |   加總 2 → fail</div>
             <span class="dim"><code>-</code>、<code>無</code>、<code>n/a</code> 都當 0；
             <code>3 件</code>、<code>~5</code> 會報錯而不猜</span></div>
+          <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
           <div class="spec-v"><code>device/_template/parse_code_review.py</code></div>
           <div class="spec-k">改哪裡</div>
