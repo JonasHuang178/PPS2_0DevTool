@@ -15,15 +15,19 @@ AI 服務另外提供一個「列出模型」的端點，回傳每一個識別�
 
 ## What Changes
 
-- **BREAKING** 設定檔 `Service.AI_Mode_List[]`：`Name` 改名為 `Provider`；`Model` 移除。
+- **BREAKING** 設定檔：`Service.AI_Mode_List` 改名為 `Service.AI_Provider_List`；每一項的 `Name`
+  改名為 `Provider`；`Model` 移除。
   不相容舊版設定檔（工具尚未發布）。
 - **BREAKING** AI 分析那一步（步驟 3）的參數：`ai_api_url` 改名為 `ai_connection`，其值為
   `provider:端點:識別碼`；`ai_mode_name` 與 `ai_model` 移除。圖形介面以 `Provider + ":" +
   Api_URL` 組出此值。
 - **BREAKING** 合併為 markdown 那一步（步驟 5）移除 `ai_mode` 參數；provider 與模型名稱都
   只從分析結構讀取。
-- **BREAKING** 持續整合：變數名 `AI_API_URL` 不變，其值改為 `provider:端點:識別碼`，對應到
-  參數 `ai_connection`；`AI_MODE_NAME`、`AI_MODEL` 移除。
+- 持續整合：**`ci/pps-ai-analysis.gitlab-ci.yml` 一行都不改**，以維持與工具 v1.0 的相容。
+  - 步驟 3 仍接受舊參數名 `ai_api_url`，作為 `ai_connection` 的別名（`ai_connection` 有值時
+    以它為準）。
+  - 舊的 `ai_mode_name`、`ai_model`（步驟 3）與 `ai_mode`（步驟 5）照樣可以送，腳本不再讀取。
+  - `AI_API_URL` 的值可以加上 `provider:` 前綴；不加照舊可以執行，只是出處沒有 provider。
 - 共用 AI 模組新增：
   - 拆解連線字串為 provider、端點、識別碼三段（取代原本只拆兩段的那一支）。
   - 依端點組出「列出模型」的網址並查詢，以識別碼找出對應的模型名稱。查詢路徑以寫死的

@@ -74,10 +74,11 @@ Repository 清單 SHALL 於功能建立時自設定檔填入。Merge Request 表
 
 ### Requirement: AI Provider 選單
 
-`AI Provider` 下拉選單 SHALL 為設定中 `AI_Mode_List` 的每一項列出一個選項，順序與設定相同，
+`AI Provider` 下拉選單 SHALL 為設定中 `AI_Provider_List` 的每一項列出一個選項，順序與設定相同，
 預設選取第一項。
 
-設定項目中標示 provider 的鍵 SHALL 為 `Provider`。設定項目 MUST NOT 有模型名稱的欄位 ——
+這份清單在設定檔 `Service` 底下的鍵名 SHALL 為 `AI_Provider_List`，其中每一項標示 provider
+的鍵 SHALL 為 `Provider`。設定項目 MUST NOT 有模型名稱的欄位 ——
 模型名稱只由 AI 服務查得（見「模型名稱的查詢」）。
 
 每一個選項 SHALL 顯示為 `provider / 模型名稱`。模型名稱尚未查詢時 SHALL 只顯示 provider；
@@ -97,11 +98,11 @@ Repository 清單 SHALL 於功能建立時自設定檔填入。Merge Request 表
 認出來。含有其他字元時，腳本會把整串當成端點送出，而連線失敗的訊息看不出是 provider 寫錯了。
 在送出之前就擋下，是唯一能指出原因的時機。
 
-`AI_Mode_List` 不存在或為空時，選單 SHALL 為空。
+`AI_Provider_List` 不存在或為空時，選單 SHALL 為空。
 
 #### Scenario: 列出設定中的模式
 
-- **WHEN** 設定的 `AI_Mode_List` 含一項且其 `Provider` 為 `openai`，查得的模型為 `gpt-4o`
+- **WHEN** 設定的 `AI_Provider_List` 含一項且其 `Provider` 為 `openai`，查得的模型為 `gpt-4o`
 - **THEN** 選單顯示 `openai / gpt-4o` 且為選取狀態
 
 #### Scenario: 同一個 provider 的兩個項目
@@ -123,7 +124,7 @@ Repository 清單 SHALL 於功能建立時自設定檔填入。Merge Request 表
 
 #### Scenario: 順序即預設
 
-- **WHEN** 設定的 `AI_Mode_List` 含多項
+- **WHEN** 設定的 `AI_Provider_List` 含多項
 - **THEN** 選單的順序與設定相同
 - **AND** 預設選取第一項
 
@@ -157,6 +158,13 @@ Repository 清單 SHALL 於功能建立時自設定檔填入。Merge Request 表
 - **AND** 兩者都不出現在行程的命令列上
 - **AND** 該步的參數中沒有模型名稱
 
+#### Scenario: v1.0 的持續整合設定照樣可以執行
+
+- **WHEN** 持續整合以 v1.0 的設定執行：AI 分析那一步收到 `ai_api_url`、`ai_mode_name`、`ai_model`，
+  合併那一步收到 `ai_mode`
+- **THEN** 兩步都成功
+- **AND** `ai_api_url` 被當成連線字串使用，出處的 AI 那一行不受 `ai_mode_name`、`ai_model`、`ai_mode` 影響
+
 #### Scenario: 合併那一步不收 provider 與模型
 
 - **WHEN** 合併為 markdown 的步驟被啟動
@@ -172,9 +180,12 @@ AI 服務的連線字串與金鑰為例外：它們 SHALL 經由步驟參數傳�
 傳輸」）。理由是這兩項隨使用者在畫面上選的項目而變，屬於該次執行的參數，而非跨執行
 不變的服務設定。兩種方式都不上命令列。
 
-持續整合以 `AI_API_URL` 提供連線字串，其值的形狀與圖形介面組出的相同
-（`provider:端點:識別碼`），並由持續整合的設定轉為 AI 分析那一步的連線字串參數。持續整合
-MUST NOT 另外提供 AI 模式名稱或模型名稱。
+AI 分析那一步 SHALL 接受舊的參數名 `ai_api_url` 作為連線字串的別名；兩者都有值時 SHALL 以
+連線字串參數為準。舊的 AI 模式名稱與模型名稱參數（AI 分析那一步），以及 AI 模式參數（合併那
+一步）SHALL 可以照樣送出，且 MUST NOT 影響結果。
+
+理由：持續整合的設定隨工具 v1.0 發出，其中的變數名與參數名已經定案。舊設定不改一行也要能
+執行；想在出處看到 provider 時，只要在 `AI_API_URL` 的值前面加上 `provider:`。
 
 理由：持續整合以相同名稱設定環境變數即可執行同一批腳本，腳本端因此只有一條取值路徑，兩個呼叫端對它而言完全相同。
 

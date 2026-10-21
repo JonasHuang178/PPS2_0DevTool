@@ -40,8 +40,8 @@
 
 ## 3. 步驟 3（summary）與 device
 
-- [ ] 3.1 `ai_analysis_gitlab_mr_summary.py`：參數改為 `ai_connection`，移除 `ai_mode_name`、
-  `ai_model`；`inputs` 同步；診斷那一行改記 provider（由 `split_connection` 取得，只用於
+- [ ] 3.1 `ai_analysis_gitlab_mr_summary.py`：參數改為 `ai_connection`，`ai_connection` 為空時
+  退回讀舊名 `ai_api_url`；不再宣告 `ai_mode_name`、`ai_model`；`inputs` 同步；診斷那一行改記 provider（由 `split_connection` 取得，只用於
   log）。驗證：`--help` 與傾印模板中只有 `ai_connection`。
 - [ ] 3.2 `device/default/summary.py`：拆連線字串、查模型、以新簽章呼叫 `ask`，把
   provider／model 寫入 `analysis_body`；替代內容路徑留空兩者。`VERSION` 加一碼。驗證：
@@ -86,10 +86,12 @@
 
 ## 7. 設定、持續整合與文件
 
-- [ ] 7.1 `PPS2_0DevTool.example.json`：`Name` 改為 `Provider`（值 `openai`），移除 `Model`。
+- [ ] 7.1 `PPS2_0DevTool.example.json`：`AI_Mode_List` 改為 `AI_Provider_List`，`Name` 改為
+  `Provider`（值 `openai`），移除 `Model`；Python 端錯誤訊息裡的設定鍵名同步改。
   驗證：工具載入範例設定後，選單顯示 `openai`。
-- [ ] 7.2 `ci/pps-ai-analysis.gitlab-ci.yml`：依 design D9 修改，並註明 `AI_API_URL` 的新形狀。
-  驗證：`grep -n "AI_MODE_NAME\|AI_MODEL\|ai_mode" ci/` 無結果。
+- [ ] 7.2 確認 `ci/pps-ai-analysis.gitlab-ci.yml` 未被修改（design D9）。驗證：以該檔的 req3／req5
+  形狀（`ai_api_url`、`ai_mode_name`、`ai_model`、`ai_mode`）實際跑步驟 3 與步驟 5，兩步都成功，
+  且 `git diff --stat ci/` 為空。
 - [ ] 7.3 更新以下文件中的參數表、範例與欄位說明：
   - `docs/user-guide.md`
   - `docs/ai-analysis-gitlab-mr/README.md`
@@ -98,7 +100,7 @@
   - `docs/ai-analysis-gitlab-mr/device-authoring.md`
 
   `device-authoring.md` 須寫明拆解與查模型是必要步驟，`user-guide.md` 須說明
-  `MODEL_LIST_PATH` 需由部署者填入。驗證：`grep -rn "ai_mode\|AI_Mode_List.*Name\|\"Model\"" docs`
+  `MODEL_LIST_PATH` 需由部署者填入。驗證：`grep -rn "ai_mode\|AI_Mode_List\|\"Model\"" docs scripts *.cpp *.json`
   只剩刻意保留的歷史說明。
 
 ## 8. 整體驗證

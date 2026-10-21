@@ -13,7 +13,7 @@
   - `render_footer(ai_mode=..., analysis=...)` 從參數取 mode、從結構取 model。
 - 呼叫 `ask()` 的只有 `device/default/summary.py` 與 `device/_template/summary.py`。
 - Qt：
-  - `selectedAiMode()` 以選單文字比對 `AI_Mode_List[].Name`。
+  - `selectedAiMode()` 以選單文字比對 `AI_Mode_List[].Name`（改名前的現況）。
   - 外殼的 `notifyFunctionEntered()` 目前只通知 SingleBuilding。
   - 腳本一律以 `runFunctionScript()` 前景執行、顯示互斥的處理中對話框，一次一支
     （`script-execution` 規格）。工具沒有背景執行，所以「第一次進入時查詢」只能以處理中
@@ -85,8 +85,10 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
 ### D4. 鉤子與契約
 
 - 步驟 3 的參數：
-  - `ai_api_url` 改為 `ai_connection`。
-  - 移除 `ai_mode_name`、`ai_model`。
+  - 宣告 `ai_connection`。入口取值時 `ai_connection` 為空就退回讀 `ai_api_url`（v1.0 持續
+    整合送的名字），只在入口做這一次，鉤子只看得到 `ai_connection`。
+  - 不再宣告 `ai_mode_name`、`ai_model`。信封協定是加法式的，沒宣告的欄位照樣收下而不報錯，
+    所以舊設定送來也不會失敗，只是沒有人讀。
   - `inputs` 同步改名與移除。
 - `contract.ai_credentials(inputs)` 改為回傳 `(connection, api_key)`。
   - 空字串時照舊拋 `CredentialError`。「未設定 AI 端點」的替代內容路徑不變。
@@ -120,7 +122,7 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
 
 ### D7. Qt
 
-- **設定**：讀 `Provider`。選單項目以索引對應 `AI_Mode_List`，用 `currentIndex()` 取代文字
+- **設定**：讀 `Service.AI_Provider_List[].Provider`。選單項目以索引對應清單，用 `currentIndex()` 取代文字
   比對。
 - **選單文字**：`m_modelNames` 依索引存三種狀態：
   - 未查：只顯示 provider
@@ -154,7 +156,7 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
   | `selectedAiMode()` | `selectedProviderEntry()`，以索引取 |
   | `AnalysisContext::aiModeName`、`aiModel`、`aiApiUrl` | `aiConnection` |
 
-  設定鍵 `AI_Mode_List` 本身不改名，因為設定檔只動 `Name` 與 `Model` 兩個欄位。
+  設定鍵 `AI_Mode_List` 一併改名為 `AI_Provider_List`。Python 端錯誤訊息中提到的設定鍵也跟著改。
 
 ### D8. 列出模型的腳本
 
@@ -166,12 +168,12 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
 
 ### D9. 持續整合
 
-`ci/pps-ai-analysis.gitlab-ci.yml`：
+`ci/pps-ai-analysis.gitlab-ci.yml` **不改**。v1.0 已經定案，相容由腳本端負責（見 D4 的
+別名與加法式信封）。
 
-- 移除 `AI_MODE_NAME`、`AI_MODEL`。
-- 步驟 3 的參數改為 `"ai_connection": "$AI_API_URL"`，移除 `ai_mode_name`、`ai_model`。
-- 步驟 5 移除 `ai_mode`。
-- 註解寫明 `AI_API_URL` 的值形如 `openai:https://...:CODE`。
+- `AI_API_URL` 的值加上 `provider:` 前綴即可在出處看到 provider，這只是值的變更。
+- `AI_MODE_NAME`、`AI_MODEL` 與 `ai_mode` 照樣送出，腳本不讀。
+- 文件（`cli.md`）說明新的參數名 `ai_connection` 與舊名 `ai_api_url` 的關係。
 
 ### D10. 版號
 
@@ -194,7 +196,7 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
 ## Migration Plan
 
 1. 部署者把設定檔每一項的 `Name` 改為 `Provider`，刪除 `Model`。
-2. 持續整合把 `AI_API_URL` 的值加上 `provider:` 前綴，並刪除 `AI_MODE_NAME`、`AI_MODEL`。
+2. 持續整合不必修改。想在出處看到 provider 時，把 `AI_API_URL` 的值加上 `provider:` 前綴。
 3. 部署者在 `ai_utils.py` 填入 `MODEL_LIST_PATH`。
 
 回復：還原這個 change 的 commit 即可。新版產生的第 8 版分析結構，舊版程式不認得，要重跑
