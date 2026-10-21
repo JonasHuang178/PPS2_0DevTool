@@ -85,10 +85,8 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
 ### D4. 鉤子與契約
 
 - 步驟 3 的參數：
-  - 宣告 `ai_connection`。入口取值時 `ai_connection` 為空就退回讀 `ai_api_url`（v1.0 持續
-    整合送的名字），只在入口做這一次，鉤子只看得到 `ai_connection`。
-  - 不再宣告 `ai_mode_name`、`ai_model`。信封協定是加法式的，沒宣告的欄位照樣收下而不報錯，
-    所以舊設定送來也不會失敗，只是沒有人讀。
+  - 宣告 `ai_connection`，不保留 `ai_api_url` 的別名。
+  - 不再宣告 `ai_mode_name`、`ai_model`。
   - `inputs` 同步改名與移除。
 - `contract.ai_credentials(inputs)` 改為回傳 `(connection, api_key)`。
   - 空字串時照舊拋 `CredentialError`。「未設定 AI 端點」的替代內容路徑不變。
@@ -168,14 +166,24 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
 
 ### D9. 持續整合
 
-`ci/pps-ai-analysis.gitlab-ci.yml` **不改**。v1.0 已經定案，相容由腳本端負責（見 D4 的
-別名與加法式信封）。
+`ci/pps-ai-analysis.gitlab-ci.yml`：
 
-- `AI_API_URL` 的值加上 `provider:` 前綴即可在出處看到 provider，這只是值的變更。
-- `AI_MODE_NAME`、`AI_MODEL` 與 `ai_mode` 照樣送出，腳本不讀。
-- 文件（`cli.md`）說明新的參數名 `ai_connection` 與舊名 `ai_api_url` 的關係。
+- **全域變數名稱不改**（與工具 v1.0 相同）：
+  - CI/CD 設定：`GITLAB_ACCESS_TOKEN`、`JIRA_ACCESS_TOKEN`、`AI_API_URL`、`AI_API_KEY`
+  - `variables:` 區塊：`S`、`W`、`D`、`GITLAB_SERVER_URL`、`GITLAB_VERIFY_SSL`、
+    `JIRA_SERVER_URL`、`PPS_DEVICE`、`PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH`、
+    `AI_VERIFY_SSL`、`PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES`／`_EXTENSIONS`／`_DIRS`
+- 移除全域變數 `AI_MODE_NAME`、`AI_MODEL`。
+- 步驟 3 的請求改為 `"ai_connection": "$AI_API_URL"`，移除 `ai_mode_name`、`ai_model`。
+- 步驟 5 的請求移除 `ai_mode`。
+- 開頭註解寫明 `AI_API_URL` 的值形如 `openai:https://...:CODE`。
 
-### D10. 版號
+### D10. 用詞
+
+「AI 模式／AI Mode／mode」凡是指 AI 設定項目的，一律改為 provider：識別字、註解、`help`、
+錯誤訊息、文件與主規格。JIRA 的 `jira_mode` 與其他無關的 mode 不動；封存的 change 不動。
+
+### D11. 版號
 
 - `SCRIPT_VERSION` 改為 `2.12`。
 - `default` device 與範本的 `VERSION` 第二碼加一，因為它們的鉤子寫法變了。
@@ -196,7 +204,8 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
 ## Migration Plan
 
 1. 部署者把設定檔每一項的 `Name` 改為 `Provider`，刪除 `Model`。
-2. 持續整合不必修改。想在出處看到 provider 時，把 `AI_API_URL` 的值加上 `provider:` 前綴。
+2. 持續整合換上新版 yml。CI/CD 設定中的全域變數不必改名；想在出處看到 provider 時，把
+   `AI_API_URL` 的值加上 `provider:` 前綴。
 3. 部署者在 `ai_utils.py` 填入 `MODEL_LIST_PATH`。
 
 回復：還原這個 change 的 commit 即可。新版產生的第 8 版分析結構，舊版程式不認得，要重跑
