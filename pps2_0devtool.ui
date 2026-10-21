@@ -263,13 +263,13 @@
               <number>0</number>
              </property>
              <item>
-              <widget class="QGroupBox" name="aiModeGroupBox">
+              <widget class="QGroupBox" name="aiProviderGroupBox">
                <property name="title">
-                <string>AI Mode</string>
+                <string>AI Provider</string>
                </property>
-               <layout class="QVBoxLayout" name="aiModeLayout">
+               <layout class="QVBoxLayout" name="aiProviderLayout">
                 <item>
-                 <widget class="QComboBox" name="aiModeComboBox"/>
+                 <widget class="QComboBox" name="aiProviderComboBox"/>
                 </item>
                </layout>
               </widget>

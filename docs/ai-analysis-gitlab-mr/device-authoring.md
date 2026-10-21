@@ -13,8 +13,9 @@
 
 ````json
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "analysis": {
+    "provider": "openai",
     "model": "gpt-4o",
     "mr_type": "bug",
     "jira_key": "PPS-1234",
@@ -53,7 +54,9 @@
 - `jira_state` 是 `ok` / `none` / `invalid` 三選一。`invalid` 時 `jira_key` 留的是
   **被拒絕的原值**（例如標題第一個方括號放的是 `WIP`），但它只留在產物的資料裡 ——
   `invalid` 時「詳細資料」那一節整個不出現，所以**報告上看不到**（出處也不印它，見 [README.md](README.md) 的「報告的版面」一節）
-- `model` 留在資料裡供其他消費者使用，**不進報告**
+- `provider` 與 `model` 由**鉤子**填（版本 8 起才有 `provider`），只印在報告出處的 AI 那一行
+  （`` **AI** **Provider** `openai` | **Model** `gpt-4o` ``），缺哪一半就省略哪一半。
+  取得方式見下面「呼叫 AI」的**必要步驟**
 - `mr_type` 是這一筆的種類，決定步驟 5 用哪一份版面；沒有種類時是空字串。它由**入口
   腳本蓋章**，device 的鉤子不必填（填了也會被覆蓋）
 - 某個檔案的清單為空時，該檔案整個不出現，編號也只算實際出現的檔案
@@ -64,12 +67,13 @@
   兩回事：`diffCode` 是解析成功後從差異切出來的那一段，解析不出來就是空的；`hunkHeader`
   則不論解析成不成功都在。報告靠它把「指向同一個位置的數筆發現」收成一組 —— 只留
   `diffCode` 的話，位置寫歪的那些全是空值就再也分不開
-- `schema_version` 比對時寬鬆：`7`、`"7"`、`"7.0"` 是同一個版本；`"7.5"` 與 `true` 不收
-- **讀得懂版本 3 到 7**（寫出去的一律是 7）。版本 3 少的是 `mr_type`，讀法是「視為沒有
+- `schema_version` 比對時寬鬆：`8`、`"8"`、`"8.0"` 是同一個版本；`"8.5"` 與 `true` 不收
+- **讀得懂版本 3 到 8**（寫出去的一律是 8）。版本 3 少的是 `mr_type`，讀法是「視為沒有
   種類」；3、4 少的是 `coverage`，讀法是「視為沒有涵蓋範圍資訊」，報告就不印那一段；
   3、4、5 少的是 `hunkHeader`，讀法是「每一筆沒有位置」，分組退回用 `diffCode`；3 到 6
   少的是 `coverage.skipped`，讀法是「視為沒有任何檔案被設定排除」—— 那正是那幾版的事實，
-  當時還沒有排除機制。那不是猜測，是四條知道的讀法。實際的好處是開發時常常拿昨天的
+  當時還沒有排除機制；3 到 7 少的是 `provider`，讀法是「沒有 provider」，出處只印模型那一半。
+那不是猜測，是五條知道的讀法。實際的好處是開發時常常拿昨天的
   `03_summary.json` 單獨重跑步驟 5 看版面，只認最新版會讓那個迴路每次改版就斷一次
 - 建構用 `ai_analysis_gitlab_mr` 的 `finding()` 與 `analysis_body()`，不要自己寫
   dict literal —— 欄位名散在寫入側與讀取側兩邊，改名漏一邊就是安靜地少一段
@@ -130,12 +134,14 @@
 要自己掌握的東西，收進共用模組等於把 device 機制的意義抵消掉。
 
 ```python
-ask(api_url, prompt, history=None, file_ids=None, api_key="",
+split_connection(connection) -> (provider, url, share_code)
+lookup_model(url, share_code, api_key="", verify_ssl=True) -> 模型名稱（查不到為 ""）
+
+ask(url, prompt, share_code="", history=None, file_ids=None, api_key="",
     timeout=120, retries=3, on_retry=None, verify_ssl=True,
     parse=None, reask=0)
 
-ask_json(api_url, prompt, require=(), reask=1, **kwargs)
-split_share_code(api_url) -> (url, share_code)
+ask_json(url, prompt, require=(), reask=1, **kwargs)
 as_json(text, require=())   strip_fence(text)
 ```
 
@@ -143,11 +149,48 @@ as_json(text, require=())   strip_fence(text)
 `_build_payload()`、回應取值在 `_extract_reply()`、認證標頭在 `_headers()`。換服務
 改這三支，重試那一段完全不用碰。
 
-**shareCode 黏在 `Api_URL` 尾端**，以冒號分隔：
+鉤子收到的是**連線字串** `inputs["ai_connection"]`：provider、端點與 shareCode 以冒號相接。
+Qt 用設定檔的 `Provider` 與 `Api_URL` 組出它，CI 由 `AI_API_URL` 直接給：
 
 ```
-https://主機:8443/端點:SHARE_CODE
+openai:https://主機:8443/端點:SHARE_CODE
+└─┬──┘ └─────────┬────────┘ └───┬────┘
+provider        端點         shareCode
 ```
+
+**provider 是選填的**：開頭一段只含英數字與 `. _ -`，而且冒號後面緊接著 `http://` 或
+`https://`，才算 provider；否則整串都當成端點與 shareCode。
+
+### 必要步驟：拆連線字串、查模型名稱
+
+**每一個 device 的 AI 分析鉤子都必須做這兩件事**，並把結果寫進分析結構。報告出處的 AI 那
+一行只讀它們；沒做不會失敗，只是出處少了那一行 —— 一個不會報錯的遺漏，所以範本的程式碼
+裡就有這一段，複製時一起帶上：
+
+```python
+connection, key = contract.ai_credentials(inputs)        # 沒填端點時拋錯
+provider, url, share_code = ai_utils.split_connection(connection)
+model = ai_utils.lookup_model(url, share_code, key,
+                              verify_ssl=contract.ai_verify_ssl())
+summary, mr_diff = ai_utils.ask(url, prompt, share_code=share_code, api_key=key, ...)
+return contract.analysis_body(overview=summary, provider=provider, model=model, ...)
+```
+
+拆與查**都用 `ai_utils`，不要自己切字串、自己連線** —— 拆法只有一份規則，問 AI 收的就是
+這裡拆出來的 `url` 與 `share_code`。
+
+`lookup_model` 怎麼查：
+
+- 查詢網址 ＝ 端點中 `api/external/v1`（`ai_utils.API_ROOT`）**第一次**出現之前的部分
+  ＋ `api/external/v1/` ＋ `ai_utils.MODEL_LIST_PATH`；端點中 API 根路徑之後的部分捨棄。
+- 以 GET 送出、帶 `X-Api-Key`；回應是 `[{"shareCode": "...", "name": "..."}, ...]`，
+  shareCode 相同的那一項的 `name` 就是模型名稱。
+- **`MODEL_LIST_PATH` 由部署者填入。** 出貨時是佔位值，沒填之前不送任何查詢。
+- 任何一步取不到（找不到 API 根路徑、佔位未填、連線失敗、不是陣列、沒有相符的 shareCode）
+  都回空字串並記一筆 log，**不拋例外** —— 一個顯示用的值不值得讓分析失敗。逾時固定 10 秒、
+  不重試。
+
+### 端點與 shareCode
 
 拆解時**只有 path 裡的第一個冒號才算分隔符，其後整段都是 shareCode** —— 位址本身至少
 有一個冒號（`https:`），還可能有連接埠，整串亂切會把路徑的一部分當成 shareCode 送出去，
@@ -156,7 +199,7 @@ https://主機:8443/端點:SHARE_CODE
 
 **shareCode 當成不透明字串，裡面有斜線或冒號都照樣整段取出：**
 
-| `Api_URL` | 端點 | shareCode |
+| 連線字串去掉 provider 之後 | 端點 | shareCode |
 |---|---|---|
 | `https://host:8443/v1/chat:ABC123` | `https://host:8443/v1/chat` | `ABC123` |
 | `https://host:8443/v1/chat:ABC/123` | `https://host:8443/v1/chat` | `ABC/123` |
@@ -175,23 +218,22 @@ https://主機:8443/端點:SHARE_CODE
 打開 `Debug_Mode` 時會印出拆解的結果，用來確認冒號切在你以為的地方：
 
 ```
-Api_URL 拆解：端點 https://host:8443/v1/chat，shareCode 13 字元
+連線字串拆解：provider openai，端點 https://host:8443/v1/chat，shareCode 13 字元
 ```
 
 **只印長度，不印值** —— 這個服務沒有認證標頭，shareCode 本身就是憑證，而這一行會進
 debug console、崩潰時還會進 `crash.log`。端點印得出來是因為它是分隔冒號**之前**那一段，
-不含 shareCode。完全沒帶時印的是另一行（`path 裡沒有分隔冒號`）。
+不含 shareCode。
 
-設定檔的 `Model` **不進請求**（模型由 shareCode 那端決定），它只印在報告的出處那一行，
-所以也不是必填。
+模型名稱**不進請求**（模型由 shareCode 那端決定），它只印在報告的出處那一行。
 
 ### 等多久才放棄
 
-四個設定決定使用者最多等多久，全部放在**每一個 AI 模式自己**的欄位裡：
+四個設定決定使用者最多等多久，全部放在**每一個 AI provider 項目自己**的欄位裡：
 
 ```json
-"AI_Mode_List": [
-  { "Name": "Open AI", "Api_URL": "...", "Api_Key": "", "Model": "gpt-4o",
+"AI_Provider_List": [
+  { "Provider": "openai", "Api_URL": "...", "Api_Key": "",
     "Timeout_Seconds": "30",
     "Retry_Count": "0",
     "Reask_Count": "0",
@@ -215,7 +257,7 @@ debug console、崩潰時還會進 `crash.log`。端點印得出來是因為它�
 | 60 / 1 / 1 / 0 | 約 4 分鐘 |
 | 30 / 0 / 0 / 0 | **約 30 秒** |
 
-放在模式裡而不是全域，是因為「多久算太久」取決於端點本身 —— 不同的服務與模型，正常回應
+放在每一個項目裡而不是全域，是因為「多久算太久」取決於端點本身 —— 不同的服務與模型，正常回應
 時間差好幾倍。沒有這些鍵就是用預設值；數字與純數字字串都收（`30` 與 `"30"`）。
 
 **三層分開設定，不合成一個「重試次數」。** 三者的語意與下一步完全不同：連線層是服務沒
@@ -425,19 +467,17 @@ print(load_hook('summary')[0].build_prompt({
 | `jira_key` | 該次採用的 key；沒有就是空字串 |
 | `jira_mode` | `none` / `manual` / `auto` —— 讓你分辨 key 是抽的還是使用者填的 |
 
-**AI 連線與等待**（都來自使用者選的那個 AI 模式）
+**AI 連線與等待**（都來自使用者選的那個 AI provider 項目）
 
 | inputs | 內容 |
 |---|---|
-| `ai_mode_name` | 使用者選的模式名稱 |
-| `ai_api_url` | 端點；用 `contract.ai_credentials(inputs)` 取比較省事 |
+| `ai_connection` | 連線字串 `provider:端點:shareCode`。**拆它是必要步驟**（見「呼叫 AI」） |
 | `ai_api_key` | 金鑰，可以是空的 |
-| `ai_model` | 模型名稱。**不進請求**，只印在報告出處 |
 | `ai_timeout` | 單次請求的逾時秒數 |
 | `ai_retries` | 連線層的重試次數 |
 | `ai_reask` | 內容層的重問次數 |
 
-> **後三個要直接交給 `ai_utils.ask()`，不要自己寫死數字。** 它們是使用者為這個模式填的
+> **後三個要直接交給 `ai_utils.ask()`，不要自己寫死數字。** 它們是使用者為這個 provider 項目填的
 > `Timeout_Seconds` / `Retry_Count` / `Reask_Count`，而他會去調多半正是因為服務很忙。
 > 寫死的話那些設定對你這一支毫無效果，症狀是「我明明改了，還是等一樣久」。沒設定時這裡
 > 拿到的已經是預設值。
@@ -687,7 +727,7 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 | `contract.finding(...)` / `contract.analysis_body(...)` | 組分析結構 |
 | `contract.jira_url(key)` | 組 JIRA 網址 |
 | `contract.MAX_FINDING_DIFF_BYTES` | 單筆 diff 的位元組上限 |
-| `contract.ai_credentials(inputs)` | 取出 AI 端點、金鑰與模型名 |
+| `contract.ai_credentials(inputs)` | 取出連線字串與金鑰；沒填端點時拋錯 |
 | `contract.ai_timeout(inputs)` | 逾時秒數，交給 `ai_utils.ask(timeout=...)` |
 | `contract.ai_retries(inputs)` | 連線層重試次數，交給 `ask(retries=...)` |
 | `contract.ai_reask(inputs)` | 內容層重問次數，交給 `ask(reask=...)` |

@@ -80,24 +80,34 @@ Qt 以 `", "` 串接後填進欄位，JSON 裡寫什麼畫面就長什麼樣，�
 
 因為逗號是分隔符，**關鍵字本身不能含逗號**；這條限制在設定檔與輸入框兩邊都成立。
 
-`AI_Mode_List` 是一個清單，畫面上的 AI Mode 下拉選單就是用每一筆的 `Name` 填的：
+`AI_Provider_List` 是一個清單，畫面上的 AI Provider 下拉選單每一筆對應一個選項：
 
 ```json
-"AI_Mode_List": [
+"AI_Provider_List": [
   {
-    "Name": "地端模型",
-    "Api_URL": "https://主機:8443/端點:SHARE_CODE",
-    "Api_Key": "送出時放進 X-Api-Key 標頭",
-    "Model": "只印在報告出處，不進請求"
+    "Provider": "openai",
+    "Api_URL": "https://主機:8443/api/external/v1/端點:SHARE_CODE",
+    "Api_Key": "送出時放進 X-Api-Key 標頭"
   }
 ]
 ```
 
-**`Api_URL` 尾端要以冒號黏上 shareCode**（見 [AI Analysis 的 device-authoring.md](ai-analysis-gitlab-mr/device-authoring.md) 的「呼叫 AI」一節）。這四項走 `params` 而不是
-環境變數 —— 它們隨使用者選的模式而變，屬於該次執行的參數。
+- **`Provider`** 只能用英文字母、數字與 `. _ -`，不可為空 —— 它會被接在 `Api_URL` 前面組成
+  連線字串 `openai:https://...:SHARE_CODE` 交給腳本。不合法時按下 AI Analysis 會跳出訊息、
+  不啟動流程。
+- **`Api_URL` 尾端要以冒號黏上 shareCode**（見 [AI Analysis 的 device-authoring.md](ai-analysis-gitlab-mr/device-authoring.md) 的「呼叫 AI」一節）。
+- **沒有 `Model` 欄位。** 模型由 shareCode 那一端決定，名稱向 AI 服務查（見下）。
 
-選單是拿**選單上的文字回去比對 `Name`**。改了 `Name` 或那一筆不在清單裡，比對不到就
-會拿到空的 `Api_URL`，於是掉回替代內容（報告首行會寫「未經過 AI」）。
+連線資訊走 `params` 而不是環境變數 —— 它們隨使用者選的項目而變，屬於該次執行的參數。
+
+選單的每一項顯示為 `provider / 模型名稱`。模型名稱在工具每次啟動後**第一次**進入 AI Analysis
+GitLab MR 時查一次（會出現處理中對話框，可取消）；查不到的項目顯示 `無法取得`，仍可選取與分析。
+選項以**位置**對應設定項目，所以兩筆 `Provider` 相同也不會選錯。
+
+**模型名稱的查詢路徑要由部署者填入。** 查詢網址是把 `Api_URL` 中 `api/external/v1` 之前的
+部分接上 `api/external/v1/` 與 `scripts/script_utils/ai_utils.py` 的 `MODEL_LIST_PATH`。
+那個常數出貨時是佔位值 `__FILL_IN_MODEL_LIST_PATH__`；沒填之前不送任何查詢，選單與報告出處
+都沒有模型名稱，其餘照常。
 
 ### 命名風格
 

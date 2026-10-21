@@ -45,16 +45,15 @@ def analyze(inputs):
         jira_key        該次採用的 key；沒有就是空字串
         jira_mode       none / manual / auto —— 讓你分辨 key 是抽的還是使用者填的
         mr_type         選中這一份的種類名稱；沒有種類時是空字串
-        ai_mode_name    使用者選的 AI 模式名稱
-        ai_api_url      AI 端點
+        ai_connection   AI 連線字串 provider:端點:shareCode（provider 可省略）。
+                        **拆它是你的必要步驟**，見下面「必要步驟」。
         ai_api_key      AI 金鑰
-        ai_model        模型名稱
         ai_timeout      單次請求的逾時秒數（已正規化過的設定值）
         ai_retries      連線層的重試次數 —— 服務沒回應時重試幾次
         ai_reask        內容層的重問次數 —— 回了但解析不開時重問幾次
 
                         **這三個直接交給 ai_utils.ask()**，不要自己寫死數字：
-                        它們來自使用者為這個 AI 模式填的 Timeout_Seconds /
+                        它們來自使用者為這個 AI provider 填的 Timeout_Seconds /
                         Retry_Count / Reask_Count，而他會去調它們多半正是因為
                         服務很忙、不想再等那麼久。寫死的話那些設定對你這一支
                         完全沒有效果，而症狀是「我明明改了，還是等一樣久」。
@@ -94,11 +93,25 @@ def analyze(inputs):
     最後一項很重要：報告會印出那個原值（`JIRA: WIP (invalid)`），讀的人一眼就知道標題
     的第一個方括號放錯了東西。只說「無效」等於要人自己猜。
 
+    **必要步驟（每一個 device 都必須做）：拆連線字串、查模型名稱，兩者寫進分析結構。**
+    報告出處的 AI 那一行（`Provider` 與 `Model`）只讀分析結構；沒做不會失敗，只是出處
+    少了那一行 —— 一個不會報錯的遺漏，所以寫在範本的程式碼裡，複製時就帶上：
+
+        provider, url, share_code = ai_utils.split_connection(inputs["ai_connection"])
+        model = ai_utils.lookup_model(url, share_code, inputs["ai_api_key"],
+                                      verify_ssl=contract.ai_verify_ssl())
+        ...
+        return contract.analysis_body(..., provider=provider, model=model)
+
+    拆與查都用 ai_utils，**不要自己切字串、自己連線**：拆法只有一份規則，問 AI 的那一支
+    收的就是這裡拆出來的 url 與 share_code。查不到模型時 lookup_model 回空字串，不會失敗。
+
     真的要問 AI 的話大致長這樣（完整版見 default/summary.py）：
 
-        url, key, model = contract.ai_credentials(inputs)
+        connection, key = contract.ai_credentials(inputs)   # 沒填端點時拋錯
+        provider, url, share_code = ai_utils.split_connection(connection)
         overview, mr_diff = ai_utils.ask(
-            url, my_prompt, api_key=key,
+            url, my_prompt, share_code=share_code, api_key=key,
             parse=lambda text: my_parse(ai_utils.as_json(text)),
             reask=1)
 
@@ -106,18 +119,23 @@ def analyze(inputs):
     憑證。自己寫 ask() 的時候記得帶上 verify_ssl=contract.ai_verify_ssl()，否則會用
     ai_utils 的預設（開啟），對著自簽憑證就連不上。
 
-    `url` 直接傳設定檔的 Api_URL，shareCode 黏在尾端也沒關係 —— ai_utils 會拆。`model`
-    **不進請求**（模型由 shareCode 那一端決定），它只是報告出處要印的資訊，所以拿到之後
-    是交給 contract.analysis_body(model=...)，不是交給 ask()。
+    `model` **不進請求**（模型由 shareCode 那一端決定），它只是報告出處要印的資訊，所以
+    查到之後是交給 contract.analysis_body(model=...)，不是交給 ask()。
 
     parse 把原始回覆轉成你要的東西，格式不對就丟 ValueError —— ai_utils 會追加一句
     「只回覆結果本身」重問一次。**JSON 解析與結構檢查要串在同一個 parse 裡**，分兩段
     寫的話第二段跑在 ask() 之外，重問永遠觸發不到，而「JSON 合法但結構不對」恰好是
     模型最常見的失手方式。
     """
+    # 必要步驟：拆連線字串、查模型名稱（見上）。沒填端點時兩者都是空字串，不會失敗。
+    provider, url, share_code = ai_utils.split_connection(inputs["ai_connection"])
+    model = ai_utils.lookup_model(url, share_code, inputs["ai_api_key"],
+                                  verify_ssl=contract.ai_verify_ssl())
+
     return contract.analysis_body(
         overview=u"（你的總覽）",
-        model=inputs["ai_model"],
+        provider=provider,
+        model=model,
         jira_key=inputs["jira_key"],
         jira_state=contract.JIRA_STATE_NONE,
         mr_diff={

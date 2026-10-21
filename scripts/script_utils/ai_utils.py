@@ -6,8 +6,10 @@
 
     from script_utils import ai_utils
 
-    text = ai_utils.ask(api_url, prompt)              # 原始回覆
-    data = ai_utils.ask_json(api_url, prompt)         # 解析過的 JSON
+    provider, url, share_code = ai_utils.split_connection(connection)
+    text = ai_utils.ask(url, prompt, share_code=share_code)        # 原始回覆
+    data = ai_utils.ask_json(url, prompt, share_code=share_code)   # 解析過的 JSON
+    model = ai_utils.lookup_model(url, share_code, api_key)        # 出處用的模型名稱
 
 **這個模組是為特定一家地端服務寫的，不是通用的多供應商客戶端。** 請求形狀集中在
 _build_payload()，回應的取值集中在 _extract_reply()，要換服務改那兩支即可；重試、
@@ -30,8 +32,10 @@ from script_utils import http_utils
 from script_utils import logger
 
 __all__ = ["AiError", "ask", "ask_json", "as_json", "strip_fence",
-           "split_share_code", "ROLE_USER",
-           "DEFAULT_TIMEOUT", "MAX_RETRIES"]
+           "split_connection", "ROLE_USER",
+           "DEFAULT_TIMEOUT", "MAX_RETRIES",
+           "API_ROOT", "MODEL_LIST_PATH", "MODEL_LOOKUP_TIMEOUT",
+           "model_list_url", "fetch_model_list", "find_model", "lookup_model"]
 
 
 # AI 的呼叫是分鐘級的。30 秒（http_utils 的預設）會把正常的長回答當成逾時，
@@ -82,16 +86,52 @@ class AiError(http_utils.HttpError):
 
 
 # ---------------------------------------------------------------------------
-# URL 與 shareCode
+# 連線字串：provider、位址與 shareCode
 # ---------------------------------------------------------------------------
 
-def split_share_code(api_url):
-    """把設定檔的 Api_URL 拆成 (url, share_code)。
+# provider 前綴：開頭一段只含英數字與 . _ - 的字，後面緊接著冒號與 http(s)://。
+#
+# **只有「冒號後面緊接著通訊協定」才算前綴。** 位址本身以通訊協定開頭，裡面就有一個
+# 冒號；不看後面那一段的話，`https://...` 會被當成 provider 是 `https`。
+_PROVIDER_RE = re.compile(r"^([A-Za-z0-9._-]+):(?=https?://)")
 
-    設定檔裡的寫法是把 shareCode 以冒號黏在位址後面：
 
-        https://ai.example.com/v1/chat:ABC123
-        →  ("https://ai.example.com/v1/chat", "ABC123")
+def split_connection(connection):
+    """把連線字串拆成 (provider, url, share_code)。
+
+    連線字串是 provider、位址與 shareCode 以冒號相接：
+
+        openai:https://ai.example.com/v1/chat:ABC123
+        →  ("openai", "https://ai.example.com/v1/chat", "ABC123")
+
+    provider 是選填的。開頭那一段不符合前綴的規則（見 _PROVIDER_RE）時 provider 是空
+    字串，整串都當成位址與 shareCode 拆 —— 照樣能問 AI，只是出處少了 provider。
+
+    **問 AI、查模型、列出模型都用這一支拆。** 同一串字在兩個地方各拆一次，規則遲早
+    分岔，而分岔的症狀是「分析成功、模型查不到」或反過來，兩者都不會指出原因。
+
+    找不到 shareCode 時 share_code 是空字串，由呼叫端決定那是不是錯誤。
+    """
+    text = (connection or "").strip()
+    provider = ""
+    match = _PROVIDER_RE.match(text)
+    if match:
+        provider = match.group(1)
+        text = text[match.end():]
+
+    url, share_code = _split_share_code(text)
+
+    # **只印長度，不印值。** 這個服務沒有認證標頭，shareCode 本身就是憑證，而
+    # Debug_Mode 開啟時這一行會進 debug console，崩潰時還會被寫進 crash.log。
+    # 端點印得出來是因為它是分隔冒號**之前**那一段，不含 shareCode。
+    logger.debug("連線字串拆解：provider %s，端點 %s，shareCode %d 字元",
+                 provider or "(無)", url or "(空)", len(share_code))
+
+    return provider, url, share_code
+
+
+def _split_share_code(address):
+    """把 `位址:shareCode` 拆成 (url, share_code)。
 
     **不能直接用 split(":")，也不能無條件用 rsplit**：一個位址裡至少有一個冒號
     （`https:`），而且可能還有連接埠（`host:8080`）。切錯的下場是把整個路徑當成
@@ -115,10 +155,8 @@ def split_share_code(api_url):
     代價寫明白：改成這條規則之後，**端點的 path 自己不能含冒號**（例如
     `/v1/models/foo:generate` 這種形狀會被切錯）。path 是部署者自己填的、而且固定不變，
     shareCode 則是人家發的、換了就得照抄 —— 兩者之中該讓哪一個受限很清楚。
-
-    找不到 shareCode 時 share_code 是空字串，由呼叫端決定那是不是錯誤。
     """
-    url = (api_url or "").strip()
+    url = (address or "").strip()
     if not url:
         return "", ""
 
@@ -130,27 +168,13 @@ def split_share_code(api_url):
 
     if path_start < 0:
         # 沒有 path 就沒有能放 shareCode 的地方，位址裡的冒號只會是 scheme 或連接埠。
-        logger.debug("Api_URL 沒有 path，視為沒有 shareCode")
         return url, ""
 
     sep = url.find(":", path_start)
     if sep < 0:
-        # path 裡一個冒號都沒有，所以也不可能有被誤判的 shareCode 藏在裡面 ——
-        # 這一行印出整個 url 是安全的，而使用者要的正是「它到底把什麼當成端點」。
-        logger.debug("Api_URL 的 path 裡沒有分隔冒號，視為沒有 shareCode（端點 %s）",
-                     url)
         return url, ""
 
-    endpoint = url[:sep]
-    share_code = url[sep + 1:]
-
-    # **只印長度，不印值。** 這個服務沒有認證標頭，shareCode 本身就是憑證，而
-    # Debug_Mode 開啟時這一行會進 debug console，崩潰時還會被寫進 crash.log。
-    # 端點印得出來是因為它是分隔冒號**之前**那一段，不含 shareCode。
-    logger.debug("Api_URL 拆解：端點 %s，shareCode %d 字元",
-                 endpoint, len(share_code))
-
-    return endpoint, share_code
+    return url[:sep], url[sep + 1:]
 
 
 # ---------------------------------------------------------------------------
@@ -411,20 +435,19 @@ def _notify(on_retry, attempt, why):
         logger.debug("on_retry 回呼失敗，忽略")
 
 
-def ask(api_url, prompt, history=None, file_ids=None, api_key="",
+def ask(url, prompt, share_code="", history=None, file_ids=None, api_key="",
         timeout=DEFAULT_TIMEOUT, retries=MAX_RETRIES, on_retry=None,
         verify_ssl=True, parse=None, reask=0, reask_hint=REASK_HINT):
     """問一次 AI，回傳它講的那段話。
 
-    `api_url` 直接收設定檔 Service.AI_Mode_List 裡的 Api_URL，shareCode 黏在尾端
-    也沒關係 —— 這裡會拆（見 split_share_code）。呼叫端不必自己處理那個冒號。
+    `url` 與 `share_code` 是**已經拆好的**兩段（見 split_connection）。這裡不再拆 ——
+    拆解只有一份規則，由呼叫端拆一次、問 AI 與查模型共用同一組結果。
 
     參數攤開而不是收一個 inputs 字典 —— 與 gitlab_utils、jira_utils 同一個慣例，
     這個模組因此不認得任何一個功能的參數形狀。
 
     **沒有 model 參數**：這個服務的 payload 裡沒有模型欄位，模型是由 shareCode 那一端
-    決定的。設定檔的 Model 仍然有用，但那是報告出處要印的資訊，不是請求的一部分 ——
-    收一個送不出去的參數只會讓人以為換了它就會換模型。
+    決定的。報告出處要的模型名稱另外向服務查（見 lookup_model）。
 
     兩種重試，界線不同：
 
@@ -441,12 +464,12 @@ def ask(api_url, prompt, history=None, file_ids=None, api_key="",
 
     **prompt 與 shareCode 的內容都不進 log。** prompt 裡有整份 diff，印出來會把 log
     撐爆，也把原始碼落到磁碟上；shareCode 是這個服務唯一的憑證。拆解那一支會以
-    DEBUG 記下**長度**（見 split_share_code），因為「冒號切在哪裡」缺了就無從診斷 ——
+    DEBUG 記下**長度**（見 split_connection），因為「冒號切在哪裡」缺了就無從診斷 ——
     長度不足以還原憑證。
     """
     http_utils.require_requests(AiError)
 
-    url, share_code = split_share_code(api_url)
+    url = (url or "").strip()
 
     if not url:
         raise AiError("未指定 AI 端點（設定檔的 Api_URL 是空的）")
@@ -562,7 +585,7 @@ def as_json(text, require=()):
     return data
 
 
-def ask_json(api_url, prompt, require=(), reask=1, **kwargs):
+def ask_json(url, prompt, require=(), reask=1, **kwargs):
     """問一次 AI 並把回覆解析成 dict。
 
     `require` 列出一定要有的頂層鍵；缺了就當成回覆格式不符，觸發重問。
@@ -570,6 +593,124 @@ def ask_json(api_url, prompt, require=(), reask=1, **kwargs):
     預設 `reask=1`：模型偶爾會在 JSON 前面加一句話，或回一段根本不是 JSON 的東西，
     重問一次通常就對了。不想付那次錢的話傳 reask=0。
     """
-    return ask(api_url, prompt,
+    return ask(url, prompt,
                parse=lambda text: as_json(text, require),
                reask=reask, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# 模型名稱的查詢 —— 報告出處用
+# ---------------------------------------------------------------------------
+
+# API 的根路徑。模型清單掛在它底下，所以查詢網址從端點裡它出現的位置組出來。
+API_ROOT = "api/external/v1"
+
+# 根路徑底下列出模型清單的那一段。**部署者填入**：這是服務端的協定，不是使用者該調的
+# 設定，所以寫死而不進設定檔；但實際值不隨本專案公開。
+#
+# 沒填（仍是佔位值）時不送任何請求 —— 送一個指向佔位字串的網址只會換來一個 404，
+# 而訊息看不出原因。
+MODEL_LIST_PATH = "__FILL_IN_MODEL_LIST_PATH__"
+_MODEL_LIST_PLACEHOLDER = "__FILL_IN_MODEL_LIST_PATH__"
+
+# 查模型的逾時。**不用問 AI 的那個逾時**：那一個是為「等模型生成一整份分析」調的，
+# 常見兩分鐘；列清單是一個輕量的 GET，拿兩分鐘去等它，服務連不上時使用者每次啟動
+# 工具都得被擋兩分鐘。只試一次、不重試，理由相同 —— 它只是顯示用的值。
+MODEL_LOOKUP_TIMEOUT = 10
+
+
+def model_list_url(url):
+    """由端點組出模型清單的網址；組不出來時回空字串。
+
+        https://host:8443/api/external/v1/chat/completions
+        →  https://host:8443/api/external/v1/<MODEL_LIST_PATH>
+
+    取 API_ROOT **第一次**出現之前的那一段，接上 API_ROOT 與 MODEL_LIST_PATH，其後的
+    部分捨棄。中間的斜線由這裡補，MODEL_LIST_PATH 不必自帶。
+    """
+    url = (url or "").strip()
+    if not url:
+        return ""
+
+    path = (MODEL_LIST_PATH or "").strip().strip("/")
+    if not path or path == _MODEL_LIST_PLACEHOLDER:
+        logger.info("模型清單路徑尚未設定（ai_utils.MODEL_LIST_PATH），不查詢模型名稱")
+        return ""
+
+    at = url.find(API_ROOT)
+    if at < 0:
+        logger.info("端點中找不到 API 根路徑 %s，不查詢模型名稱（端點 %s）",
+                    API_ROOT, url)
+        return ""
+
+    return "%s%s/%s" % (url[:at], API_ROOT, path)
+
+
+def fetch_model_list(list_url, api_key="", timeout=MODEL_LOOKUP_TIMEOUT,
+                     verify_ssl=True):
+    """GET 模型清單，回傳陣列；任何失敗都回 None 並記一筆。**不拋例外。**
+
+    回應的形狀是 `[{"shareCode": "...", "name": "..."}, ...]`。
+
+    分成單獨一支，是因為列出模型的腳本要先把同一個服務的數個項目併成一次請求，
+    再各自比對 —— lookup_model 那種「一項一問」的形狀做不到。
+    """
+    if not list_url:
+        return None
+
+    try:
+        http_utils.require_requests(AiError)
+        session = http_utils.new_session(_headers(api_key))
+        response = session.get(list_url, timeout=timeout, verify=verify_ssl)
+    except Exception as exc:                        # noqa: BLE001
+        logger.info("查詢模型清單失敗（%s）：%s", list_url, exc)
+        return None
+
+    if response.status_code >= 400:
+        logger.info("查詢模型清單失敗（%s）：HTTP %d",
+                    list_url, response.status_code)
+        return None
+
+    try:
+        body = response.json()
+    except ValueError:
+        logger.info("模型清單的回應不是合法的 JSON（%s）", list_url)
+        return None
+
+    if not isinstance(body, list):
+        logger.info("模型清單的回應不是陣列，而是 %s（%s）",
+                    type(body).__name__, list_url)
+        return None
+
+    return body
+
+
+def find_model(models, share_code):
+    """在模型清單裡找出 shareCode 相同的那一項，回傳它的 name；找不到回空字串。"""
+    if not share_code or not isinstance(models, list):
+        return ""
+
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("shareCode", "")) == share_code:
+            name = item.get("name")
+            return name.strip() if isinstance(name, str) else ""
+
+    # 只記筆數，不記 shareCode —— 它是憑證。
+    logger.info("模型清單（%d 項）中沒有相符的 shareCode", len(models))
+    return ""
+
+
+def lookup_model(url, share_code, api_key="", verify_ssl=True,
+                 timeout=MODEL_LOOKUP_TIMEOUT):
+    """查出這組端點與 shareCode 對應的模型名稱；查不到回空字串。**不拋例外。**
+
+    模型名稱只用於報告出處。一個顯示用的值查不到，不值得讓一次已經付出等待的分析
+    失敗；原因都記在 log 裡，回答得了「出處為什麼少了模型」。
+    """
+    models = fetch_model_list(model_list_url(url), api_key=api_key,
+                              timeout=timeout, verify_ssl=verify_ssl)
+    if models is None:
+        return ""
+    return find_model(models, share_code)

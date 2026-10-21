@@ -62,9 +62,9 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
 
   <div class="stuck" style="margin-top:20px">
     <div class="st">
-      <div class="st-q">AI 的四個設定<strong>不在</strong>環境變數裡</div>
-      <div class="st-a"><code>ai_api_url</code>、<code>ai_api_key</code>、<code>ai_model</code>、
-      <code>ai_mode_name</code> 走第 3 步的 <code>params</code>,所以會<strong>落在請求檔裡</strong>。
+      <div class="st-q">AI 的連線設定<strong>不在</strong>環境變數裡</div>
+      <div class="st-a"><code>ai_connection</code>(<code>provider:端點:shareCode</code>)與
+      <code>ai_api_key</code> 走第 3 步的 <code>params</code>,所以會<strong>落在請求檔裡</strong>。
       跑完立刻刪掉那個檔案;在 CI 上還要在 <code>after_script</code> 再刪一次 ——
       它連失敗的 job 也會跑,而 artifacts 收的是整個工作目錄。</div>
     </div>
@@ -355,7 +355,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
 <footer>
   同一個資料夾裡：<br>
   <a href="getting-started.html">getting-started.html</a> — 第一次接觸這個功能（用 Qt 工具的角度）<br>
-  <a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/cli.md">cli.md</a> — 六支腳本的完整參數、逐步指令、CI 對照表<br>
+  <a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/cli.md">cli.md</a> — 七支腳本的完整參數、逐步指令、CI 對照表<br>
   <a href="device-authoring.html">device-authoring.html</a> — 寫自己的 device（圖解）<br>
   <a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/README.md">README.md</a> — 功能的完整行為規則
 </footer>

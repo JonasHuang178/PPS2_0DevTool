@@ -23,8 +23,8 @@ markdown 呈現在結果視窗。
 ## 畫面
 
 ```
-+-- AI Mode -------------+  +-- Merge Requests ---------------------+
-| [Open AI          v]   |  | ( ) Manual Merge Request ID [____]    |
++-- AI Provider ---------+  +-- Merge Requests ---------------------+
+| [openai / gpt-4o  v]   |  | ( ) Manual Merge Request ID [____]    |
 +-- Analysis Parameter --+  | (*) Get Merge Requests                |
 | [x] Add Debug ...file  |  |  +-- Merge Request Parameter ------+  |
 | Save path [____] [...] |  |  | [x]Only Open [x]Created after   |  |
@@ -59,9 +59,13 @@ markdown 呈現在結果視窗。
 
 ## 行為
 
-**進入這個分頁不執行任何腳本。** Repository 清單來自設定檔，Merge Request 清單
-一律由使用者按重新整理才取得。與 Single Building 的「進入即載入」相反：這裡每次
-載入都是一次網路請求，照做的話每次切到這個分頁都會被一個互斥的對話框擋住。
+**進入這個分頁不執行任何腳本，唯一的例外是列出模型。** Repository 清單來自設定檔，
+Merge Request 清單一律由使用者按重新整理才取得。與 Single Building 的「進入即載入」
+相反：這裡每次載入都是一次網路請求，照做的話每次切到這個分頁都會被一個互斥的對話框擋住。
+
+例外：工具每次啟動後**第一次**進入這個分頁時，會執行一次列出模型，讓 AI Provider 選單的
+每一項顯示成 `provider / 模型名稱`。之後再進來不再查；查詢失敗或被取消也一樣，選項顯示
+`無法取得`，不跳錯誤框，分析照樣能跑。
 
 **切換 repository 或改動查詢條件會清空 MR 清單。** 否則畫面上顯示的是前一個
 repository 的 MR，而按下 AI Analysis 時採用的卻是當前選取的那一個。
@@ -300,7 +304,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 
 ---
 
-<sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.11`<br>**AI** Open AI | `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+<sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.12`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 ````
 
 **`## 詳細資料` 只在這次真的用了 JIRA 議題時出現。** 條件是分析結構裡的 `jira_state`
@@ -568,7 +572,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 |---|---|---|
 | `Device` | 用哪一套實作（含種類） | 整行不出現 |
 | `腳本` | 哪一版通用骨架 | **永遠都在** |
-| `AI` | 哪個模式、哪個模型 | 整行不出現 |
+| `AI` | 哪個 provider、哪個模型（兩者都只取自分析結構，缺哪一半就省略哪一半） | 兩者皆空時整行不出現 |
 | `產生方式` | 誰在哪裡產生的（工具／CI 的 pipeline 與 commit） | 整行不出現 |
 
 報告被貼到討論串之後就脫離了產生它的環境，`腳本` 那一行是「這份分析是哪一版產生的」唯一的

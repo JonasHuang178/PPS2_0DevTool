@@ -426,16 +426,16 @@ def _stub_analysis(inputs, key, state):
     logger.warn("未設定 AI 端點，產生替代內容而非真的分析")
 
     overview = u"\n".join([
-        u"⚠️ 這份分析沒有經過 AI —— 設定檔的 Service.AI_Mode_List 沒有填 Api_URL。",
+        u"⚠️ 這份分析沒有經過 AI —— 設定檔的 Service.AI_Provider_List 沒有填 Api_URL。",
         u"以下內容是佔位用的，不反映任何實際的程式碼變更。",
         u"（diff %d 字元、JIRA %s）"
         % (len(contract.plain(inputs.get("mr_diff"))),
            key or u"無"),
     ])
 
+    # 沒有連線字串就沒有 provider 可拆、也沒有服務可查模型 —— 兩者留空，出處不印 AI 那一行。
     return contract.analysis_body(
         overview=overview,
-        model=inputs.get("ai_model"),
         jira_key=key,
         jira_state=state,
         jira_url=contract.jira_url(key) if state == contract.JIRA_STATE_OK else "",
@@ -456,12 +456,19 @@ def analyze(inputs):
         # 不讓流程失敗：一個格式不對的 key 不該讓整份分析做不出來。報告的出處會標示它。
         logger.warn("JIRA key %r 不符合樣式，視為無效", key)
 
-    if not contract.plain(inputs.get("ai_api_url")):
+    if not contract.plain(inputs.get("ai_connection")):
         # 這一條要在取 JIRA 之前：替代內容用不到 issue，先抓等於為一份假分析打一趟
         # 網路。
         return _stub_analysis(inputs, key, state)
 
-    api_url, api_key, model = contract.ai_credentials(inputs)
+    connection, api_key = contract.ai_credentials(inputs)
+
+    # **必要步驟：拆連線字串、查模型名稱。** 兩者都寫進分析結構，報告出處的 AI 那一行
+    # 就靠它們；沒做不會失敗，只是出處少了那一行 —— 一個不會報錯的遺漏。
+    # 拆與查都用 ai_utils，規則只有一份；問 AI 用的就是這裡拆出來的 url 與 share_code。
+    provider, url, share_code = ai_utils.split_connection(connection)
+    model = ai_utils.lookup_model(url, share_code, api_key,
+                                  verify_ssl=contract.ai_verify_ssl())
 
     # 確認有效**之後**才去抓 issue 的內容。
     #
@@ -504,7 +511,8 @@ def analyze(inputs):
     _progress(inputs)(u"送交 AI 分析，等待回覆…")
 
     summary, mr_diff = ai_utils.ask(
-        api_url, prompt,
+        url, prompt,
+        share_code=share_code,
         api_key=api_key,
         # 逾時由設定檔決定（見 contract.ai_timeout）。服務忙的時候，使用者要的是
         # 早點拿到「這次不行」，而不是對著一個固定尺寸的對話框等兩分鐘。
@@ -525,6 +533,7 @@ def analyze(inputs):
     # 逼另一邊跟著改。
     return contract.analysis_body(
         overview=summary,
+        provider=provider,
         model=model,
         jira_key=key,
         jira_state=state,

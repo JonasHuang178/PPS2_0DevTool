@@ -4,6 +4,7 @@
 #include "PythonRunner.h"
 #include "pps2_0devtool.h"
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
 #include <QMap>
@@ -38,7 +39,7 @@ QT_END_NAMESPACE
 // 讓一個功能看得到所有其他功能的元件是不必要的耦合。
 struct AIAnalysisGitLabMRWidgets
 {
-    QComboBox    *modeCombo;
+    QComboBox    *providerCombo;
     QCheckBox    *debugFileCheck;
     QLineEdit    *saveDirEdit;
     QPushButton  *saveDirBrowseButton;
@@ -71,7 +72,7 @@ struct AIAnalysisGitLabMRWidgets
     QLineEdit    *skipContainsEdit;
 
     AIAnalysisGitLabMRWidgets()
-        : modeCombo(Q_NULLPTR)
+        : providerCombo(Q_NULLPTR)
         , debugFileCheck(Q_NULLPTR)
         , saveDirEdit(Q_NULLPTR)
         , saveDirBrowseButton(Q_NULLPTR)
@@ -177,6 +178,9 @@ private:
 // 這裡每次載入都是一次網路請求，照做的話每次切到這個分頁都會被一個
 // application-modal 的對話框擋住並等待 GitLab 回應。
 //
+// 唯一的例外是列出模型：每次啟動後**第一次**進入時查一次，讓 AI Provider 選單的
+// 每一項顯示成 `provider / 模型名稱`（見 enterFunction）。
+//
 // 按下 AI Analysis 啟動一條固定五步的流程。五步全部執行，Qt 端不依條件跳過
 // 任何一步 —— 「要不要真的做事」由該步的腳本看參數自行決定。這是為了讓同一批
 // 腳本能被 CI/CD 的 shell 直接串接：分支判斷若寫在這裡，CI 那一側就成為第二份
@@ -193,6 +197,12 @@ public:
 
     // 接上元件並建立訊號連接。外殼在 UI_SetupSignal() 呼叫一次。
     void attachWidgets(const AIAnalysisGitLabMRWidgets &widgets);
+
+    // 進入功能（切換到本分頁，或啟動時本分頁即為當前分頁）。
+    //
+    // 每次啟動只在**第一次**進入時執行列出模型，之後什麼都不做。成功、失敗或取消都
+    // 算查過 —— 一個連不上的服務不該在每次切換分頁時都擋使用者一次。
+    void enterFunction();
 
     // 把一行逗號分隔的輸入解析成關鍵字清單：每筆去頭尾空白，**空的一律丟掉**。
     //
@@ -253,10 +263,10 @@ private:
         // QTemporaryDir 一起消滅，目錄也就被刪掉了。不必在任何地方寫清理。
         QSharedPointer<QTemporaryDir> tempDir;
 
-        QString aiModeName;
-        QString aiApiUrl;
+        // Provider 與 Api_URL 以冒號相接的連線字串；Api_URL 為空時是空字串。
+        // 怎麼拆由腳本決定，Qt 只做串接（見 connectionString）。
+        QString aiConnection;
         QString aiApiKey;
-        QString aiModel;
         QString aiTimeout;
         QString aiRetries;
         QString aiReask;
@@ -270,7 +280,16 @@ private:
     QJsonObject config() const;
     QString     resolvedSaveDir() const;
     QMap<QString, QString> serviceEnvVars() const;
-    QJsonObject selectedAiMode() const;
+    QJsonArray  providerEntries() const;
+    QJsonObject selectedProviderEntry() const;
+
+    // --- AI Provider 選單 ---
+    //
+    // 選項的文字是 `provider / 模型名稱`。選項與設定項目以**位置**對應，不以文字 ——
+    // 同一個 provider 以不同 shareCode 設成兩項是正常的用法，查詢之前或查不到時兩項的
+    // 文字可以完全相同。
+    void refreshProviderItems();
+    void queryModels();
 
     // --- 畫面狀態 ---
     void applyMrHeaderLayout();
@@ -316,6 +335,11 @@ private:
     // 重建候選作者時，setCheckState() 會發出 itemChanged，而那不是使用者的
     // 勾選。少了這個旗標，重建過程中會重複套用過濾並清掉表格選取。
     bool m_rebuildingAuthors;
+
+    // 列出模型的結果，依設定項目的位置對應。m_modelsQueried 為 false 時選項只顯示
+    // provider；為 true 時空字串代表查不到，顯示「無法取得」。
+    QStringList m_modelNames;
+    bool m_modelsQueried;
 
     // 手動編號的輸入框會自我修正（貼上 !123 或整條網址時取出其中的數字），
     // 而 setText() 會再次觸發 textChanged。這個旗標擋掉那一層遞迴。

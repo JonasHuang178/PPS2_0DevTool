@@ -1,6 +1,6 @@
 # 不開 Qt 跑這個功能
 
-> 這個功能的六支腳本都能直接在命令列執行。Qt 那一側只是替使用者填信封、
+> 這個功能的七支腳本都能直接在命令列執行。Qt 那一側只是替使用者填信封、
 > 按順序按下執行。
 >
 > **CI 就是命令列，只是由 pipeline 按下執行。** 指令是同一組，所以這兩件事在這裡
@@ -10,9 +10,9 @@
 > 見 [`scripts/AUTHORING.md`](../../scripts/AUTHORING.md) 第 3.6 與第 10 章。
 > 功能本身的畫面與行為見 [README.md](README.md)。
 
-## 六支腳本的介面
+## 七支腳本的介面
 
-六支都**不需要 `config`**。憑證一律走環境變數（見下一節），其餘要給的都在 `params` ——
+七支都**不需要 `config`**。憑證一律走環境變數（見下一節），其餘要給的都在 `params` ——
 走 stdin 的信封而不是命令列旗標，是因為命令列沒有長度限制可言，而且**權杖會出現在工作
 管理員的行程清單裡**。
 
@@ -23,16 +23,17 @@
 | `..._info.py` | `mr_info` | `repo`、`mr_iid`、`jira_mode`、`jira_key_manual` | **2/5** 抽出 JIRA key 與 MR 種類 |
 | `..._summary.py` | `ai_summary` | 見下面的「步驟 3 的參數」 | **3/5** AI 分析。唯一要錢、唯一要等分鐘級的一步 |
 | `..._code_review.py` | `fetch_code_review` | `repo`、`mr_iid`、`jira_key`、`jira_state` | **4/5** 自 JIRA 附件取程式碼審閱報告 |
-| `..._merge_to_md.py` | `merge_to_md` | 三個檔案路徑 + `repo`、`mr_iid`、`ai_mode` | **5/5** 合併為 markdown 報告 |
+| `..._merge_to_md.py` | `merge_to_md` | 三個檔案路徑 + `repo`、`mr_iid` | **5/5** 合併為 markdown 報告 |
+| `..._list_models.py` | `list_models` | `modes`：`[{connection, api_key}, ...]` | 每一個 AI provider 項目對應的模型名稱（不屬於五步流程，是給選單顯示的） |
 
-六支都另外收兩個共通的 `params`：
+除了 `..._list_models.py`，其餘六支都另外收兩個共通的 `params`：
 
 | `params` | 意思 |
 |---|---|
 | `out_path` | 產物寫到哪裡。**不給就不落檔**，結果只出現在 stdout 的回應信封裡 |
 | `debug_dir` | 除錯檔寫到哪裡。不給就不寫 |
 
-**步驟 3 的參數**比較多，因為 AI 的四項走 `params` 而不是環境變數。實務上的後果是它們
+**步驟 3 的參數**比較多，因為 AI 的連線字串與金鑰走 `params` 而不是環境變數。實務上的後果是它們
 會**落在請求檔裡** —— 那個檔案用完要刪，見下面的坑那一節。
 
 | `params` | 意思 |
@@ -40,7 +41,8 @@
 | `description_path` 或 `description` | 步驟 1 的產物。手上是檔案就用前者，是字串就用後者 |
 | `jira_key`、`mr_type` | 步驟 2 的產物 |
 | `jira_mode` | `auto` 從標題第一個方括號抽 / `manual` 用 `jira_key_manual` / `none` 不用 |
-| `ai_mode_name`、`ai_api_url`、`ai_api_key`、`ai_model` | 要問哪一個 AI |
+| `ai_connection` | 要問哪一個 AI：連線字串 `provider:端點:shareCode`，例如 `openai:https://主機/api/external/v1/chat:CODE`。provider 可省略，省略時報告出處沒有 provider |
+| `ai_api_key` | AI 金鑰 |
 | `ai_timeout`、`ai_retries`、`ai_reask`、`ai_recheck` | 四個等待設定。不給就用腳本自己的預設（120 / 3 / 1 / 0） |
 
 四個等待設定**一起**決定最壞情況的等待時間，所以要把等待封頂就得四個一起調。不給值時
@@ -100,8 +102,7 @@ cat > "$W/req3.json" <<EOF
   "repo":"$REPO","mr_iid":"$IID",
   "description_path":"$W/01_description.md",
   "jira_key":"$JIRA_KEY","jira_mode":"auto","mr_type":"$MR_TYPE",
-  "ai_mode_name":"Open AI","ai_api_url":"$AI_API_URL",
-  "ai_api_key":"$AI_API_KEY","ai_model":"gpt-4o",
+  "ai_connection":"$AI_API_URL","ai_api_key":"$AI_API_KEY",
   "out_path":"$W/03_summary.json"}}
 EOF
 python3 ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_summary.py --request "$W/req3.json"
@@ -131,7 +132,7 @@ cat > "$W/req5.json" <<EOF
   "ori_md_file_path":"$W/01_description.md",
   "mr_summary_json_file_path":"$W/03_summary.json",
   $CR
-  "repo":"$REPO","mr_iid":"$IID","ai_mode":"Open AI",
+  "repo":"$REPO","mr_iid":"$IID",
   "out_path":"$W/05_report.md"}}
 EOF
 python3 ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_merge_to_md.py --request "$W/req5.json"
@@ -183,9 +184,14 @@ log 全走 stderr。所以沒有「CI 專用的腳本路徑」要維護。
 GITLAB_ACCESS_TOKEN   JIRA_ACCESS_TOKEN   AI_API_URL   AI_API_KEY
 ```
 
+`AI_API_URL` 的值是連線字串 `provider:端點:shareCode`（例如
+`openai:https://主機/api/external/v1/chat:CODE`），在 yml 裡對應到步驟 3 的 `ai_connection`。
+**變數名稱與工具 v1.0 相同**；舊的值不帶 provider 照樣能跑，只是報告出處沒有 provider。
+v1.0 的 `AI_MODE_NAME`、`AI_MODEL` 已移除 —— 模型名稱由步驟 3 向 AI 服務查。
+
 ## 幾個不明顯的地方
 
-- **AI 金鑰會落在 `req3.json` 裡**（AI 四項走 `params`，不走環境變數），所以範例在步驟 3
+- **AI 金鑰會落在 `req3.json` 裡**（連線字串與金鑰走 `params`，不走環境變數），所以範例在步驟 3
   之後立刻刪它，並在 `after_script` 再刪一次 —— `after_script` 連失敗的 job 也會跑，
   而 `artifacts` 收的是整個 `pps-work/`
 - **步驟 4 永遠執行**，「要不要真的去抓附件」由它自己依 `jira_key` 與 `jira_state` 決定。

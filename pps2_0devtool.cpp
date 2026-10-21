@@ -78,6 +78,9 @@ void PPS2_0DevTool::notifyFunctionEntered(const QString &functionName)
 {
     if (m_singleBuilding && functionName == SingleBuilding::functionName())
         m_singleBuilding->enterFunction();
+    else if (m_aiAnalysisGitLabMR
+             && functionName == AIAnalysisGitLabMR::functionName())
+        m_aiAnalysisGitLabMR->enterFunction();
 }
 
 void PPS2_0DevTool::UI_Init()
@@ -160,7 +163,7 @@ void PPS2_0DevTool::UI_SetupSignal()
     // 不需要的功能不連接任何訊號即可正常運作。
     if (m_aiAnalysisGitLabMR) {
         AIAnalysisGitLabMRWidgets widgets;
-        widgets.modeCombo           = ui->aiModeComboBox;
+        widgets.providerCombo       = ui->aiProviderComboBox;
         widgets.debugFileCheck      = ui->aiDebugFileCheckBox;
         widgets.saveDirEdit         = ui->aiSaveDirLineEdit;
         widgets.saveDirBrowseButton = ui->aiSaveDirBrowseButton;

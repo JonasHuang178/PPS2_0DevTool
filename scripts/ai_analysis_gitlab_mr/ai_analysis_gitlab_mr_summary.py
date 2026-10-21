@@ -302,10 +302,9 @@ def main():
             script_io.arg("mr_type", default="",
                           help="上一步解出的種類；決定用哪一份 summary 鉤子，"
                                "空字串代表用該 device 的通用版"),
-            script_io.arg("ai_mode_name", default="", help="AI 模式名稱"),
-            script_io.arg("ai_api_url", default="", help="AI 端點"),
+            script_io.arg("ai_connection", default="",
+                          help="AI 連線字串 provider:端點:shareCode；provider 可省略"),
             script_io.arg("ai_api_key", default="", help="AI 金鑰"),
-            script_io.arg("ai_model", default="", help="AI 模型名稱"),
             script_io.arg("ai_timeout", default="",
                           help="問 AI 的逾時秒數；空字串代表用預設值"),
             script_io.arg("ai_retries", default="",
@@ -342,11 +341,12 @@ def main():
     # 訊息要指得出種類：改壞的往往是某個種類專屬的那一份，而不是通用的那一份。
     where = "device %s 的 %ssummary.py" % (owner,
                                            ("%s/" % mr_type) if mr_type else "")
-    logger.info("AI 分析：device=%s type=%s mode=%s model=%s jira_key=%s",
+    # provider 只拆來記 log。真正用它的是鉤子（寫進分析結構），由它自己拆 —— 這一行
+    # 用的是同一支函式，所以兩邊看到的值不會不同。
+    logger.info("AI 分析：device=%s type=%s provider=%s jira_key=%s",
                 owner,
                 mr_type or "(無)",
-                params["ai_mode_name"] or "(未指定)",
-                params["ai_model"] or "(未指定)",
+                ai_utils.split_connection(params["ai_connection"])[0] or "(未指定)",
                 params["jira_key"] or "(無)")
     # 四個等待相關的設定在**取 diff 之前**就驗。打錯的話不該讓使用者先等完一趟 GitLab、
     # 再看到一個本來第一秒就能說的設定錯誤。
@@ -405,10 +405,8 @@ def main():
         # 唯讀轉送：讓鉤子知道自己是被哪一個種類選中的。通用的那一份可以據此微調，
         # 而種類專屬的那一份通常不需要看它。
         "mr_type": mr_type,
-        "ai_mode_name": params["ai_mode_name"],
-        "ai_api_url": params["ai_api_url"],
+        "ai_connection": params["ai_connection"],
         "ai_api_key": params["ai_api_key"],
-        "ai_model": params["ai_model"],
 
         # 已經正規化過，鉤子再呼叫一次那三支也只是原樣拿回去。
         #

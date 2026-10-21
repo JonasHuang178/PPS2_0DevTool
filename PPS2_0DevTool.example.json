@@ -8,12 +8,11 @@
       "Gitlab_Verify_SSL": "false",
       "Jira_Server_URL": "https://jira.example.com",
       "Jira_Access_Token": "",
-      "AI_Mode_List": [
+      "AI_Provider_List": [
         {
-          "Name": "Open AI",
+          "Provider": "openai",
           "Api_URL": "https://api.openai.com/v1/chat/completions",
           "Api_Key": "",
-          "Model": "gpt-4o",
           "Timeout_Seconds": "120",
           "Retry_Count": "3",
           "Reask_Count": "1",

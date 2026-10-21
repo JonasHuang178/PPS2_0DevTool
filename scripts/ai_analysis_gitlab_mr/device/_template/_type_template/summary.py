@@ -22,13 +22,21 @@
 """
 
 import ai_analysis_gitlab_mr as contract
+from script_utils import ai_utils
 
 
 def analyze(inputs):
     """產生這次分析的內容。回傳 contract.analysis_body(...) 的結果。"""
+    # **必要步驟（每一個 device 都必須做）：** 拆連線字串、查模型名稱，寫進分析結構。
+    # 報告出處的 AI 那一行只讀它們；沒做不會失敗，只是出處少了那一行。
+    provider, url, share_code = ai_utils.split_connection(inputs.get("ai_connection"))
+    model = ai_utils.lookup_model(url, share_code, inputs.get("ai_api_key"),
+                                  verify_ssl=contract.ai_verify_ssl())
+
     return contract.analysis_body(
         overview=u"（這個種類專屬的總覽）",
-        model=inputs.get("ai_model"),
+        provider=provider,
+        model=model,
         jira_key=inputs.get("jira_key"),
         jira_state=contract.JIRA_STATE_NONE,
         mr_diff={},

@@ -1036,36 +1036,33 @@ def skip_filter():
 
 
 def ai_credentials(inputs):
-    """自鉤子的 inputs 取出 AI 的連線資訊，回傳 (api_url, api_key, model)。
+    """自鉤子的 inputs 取出 AI 的連線資訊，回傳 (connection, api_key)。
 
-    與另外兩個不同，AI 的四項走 **params 而不是環境變數**（見步驟 3 的入口腳本）——
+    與另外兩個不同，AI 的連線資訊走 **params 而不是環境變數**（見步驟 3 的入口腳本）——
     因此它們從 inputs 進來，不從 os.environ 讀。
 
-    只有 **api_url 是必要的**，另外兩項都可以是空的：
+    connection 是連線字串 `provider:位址:shareCode`，**原樣交回、不在這裡拆**：拆解是
+    鉤子明寫的必要步驟（見範本），由 ai_utils.split_connection 一份規則負責。
 
-      金鑰    這個服務以 Api_URL 尾端的 shareCode 辨識呼叫者，沒有認證標頭。
-              Api_Key 有填才會多送一個 Bearer（見 ai_utils._headers）。
+    只有 **connection 是必要的**；金鑰可以是空的 —— 這個服務以 shareCode 辨識呼叫者，
+    Api_Key 有填才會多送一個標頭（見 ai_utils._headers）。
 
-      模型名  **不進請求。** 模型是由 shareCode 那一端決定的，這裡的 Model 只是
-              報告出處要印的資訊。把它列為必填會讓一個純粹的顯示欄位擋住整個流程。
-
-    shareCode 本身不在這裡檢查：那是 Api_URL 的一部分，怎麼拆、缺了算不算錯，都由
-    ai_utils 決定 —— 檢查跟著解析走，才不會兩邊對格式的理解分岔。
+    shareCode 本身不在這裡檢查：怎麼拆、缺了算不算錯，都由 ai_utils 決定 —— 檢查跟著
+    解析走，才不會兩邊對格式的理解分岔。
 
     放在契約層而不是 ai_utils：認得 inputs 的形狀是這個功能的事，script_utils 底下的
     模組不該知道任何一個功能的參數長什麼樣。
     """
-    api_url = plain(inputs.get("ai_api_url"))
+    connection = plain(inputs.get("ai_connection"))
     api_key = plain(inputs.get("ai_api_key"))
-    model = plain(inputs.get("ai_model"))
 
-    if not api_url:
+    if not connection:
         raise CredentialError(
             "未指定 AI 端點",
-            "設定檔 Service.AI_Mode_List 裡所選模式的 Api_URL 是空的。",
+            "設定檔 Service.AI_Provider_List 裡所選 provider 的 Api_URL 是空的。",
             "AI_API_URL_MISSING")
 
-    return api_url, api_key, model
+    return connection, api_key
 
 
 # 問 AI 的三個等待相關設定，設定檔沒指定時用這幾個。
@@ -1122,7 +1119,7 @@ def _ai_number(inputs, key, default, setting, code, allow_zero, allow_float):
         return default
 
     rule = "0 或正整數" if allow_zero else ("正數（秒）" if allow_float else "正整數")
-    where = ("設定檔 Service.AI_Mode_List 裡所選模式的 %s 應該是一個%s。"
+    where = ("設定檔 Service.AI_Provider_List 裡所選 provider 的 %s 應該是一個%s。"
              % (setting, rule))
 
     if isinstance(value, bool):
@@ -1284,7 +1281,10 @@ def describe_gitlab_error(exc, repo):
 # 版本 7 相對於 6 在 coverage 底下多了 skipped —— 依設定排除、一開始就沒打算送的那些
 # 檔案。它必須跟著產物走的理由與 coverage 本身完全相同：報告要靠它回答「我的檔案為什麼
 # 不在這份分析裡」，而步驟 5 收到的只有檔案。
-ANALYSIS_SCHEMA_VERSION = 7
+# 版本 8 相對於 7 多了 provider —— 這次分析送往哪一個 AI 供應者，由鉤子拆連線字串取得。
+# 它跟著產物走的理由與 model 相同：出處說的是「這份分析是誰做的」，那是分析當下的事實，
+# 而步驟 5 收到的只有檔案。
+ANALYSIS_SCHEMA_VERSION = 8
 
 # **讀**得懂的版本。寫出去的一律是 ANALYSIS_SCHEMA_VERSION。
 #
@@ -1292,16 +1292,17 @@ ANALYSIS_SCHEMA_VERSION = 7
 # 選填欄位：讀 3 是「視為沒有種類」，讀 3、4 是「視為沒有涵蓋範圍資訊」，讀 3、4、5 是
 # 「每一筆沒有位置」，而那一條的讀法就是退回用 diffCode 分組（見 default 的 merge_to_md）。
 # 讀 3 到 6 還多一條：「視為沒有任何檔案被設定排除」—— `skipped` 取不到就是 0，而那正是
-# 那幾版的事實（當時還沒有排除機制）。
+# 那幾版的事實（當時還沒有排除機制）。讀 3 到 7 則是「視為沒有 provider」—— 出處少印
+# 那一半，那幾版本來就沒有記下它。
 #
-# 那不是猜測，是四條知道的讀法。
+# 那不是猜測，是五條知道的讀法。
 #
 # 實際的好處很具體：開發時常常單獨拿昨天的 03_summary.json 重跑步驟 5 來看版面，
 # 而那份檔案是舊版本寫的。只認最新版會讓那個迴路在每次改版時斷一次。
 #
 # 加一個版本進來之前先問：那一版的讀法真的知道嗎？不知道就不要加 —— 猜的下場是一份
 # 看起來正常、實際上少了幾段的報告，而它會回報成功。
-ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5, 6, 7)
+ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5, 6, 7, 8)
 
 
 # 一次分析的 JIRA 狀態。
@@ -1849,7 +1850,7 @@ def _count_of(bucket):
 
 
 def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
-                  jira_url="", mr_diff=None, mr_type="", coverage=None):
+                  jira_url="", mr_diff=None, mr_type="", coverage=None, provider=""):
     """組出 analysis 的**內容**。
 
     刻意不含 schema_version —— 版本由入口腳本蓋章。讓鉤子自己填，遲早有人複製範本時
@@ -1870,8 +1871,13 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
 
     coverage 同樣由**入口腳本蓋章**（見 diff_coverage），而且理由更強：它是用來檢查這份
     mrDiff 回報了多少的。鉤子填了會被覆蓋。
+
+    provider 與 model 由**鉤子**填：前者以 ai_utils.split_connection 拆連線字串取得，
+    後者以 ai_utils.lookup_model 查得。兩者都只印在報告出處；沒填就是出處少那一半，
+    不會失敗。
     """
     return {
+        "provider": plain(provider),
         "model": plain(model),
         "mr_type": plain(mr_type),
         "jira_key": plain(jira_key),
@@ -1954,6 +1960,15 @@ def validate_analysis(payload, source=""):
             "%sAI 分析結果的 mr_type 不是字串：%r" % (where, mr_type),
             "讀到的型別是 %s。沒有種類時請填空字串。" % type(mr_type).__name__,
             "ANALYSIS_MR_TYPE_BAD")
+
+    # provider 與 model 是選填的顯示值，但給了就必須是字串 —— 理由與 mr_type 相同。
+    for key in ("provider", "model"):
+        value = analysis.get(key, "")
+        if value is not None and not isinstance(value, str):
+            raise AnalysisFormatError(
+                "%sAI 分析結果的 %s 不是字串：%r" % (where, key, value),
+                "讀到的型別是 %s。取不到時請填空字串。" % type(value).__name__,
+                "ANALYSIS_%s_BAD" % key.upper())
 
     # 涵蓋範圍是選填的：版本 3、4 的產物沒有這個欄位，讀法是「視為沒有涵蓋範圍資訊」。
     # 但給了就必須是物件 —— 一個被填成數字或字串的 coverage 會讓渲染那一步拿它去取鍵，
@@ -2432,7 +2447,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.11"
+SCRIPT_VERSION = "2.12"
 
 
 def _link(text, url):
@@ -2479,14 +2494,14 @@ def _tool_origin():
     return ("%s %s" % (name, version)).strip()
 
 
-def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
+def render_footer(device_name="", device_version="", analysis=None):
     """報告最後那一段出處資訊。
 
     形狀（整段是一個 <sub>，行與行之間用 <br> 斷開）：
 
         ---
 
-        <sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.0`<br>**AI** Open AI | `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+        <sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.0`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 
     四行各回答一個問題：用哪一套邏輯、哪一版骨架、哪個模型、誰在哪裡產生的。
 
@@ -2526,13 +2541,18 @@ def render_footer(ai_mode="", device_name="", device_version="", analysis=None):
     # 二、哪一版骨架。**這一行永遠都在** —— 它是這整段存在的理由。
     lines.append("**腳本** %s `%s`" % (SCRIPT_NAME, SCRIPT_VERSION))
 
-    # 三、哪個模型。模式是「使用者選了哪一組設定」，模型是「實際跑的是誰」；在 CI 上
-    # 只有後者有意義，所以兩個都印。
-    mode = plain(ai_mode)
+    # 三、哪個 AI。兩個值都只從分析結構讀 —— 那是分析當下的事實，單獨拿一份舊產物
+    # 重跑這一步，印出的仍是當時的值。各帶標示：只有兩個值並列時，讀的人看不出哪個
+    # 是供應者、哪個是模型。缺哪一半就省略哪一半（較舊的產物沒有 provider）。
+    halves = []
+    provider = plain((analysis or {}).get("provider"))
+    if provider:
+        halves.append("**Provider** `%s`" % provider)
     model = plain((analysis or {}).get("model"))
-    if mode or model:
-        lines.append("**AI** %s" % ("%s | `%s`" % (mode, model) if mode and model
-                                    else (mode or "`%s`" % model)))
+    if model:
+        halves.append("**Model** `%s`" % model)
+    if halves:
+        lines.append("**AI** %s" % " | ".join(halves))
 
     # 四、誰在哪裡產生的。
     origin = _ci_origin() or _tool_origin()

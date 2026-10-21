@@ -180,11 +180,6 @@ def main():
             script_io.arg("mr_iid", default="",
                           help="Merge Request 編號；只用於診斷訊息"),
 
-            # 出處資訊用。使用者在畫面上選的那個 AI 模式名稱，原樣印在報告末尾，
-            # 讓讀的人知道這份分析是哪一種模式產生的。
-            script_io.arg("ai_mode", default="",
-                          help="AI 模式名稱；只用於報告末尾的出處資訊"),
-
             script_io.arg("debug_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
         ],
@@ -313,8 +308,8 @@ def main():
     except device.DeviceError as exc:
         script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
 
+    # AI 的 provider 與模型不經參數 —— render_footer 自己從 analysis 讀，那是分析當下的值。
     sections.append(ai_analysis_gitlab_mr.render_footer(
-        ai_mode=params["ai_mode"],
         device_name=device_name,
         device_version=device_ver,
         analysis=analysis))

@@ -430,16 +430,22 @@ script_utils/
         檔案」的用這一支
   jira_utils.py     Jira REST（Server/DC）
   ai_utils.py       向 AI 服務提問
-    ask(api_url, prompt, history=None, file_ids=None, api_key="",
+    split_connection(connection) -> (provider, url, share_code)
+        連線字串 `provider:位址:shareCode` 拆成三段；provider 是選填的
+    ask(url, prompt, share_code="", history=None, file_ids=None, api_key="",
         timeout=DEFAULT_TIMEOUT, retries=MAX_RETRIES, on_retry=None,
         verify_ssl=True, parse=None, reask=0, reask_hint=REASK_HINT)
         -> 模型回的那段文字
-        api_url 直接收設定檔的 Api_URL，shareCode 黏在尾端也沒關係（這裡會拆）
-    ask_json(api_url, prompt, require=(), reask=1, **kwargs) -> 解析過的 dict
+        url 與 share_code 是 split_connection 拆好的兩段，這裡不再拆
+    ask_json(url, prompt, require=(), reask=1, **kwargs) -> 解析過的 dict
         require 列出一定要有的頂層鍵；缺了算格式不符，觸發重問
         逾時預設 120 秒、重試 3 次 —— AI 是分鐘級的，不適用 http_utils 的 30 秒
         429 帶 Retry-After 時等它指定的秒數；超過上限就不重試，讓使用者知道在限流
         失敗時拋出 AiError（沿用 HttpError，.code 形如 "AI_401"）
+    lookup_model(url, share_code, api_key="", verify_ssl=True) -> 模型名稱
+        GET 模型清單、以 shareCode 比對；查不到回空字串，不拋例外
+        清單網址 = 端點中 API_ROOT 之前的部分 + API_ROOT + "/" + MODEL_LIST_PATH
+        MODEL_LIST_PATH 由部署者填入；仍是佔位值時不送任何請求
     **prompt 不進這個模組** —— 組 prompt 是 device 的 summary.py 的事
 ```
 

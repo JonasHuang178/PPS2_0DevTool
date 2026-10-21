@@ -20,6 +20,7 @@
 #include <QMap>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QRegularExpression>
 #include <QSpinBox>
 #include <QStandardItem>
 #include <QStandardItemModel>
@@ -55,6 +56,16 @@ const char *kCodeReviewScript =
         "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_code_review.py";
 const char *kMergeToMdScript =
         "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_merge_to_md.py";
+const char *kListModelsScript =
+        "scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_list_models.py";
+
+// 模型名稱查過但取不到時，選項上取代模型名稱的文字。
+const char *kModelUnavailableText = "無法取得";
+
+// Provider 允許的字元。它會被接在 Api_URL 前面組成連線字串，再由腳本以「第一個冒號
+// 之後緊接著 http(s)://」認出來；含有其他字元時，腳本會把整串當成端點送出，而連線
+// 失敗的訊息看不出是 Provider 寫錯了 —— 送出之前擋下是唯一指得出原因的時機。
+const char *kProviderPattern = "^[A-Za-z0-9._-]+$";
 
 // 流程共五步，固定。
 const int kFlowStepCount = 5;
@@ -177,7 +188,7 @@ QString extractMergeRequestIid(const QString &text)
 // 審閱）要表達成**沒給**，不是給一個指向空氣的路徑。兩者的差別全靠這裡。
 // 設定檔的關鍵字清單填進輸入框：以 ", " 串接。
 //
-// 設定檔用 JSON array（與 Repo_List、AI_Mode_List 同一個慣例），輸入框是逗號
+// 設定檔用 JSON array（與 Repo_List、AI_Provider_List 同一個慣例），輸入框是逗號
 // 分隔的一行 —— 中間只有這一個轉換，而且是**單向**的：使用者改過的內容不寫回
 // 任何地方，重新啟動就回到設定檔的值。
 QString joinKeywords(const QJsonArray &items)
@@ -204,6 +215,25 @@ QString configNumber(const QJsonObject &object, const QString &key)
     if (value.isDouble())
         return QString::number(value.toDouble());
     return value.toString().trimmed();
+}
+
+// 所選設定項目的連線字串：Provider、一個冒號與 Api_URL 原樣相接。
+//
+// **只是串接，不是解讀** —— 怎麼拆、拆不開算什麼，都由腳本決定（ai_utils.split_connection），
+// CI 那一側直接給出同一個形狀的字串即可。
+//
+// Api_URL 為空時給空字串：只有 provider 而沒有端點時，相接的結果是一個看似有內容的
+// 字串，腳本就認不出「未設定 AI 端點」這個狀態，而那個狀態有它自己的行為（替代內容）。
+QString connectionString(const QJsonObject &entry)
+{
+    const QString apiUrl = entry.value(QString("Api_URL")).toString().trimmed();
+    if (apiUrl.isEmpty())
+        return QString();
+
+    const QString provider = entry.value(QString("Provider")).toString().trimmed();
+    if (provider.isEmpty())
+        return apiUrl;
+    return QString("%1:%2").arg(provider, apiUrl);
 }
 
 void insertArtifactPath(QJsonObject &params,
@@ -378,6 +408,7 @@ AIAnalysisGitLabMR::AIAnalysisGitLabMR(PPS2_0DevTool *shell, QObject *parent)
     , m_mrState(MrNotFetched)
     , m_truncated(false)
     , m_rebuildingAuthors(false)
+    , m_modelsQueried(false)
     , m_sanitizingManualMr(false)
 {
     m_mrProxy->setSourceModel(m_mrModel);
@@ -438,12 +469,12 @@ void AIAnalysisGitLabMR::attachWidgets(const AIAnalysisGitLabMRWidgets &widgets)
         m_repoModel->appendRow(item);
     }
 
-    const QJsonArray modes = cfg.value(QString("AI_Mode_List")).toArray();
-    for (int i = 0; i < modes.size(); ++i) {
-        const QString name = modes.at(i).toObject().value(QString("Name")).toString();
-        if (!name.isEmpty())
-            m_widgets.modeCombo->addItem(name);   // 順序即設定的順序，第一項為預設
-    }
+    // 每一個設定項目一個選項，**連 Provider 是空的也不跳過** —— 選項與設定項目以位置
+    // 對應，跳過一項就會讓後面每一項都對到錯的設定。順序即設定的順序，第一項為預設。
+    const QJsonArray entries = providerEntries();
+    for (int i = 0; i < entries.size(); ++i)
+        m_widgets.providerCombo->addItem(QString());
+    refreshProviderItems();
 
     m_widgets.saveDirEdit->setText(
                 cfg.value(QString("Save_Analysis_File_Dir")).toString());
@@ -579,16 +610,103 @@ QMap<QString, QString> AIAnalysisGitLabMR::serviceEnvVars() const
     return env;
 }
 
-QJsonObject AIAnalysisGitLabMR::selectedAiMode() const
+QJsonArray AIAnalysisGitLabMR::providerEntries() const
 {
-    const QString name = m_widgets.modeCombo->currentText();
-    const QJsonArray modes = config().value(QString("AI_Mode_List")).toArray();
-    for (int i = 0; i < modes.size(); ++i) {
-        const QJsonObject mode = modes.at(i).toObject();
-        if (mode.value(QString("Name")).toString() == name)
-            return mode;
+    return config().value(QString("AI_Provider_List")).toArray();
+}
+
+// 以選項的**位置**取設定項目，不以文字比對 —— 兩項的文字可以完全相同（見
+// refreshProviderItems）。沒有選項時回空物件，流程照樣能跑（腳本產出替代內容）。
+QJsonObject AIAnalysisGitLabMR::selectedProviderEntry() const
+{
+    const int index = m_widgets.providerCombo->currentIndex();
+    const QJsonArray entries = providerEntries();
+    if (index < 0 || index >= entries.size())
+        return QJsonObject();
+    return entries.at(index).toObject();
+}
+
+// ---------------------------------------------------------------------------
+// AI Provider 選單
+// ---------------------------------------------------------------------------
+
+// 依查詢狀態重寫每一個選項的文字，**不改變選取的項目**：setItemText() 不動
+// currentIndex，所以查詢結果回來時使用者已經選好的那一項不會被換掉。
+void AIAnalysisGitLabMR::refreshProviderItems()
+{
+    const QJsonArray entries = providerEntries();
+    const int count = qMin(entries.size(), m_widgets.providerCombo->count());
+
+    for (int i = 0; i < count; ++i) {
+        QString provider = entries.at(i).toObject()
+                .value(QString("Provider")).toString().trimmed();
+        if (provider.isEmpty())
+            provider = QString("(未填 Provider)");
+
+        QString text = provider;
+        if (m_modelsQueried) {
+            const QString model = (i < m_modelNames.size())
+                    ? m_modelNames.at(i) : QString();
+            text = QString("%1 / %2").arg(
+                        provider,
+                        model.isEmpty() ? QString(kModelUnavailableText) : model);
+        }
+        m_widgets.providerCombo->setItemText(i, text);
     }
-    return QJsonObject();
+}
+
+void AIAnalysisGitLabMR::enterFunction()
+{
+    // 旗標在送出**之前**就設 —— 失敗或取消也算查過，之後再進來不再查。
+    if (m_modelsQueried)
+        return;
+    m_modelsQueried = true;
+    queryModels();
+}
+
+// 列出每一個設定項目的模型名稱。
+//
+// 連線字串與 AI 分析那一步組法相同（connectionString），拆解與查詢都在腳本端 ——
+// Qt 只把每一項原樣交過去、把結果依位置填回選單。
+void AIAnalysisGitLabMR::queryModels()
+{
+    const QJsonArray entries = providerEntries();
+    if (entries.isEmpty())
+        return;
+
+    QJsonArray modes;
+    for (int i = 0; i < entries.size(); ++i) {
+        const QJsonObject entry = entries.at(i).toObject();
+        QJsonObject one;
+        one.insert(QString("connection"), connectionString(entry));
+        one.insert(QString("api_key"), entry.value(QString("Api_Key")).toString());
+        modes.append(one);
+    }
+
+    QJsonObject params;
+    params.insert(QString("modes"), modes);
+
+    m_shell->runFunctionScript(
+        functionName(), QString(kListModelsScript),
+        QString("list_models"), params,
+        [this](const PythonRunner::PythonRunnerResult &result) {
+            m_modelNames.clear();
+
+            // 失敗或取消時**不跳錯誤框**：這是顯示用的資訊，不值得打斷使用者；每一項
+            // 顯示「無法取得」，原因留在診斷輸出。
+            if (!result.success) {
+                QTDebug(QString("[%1] 列出模型失敗：%2")
+                        .arg(functionName(), failureReason(result)));
+            } else {
+                const QJsonArray rows =
+                        result.data.value(QString("modes")).toArray();
+                for (int i = 0; i < rows.size(); ++i)
+                    m_modelNames.append(rows.at(i).toObject()
+                                        .value(QString("model")).toString());
+            }
+            refreshProviderItems();
+        },
+        serviceEnvVars());
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,11 +1369,25 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
     context.repo   = selectedRepo();
     context.mrIid  = effectiveMrIid();
 
-    const QJsonObject mode = selectedAiMode();
-    context.aiModeName = mode.value(QString("Name")).toString();
-    context.aiApiUrl   = mode.value(QString("Api_URL")).toString();
-    context.aiApiKey   = mode.value(QString("Api_Key")).toString();
-    context.aiModel    = mode.value(QString("Model")).toString();
+    const QJsonObject mode = selectedProviderEntry();
+
+    // Provider 在送出**之前**檢查（理由見 kProviderPattern）。沒有任何設定項目時不檢查
+    // —— 那是「未設定 AI 端點」，流程照樣能跑，腳本會產出言明未經 AI 的替代內容。
+    if (!mode.isEmpty()) {
+        const QString provider =
+                mode.value(QString("Provider")).toString().trimmed();
+        if (!QRegularExpression(QString(kProviderPattern)).match(provider).hasMatch()) {
+            m_shell->showUI_ErrorMessageBox(
+                        QString("Provider「%1」不合法：\n"
+                                "只能使用英文字母、數字與 . _ -，且不可為空。\n"
+                                "請修改設定檔 Service.AI_Provider_List 裡這一項的 Provider。")
+                        .arg(provider));
+            return;
+        }
+    }
+
+    context.aiConnection = connectionString(mode);
+    context.aiApiKey     = mode.value(QString("Api_Key")).toString();
 
     // 四個等待相關的設定。沒設定時留空字串，腳本據此採用自己的預設 —— Qt 不複製一份
     // 預設值，否則同一個數字會有兩個來源，而它們可以不一致；而且命令列與 CI 那條路徑
@@ -1409,11 +1541,10 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
                       done.at(1).data.value(QString("mr_type")).toString());
         // 模式唯讀轉送，讓鉤子能分辨 key 是抽出來的還是使用者手填的。
         params.insert(QString("jira_mode"), context.jiraMode);
-        // AI 的四項走 params（不注入環境變數），因此不會出現在命令列上。
-        params.insert(QString("ai_mode_name"), context.aiModeName);
-        params.insert(QString("ai_api_url"),   context.aiApiUrl);
-        params.insert(QString("ai_api_key"),   context.aiApiKey);
-        params.insert(QString("ai_model"),     context.aiModel);
+        // AI 的連線資訊走 params（不注入環境變數），因此不會出現在命令列上。
+        // provider 與模型名稱不送 —— 兩者都由這一步的鉤子自己取得。
+        params.insert(QString("ai_connection"), context.aiConnection);
+        params.insert(QString("ai_api_key"),    context.aiApiKey);
         params.insert(QString("ai_timeout"),   context.aiTimeout);
         params.insert(QString("ai_retries"),   context.aiRetries);
         params.insert(QString("ai_reask"),     context.aiReask);
@@ -1455,9 +1586,8 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
                            workDir, kStepArtifactName[2]);
         insertArtifactPath(params, QString("code_review_json_file_path"),
                            workDir, kStepArtifactName[3]);
-        // 報告末尾的出處資訊要印出使用者選的 AI 模式。這一步本身不做 AI 分析，
-        // 所以它只是被轉送過來、原樣印出，與 repo / mr_iid 同一類。
-        params.insert(QString("ai_mode"), context.aiModeName);
+        // AI 的 provider 與模型名稱不送 —— 出處只從分析結構（03_summary.json）讀，
+        // 那是分析當下的值。
         break;
 
     default:

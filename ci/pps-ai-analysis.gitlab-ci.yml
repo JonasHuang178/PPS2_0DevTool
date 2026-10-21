@@ -25,6 +25,11 @@
 #
 # 要先設成 CI/CD Variables（Masked + Protected）：
 #   GITLAB_ACCESS_TOKEN  JIRA_ACCESS_TOKEN  AI_API_URL  AI_API_KEY
+#
+# AI_API_URL 是連線字串 provider:端點:shareCode，例如
+#   openai:https://ai.example.com/api/external/v1/chat:SHARE_CODE
+# provider 可以省略（只寫 端點:shareCode），照樣能跑，只是報告出處少了 provider。
+# 模型名稱不必設：步驟 3 會向 AI 服務查，報告出處印的就是查到的那一個。
 
 stages:
   - ai-analysis
@@ -54,8 +59,6 @@ ai-analysis:
     PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS: "json;ts;png;svg"
     PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS: "third_party"
 
-    AI_MODE_NAME: "Open AI"
-    AI_MODEL: "gpt-4o"
 
   script:
     - mkdir -p "$W" "$D"
@@ -99,7 +102,7 @@ ai-analysis:
     # --- 步驟 3/5：AI 分析 -> 03_summary.json ---------------------------------
     # 唯一要錢、唯一要等分鐘級的一步。
     # 描述走 description_path 不走 description（CI 手上有的是檔案）。
-    # AI 的四項走 params 不走環境變數，所以會落在 req3.json —— 不設 artifact，最後刪掉。
+    # AI 的連線字串與金鑰走 params 不走環境變數，所以會落在 req3.json —— 不設 artifact，最後刪掉。
     # ai_recheck 預設 0：漏檔時不重問。要開填 "1"，每多一輪就多一次完整的 AI 呼叫。
     - |
       cat > "$W/req3.json" <<EOF
@@ -107,8 +110,7 @@ ai-analysis:
         "repo": "$REPO", "mr_iid": "$IID",
         "description_path": "$W/01_description.md",
         "jira_key": "$JIRA_KEY", "jira_mode": "auto", "mr_type": "$MR_TYPE",
-        "ai_mode_name": "$AI_MODE_NAME", "ai_api_url": "$AI_API_URL",
-        "ai_api_key": "$AI_API_KEY", "ai_model": "$AI_MODEL",
+        "ai_connection": "$AI_API_URL", "ai_api_key": "$AI_API_KEY",
         "ai_timeout": "120", "ai_retries": "3", "ai_reask": "1", "ai_recheck": "0",
         "debug_dir": "$D", "out_path": "$W/03_summary.json"}}
       EOF
@@ -148,7 +150,7 @@ ai-analysis:
         "ori_md_file_path": "$W/01_description.md",
         "mr_summary_json_file_path": "$W/03_summary.json",
         $CR
-        "repo": "$REPO", "mr_iid": "$IID", "ai_mode": "$AI_MODE_NAME",
+        "repo": "$REPO", "mr_iid": "$IID",
         "debug_dir": "$D", "out_path": "$W/05_report.md"}}
       EOF
     - sec pps5 "步驟 5/5：合併為 markdown"
