@@ -142,8 +142,19 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
   - 回傳：`modes: [{provider, model}]`，順序與輸入相同。
   - 腳本失敗或取消時，每一項標成「無法取得」，**不跳錯誤框**。這是顯示用的資訊，
     不值得打斷使用者，原因留在診斷輸出。
-- **介面**：`.ui` 的群組標題改為 `AI Provider`，物件名稱維持 `aiModeGroupBox`、
-  `aiModeComboBox`，以縮小差異。
+- **介面**：`.ui` 的群組標題改為 `AI Provider`。內部名稱一併改掉，讓程式裡不再有 mode
+  這個概念：
+
+  | 現在 | 改成 |
+  |---|---|
+  | `aiModeGroupBox` | `aiProviderGroupBox` |
+  | `aiModeLayout` | `aiProviderLayout` |
+  | `aiModeComboBox` | `aiProviderComboBox` |
+  | `m_widgets.modeCombo` | `m_widgets.providerCombo` |
+  | `selectedAiMode()` | `selectedProviderEntry()`，以索引取 |
+  | `AnalysisContext::aiModeName`、`aiModel`、`aiApiUrl` | `aiConnection` |
+
+  設定鍵 `AI_Mode_List` 本身不改名，因為設定檔只動 `Name` 與 `Model` 兩個欄位。
 
 ### D8. 列出模型的腳本
 
@@ -173,8 +184,6 @@ def lookup_model(url, share_code, api_key, verify_ssl, timeout=MODEL_LOOKUP_TIME
   部署者填入後即生效。
 - [每次啟動第一次進入本功能會被擋一次] → 逾時 10 秒、只試一次、可取消。同一個服務的多個
   項目合併成一次請求。
-- [選單顯示的模型是啟動時的值，報告上的是分析當下的值，兩者可能不同] → 這是刻意的：
-  出處以分析當下為準。服務端改了對應時，重啟工具就會一致。
 - [鉤子沒照範本做時，出處少了 provider 或 model，但不會報錯] → 範本與
   `device-authoring.md` 標明它是必要步驟；規格有依範本新增 device 的情境。
 - [provider 前綴只認 `http(s)://`] → 若有其他協定的端點會被當成沒有 provider。目前的服務

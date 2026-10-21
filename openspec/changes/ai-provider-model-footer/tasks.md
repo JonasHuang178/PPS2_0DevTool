@@ -79,7 +79,10 @@
   - 啟動後第一次切入時出現處理中對話框。
   - 切走再切回時不再出現。
   - 取消後選項顯示「無法取得」。
-- [ ] 6.4 `pps2_0devtool.ui`：群組標題改為 `AI Provider`。驗證：畫面上的群組標題。
+- [ ] 6.4 `pps2_0devtool.ui`：群組標題改為 `AI Provider`，並依 design D7 的表格改掉
+  `.ui`、`pps2_0devtool.cpp`、`AIAnalysisGitLabMR.h/.cpp` 裡的內部名稱。驗證：編譯通過；
+  `grep -rn "aiMode\|modeCombo\|selectedAiMode" *.cpp *.h *.ui` 無結果；畫面上的群組標題
+  為 `AI Provider`。
 
 ## 7. 設定、持續整合與文件
 
