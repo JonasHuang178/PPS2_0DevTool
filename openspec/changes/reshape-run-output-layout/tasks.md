@@ -86,9 +86,9 @@
 
 ## 7. 整體驗證
 
-- [ ] 7.1 對模擬服務跑完整的五步（勾選與未勾選各一次），確認：
+- [x] 7.1 對模擬服務跑完整的五步（勾選與未勾選各一次），確認：
   - 勾選時：產物五個在工作目錄、`logs/` 有五個 `NN_*.log` 加步驟 3 的整份內容紀錄、
     `requests/` 有五個遮過的信封
   - 未勾選時：存放目錄之下一個檔案都沒有，結果視窗仍有完整報告但沒有開啟按鈕
   - 兩種情況的報告內容完全相同
-- [ ] 7.2 執行 `openspec validate reshape-run-output-layout --strict`。
+- [x] 7.2 執行 `openspec validate reshape-run-output-layout --strict`。
