@@ -60,7 +60,7 @@ def _mr_fields(repo, mr_iid, mr):
     }
 
 
-def _resolve_jira_key(mode, manual, fields, repo, mr_iid, debug_dir):
+def _resolve_jira_key(mode, manual, fields, repo, mr_iid, log):
     """依模式決定這次的 JIRA key。只有 auto 會呼叫 device 的鉤子。
 
     這裡**不判定有效性** —— 判定在步驟 3 的 summary 鉤子，與抽取規則同屬一個 device，
@@ -86,8 +86,7 @@ def _resolve_jira_key(mode, manual, fields, repo, mr_iid, debug_dir):
             "DEVICE_HOOK_RUNTIME_ERROR")
 
     key = ai_analysis_gitlab_mr.plain(key)
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "jira_key(%s) repo=%s mr=%s -> %r" % (owner, repo, mr_iid, key))
+    log("jira_key(%s) repo=%s mr=%s -> %r" % (owner, repo, mr_iid, key))
     return key
 
 
@@ -165,7 +164,7 @@ def main():
                           help="none / manual / auto"),
             script_io.arg("jira_key_manual", default="",
                           help="使用者手動指定的 JIRA key（僅 manual 模式使用）"),
-            script_io.arg("debug_dir", default="",
+            script_io.arg("log_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把結果寫到這個檔案；空字串代表不落檔"),
@@ -178,7 +177,10 @@ def main():
     params = req["params"]
     repo = params["repo"]
     mr_iid = params["mr_iid"]
-    debug_dir = params["debug_dir"]
+    # 紀錄綁成一個可呼叫的東西再往下傳：寫一行需要目錄、產物路徑與動作三個值，綁好之後
+    # 往下傳的仍然只有一個，呼叫端也不可能漏傳其中一個。
+    log = ai_analysis_gitlab_mr.log_appender(
+        params["log_dir"], params["out_path"], ACTION)
 
     try:
         server_url, token, verify_ssl = ai_analysis_gitlab_mr.gitlab_credentials()
@@ -207,18 +209,16 @@ def main():
 
     try:
         jira_key = _resolve_jira_key(params["jira_mode"], params["jira_key_manual"],
-                                     fields, repo, mr_iid, debug_dir)
+                                     fields, repo, mr_iid, log)
         mr_type = _resolve_mr_type(fields, device.resolve_name())
     except device.DeviceError as exc:
-        ai_analysis_gitlab_mr.write_debug_log(
-            debug_dir, "FAIL [%s] %s" % (exc.code, exc))
+        log("FAIL [%s] %s" % (exc.code, exc))
         script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
 
     result = {"jira_key": jira_key, "mr_type": mr_type}
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], result)
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "mr_info repo=%s mr=%s jira_key=%r mr_type=%r"
+    log("mr_info repo=%s mr=%s jira_key=%r mr_type=%r"
         % (repo, mr_iid, jira_key, mr_type))
 
     script_io.reply(

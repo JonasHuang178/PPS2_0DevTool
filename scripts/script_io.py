@@ -21,13 +21,28 @@
 
 import argparse
 import json
+import os
 import sys
 import traceback
 
 from script_utils import logger
 
 __all__ = ["arg", "cfg", "parse_request", "progress",
-           "reply", "reply_fail", "run"]
+           "reply", "reply_fail", "run", "MASKED", "REQUEST_LOG_DIR_NAME"]
+
+
+# 遮掉的值在信封紀錄裡長這樣。不是空字串 —— 空字串看起來像「這個欄位沒給」，
+# 而那兩件事的下一步完全不同。
+MASKED = "***"
+
+# 信封紀錄放在紀錄目錄底下的這個子目錄。
+REQUEST_LOG_DIR_NAME = "requests"
+
+# 紀錄目錄的參數鍵名，parse_request() 的預設。
+#
+# script_io 是通用層，不該認得任何一個功能的參數形狀，所以這只是**預設值** ——
+# 沒有紀錄目錄概念的腳本把 log_dir_param 傳空字串即可關閉信封紀錄。
+DEFAULT_LOG_DIR_PARAM = "log_dir"
 
 
 # --- 宣告 -------------------------------------------------------------------
@@ -39,9 +54,10 @@ class _Param(object):
     如果模板另外寫死一份，它一定會跟腳本實際讀的欄位漂移。
     """
 
-    __slots__ = ("name", "type", "default", "required", "help")
+    __slots__ = ("name", "type", "default", "required", "help", "mask")
 
-    def __init__(self, name, type=str, default=None, required=False, help=""):
+    def __init__(self, name, type=str, default=None, required=False, help="",
+                 mask=None):
         # 容許 "--created-after-days" 這種寫法，統一正規化成 params 的鍵名。
         key = name.lstrip("-").replace("-", "_")
         self.name = key
@@ -49,6 +65,7 @@ class _Param(object):
         self.default = default
         self.required = required
         self.help = help
+        self.mask = mask
 
 
 class _ConfigKey(object):
@@ -67,9 +84,24 @@ class _ConfigKey(object):
         self.help = help
 
 
-def arg(name, type=str, default=None, required=False, help=""):
-    """宣告一個參數。"""
-    return _Param(name, type=type, default=default, required=required, help=help)
+def arg(name, type=str, default=None, required=False, help="", mask=None):
+    """宣告一個參數。
+
+    `mask` 宣告「這個參數的值是不是憑證」，只影響寫出的信封紀錄（見
+    write_request_log），不影響 --help、--dump-config，也不影響腳本實際拿到的值：
+
+        None       原樣寫出
+        True       整個值換成 MASKED
+        callable   以 mask(原值) 的回傳值取代
+
+    **有些參數整個就是憑證（金鑰），有些只有一部分是**（位址尾端附帶的識別碼）——
+    後者的其餘部分正是診斷時最想看的東西，整個遮掉等於把有用的部分一起丟掉。所以這裡
+    收一個函式而不是只有布林。
+
+    遮罩宣告在參數旁邊，與型別、預設值同一處，因此它跟著參數一起被看見、一起被改。
+    """
+    return _Param(name, type=type, default=default, required=required, help=help,
+                  mask=mask)
 
 
 def cfg(name, required=False, help=""):
@@ -160,8 +192,77 @@ def _format_declarations(params, config_keys):
 
 # --- 收信封 -----------------------------------------------------------------
 
+def _mask_value(value, mask):
+    """依宣告遮掉一個值。遮罩函式自己壞掉時退回整個遮掉，不讓紀錄壞掉整支腳本。"""
+    if mask is True:
+        return MASKED
+    try:
+        return mask(value)
+    except Exception:                               # noqa: BLE001
+        logger.debug("遮罩函式失敗，整個值改為 %s", MASKED)
+        return MASKED
+
+
+def mask_envelope(envelope, param_defs):
+    """回傳一份把憑證遮掉的信封副本。原本那一份不動。
+
+    只動 `params` 底下宣告了 mask 的鍵，其餘原樣帶過 —— 包含腳本沒宣告但呼叫端有送的
+    欄位（協定是加法式的），那些照樣要留著，它們常常正是「呼叫端送錯東西」的證據。
+    """
+    masked = dict(envelope)
+    params = dict(envelope.get("params") or {})
+
+    for param in param_defs:
+        if param.mask is None or param.name not in params:
+            continue
+        params[param.name] = _mask_value(params[param.name], param.mask)
+
+    masked["params"] = params
+    return masked
+
+
+def write_request_log(log_dir, action, envelope, param_defs):
+    """把**實際收到的信封**遮罩後寫進 <log_dir>/requests/<action>.json。
+
+    `log_dir` 為空就什麼都不做 —— 與其他紀錄同一個開關，所以不會出現「開關為真但路徑
+    為空」這種矛盾狀態。
+
+    **這份紀錄由腳本寫，不由呼叫端寫。** 腳本是唯一同時握有信封、紀錄目錄與「哪些參數
+    是憑證」這三件事的地方。交給呼叫端，遮罩規則就得在每個呼叫端各實作一次，而圖形介面
+    與持續整合的投遞方式本來就不同（一個走 stdin、一個走檔案），兩份實作必然漂移。
+
+    **為什麼要留這份**：逐行紀錄說的是「發生了什麼」，信封說的是「它被要求做什麼」。
+    參數打錯、呼叫端送錯欄位這一類問題，只有後者看得出來。
+
+    **為什麼是遮罩而不是寫完再刪**：刪除要靠每一條失敗路徑都執行到，而這份紀錄的用途
+    正是在失敗時被讀。遮過之後它可以安全地留著，不需要任何清理步驟。
+
+    代價寫明白：遮過的信封不能直接拿去 --request 重跑那一步，要先補回被遮掉的值。
+
+    寫檔失敗不讓腳本失敗 —— 一份診斷紀錄寫不出來，不該讓一次已經在進行的工作中斷。
+    """
+    if not log_dir:
+        return False
+
+    folder = os.path.join(log_dir, REQUEST_LOG_DIR_NAME)
+    path = os.path.join(folder, "%s.json" % (action or "request"))
+
+    try:
+        os.makedirs(folder, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(mask_envelope(envelope, param_defs), handle,
+                      ensure_ascii=False, indent=2)
+            handle.write("\n")
+    except OSError as exc:
+        logger.warn("寫出信封紀錄失敗（%s）：%s", path, exc)
+        return False
+
+    logger.debug("信封紀錄：%s", path)
+    return path
+
+
 def parse_request(action, description="", config=None, params=None,
-                  template_version=""):
+                  template_version="", log_dir_param=DEFAULT_LOG_DIR_PARAM):
     """收信封並驗證，回傳含四個鍵的 dict：
 
         source_path / config / action / params
@@ -169,6 +270,10 @@ def parse_request(action, description="", config=None, params=None,
     信封裡沒有工具身分 —— 需要知道呼叫方是誰的腳本自行讀取
     os.environ.get("TOOLNAME") 與 os.environ.get("TOOLVERSION")，
     這兩個變數在命令列直接執行時不存在，腳本要能在缺少時正常運作。
+
+    `log_dir_param` 指出哪一個參數是紀錄目錄；該參數有值時，這裡會把收到的信封遮罩後
+    寫一份出去（見 write_request_log）。傳空字串即關閉這個行為 —— 沒有紀錄目錄概念的
+    腳本不必為此多宣告一個參數。
     """
     config_keys = list(config or [])
     param_defs = list(params or [])
@@ -265,10 +370,18 @@ def parse_request(action, description="", config=None, params=None,
     if missing:
         reply_fail("缺少必填項目：%s" % "、".join(missing))
 
+    resolved_action = envelope.get("action", action)
+
+    # 必填檢查**之後**才寫：缺了必填項目時這一步根本不會開始工作，而那個失敗訊息
+    # 已經說得完整。寫在檢查之前只會為一個沒跑的步驟留下一份紀錄。
+    if log_dir_param:
+        write_request_log(resolved_params.get(log_dir_param),
+                          resolved_action, envelope, param_defs)
+
     return {
         "source_path": envelope.get("source_path", "") or "",
         "config": resolved_config,
-        "action": envelope.get("action", action),
+        "action": resolved_action,
         "params": resolved_params,
     }
 

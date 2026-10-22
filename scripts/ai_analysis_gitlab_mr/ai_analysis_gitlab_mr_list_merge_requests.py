@@ -74,7 +74,7 @@ def main():
                           help="是否套用「N 天內建立」的條件"),
             script_io.arg("created_after_days", type=int, default=7,
                           help="只取這麼多天內建立的（1-365）"),
-            script_io.arg("debug_dir", default="",
+            script_io.arg("log_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把結果寫到這個檔案；空字串代表不落檔"),
@@ -83,7 +83,8 @@ def main():
 
     params = req["params"]
     repo = params["repo"]
-    debug_dir = params["debug_dir"]
+    # 這一支不在流程五步裡，沒有步驟號可帶 —— 紀錄以動作名稱命名。
+    log = ai_analysis_gitlab_mr.log_appender(params["log_dir"], action=ACTION)
 
     # 憑證與錯誤訊息都走功能套件的共用實作 —— 本功能有兩支腳本要連 GitLab，
     # 各自寫一份的話兩份會慢慢長歪，而使用者看到的差異（同樣是 401，一支說
@@ -98,9 +99,8 @@ def main():
     logger.info("查詢 %s 的 Merge Request（only_open=%s, days=%s, verify_ssl=%s）",
                 repo, params["only_open"], days, verify_ssl)
     script_io.progress("向 GitLab 查詢 Merge Request…")
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "list_merge_requests repo=%s only_open=%s days=%s"
-                   % (repo, params["only_open"], days))
+    log("list_merge_requests repo=%s only_open=%s days=%s"
+        % (repo, params["only_open"], days))
 
     # gitlab_utils 的 created_after 收 ISO 8601 或 date/datetime，不收「幾天前」
     # 的數字 —— 同一個參數有時是日期有時是天數，呼叫端讀簽章讀不出來該傳什麼。
@@ -139,9 +139,8 @@ def main():
 
     # 勾了除錯才落檔。out_path 為空時一個檔案都不會產生。
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], result)
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "list_merge_requests -> %d 筆, truncated=%s"
-                   % (len(items), truncated))
+    log("list_merge_requests -> %d 筆, truncated=%s"
+        % (len(items), truncated))
 
     message = "取得 %d 筆 Merge Request" % len(items)
     if truncated:

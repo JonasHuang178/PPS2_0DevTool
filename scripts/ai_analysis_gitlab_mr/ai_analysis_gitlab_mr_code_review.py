@@ -273,7 +273,7 @@ def _read_attachment(item, token, out_path):
             shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _gather(params, keyword, base_url, token, heading):
+def _gather(params, keyword, base_url, token, heading, log, write_file):
     """取得附件並擷取總表，回傳步驟 4 的結構內容。
 
     議題上沒有符合的附件時回 None（那一段沒有內容，不是出了錯）。取不到內容、或該
@@ -284,7 +284,6 @@ def _gather(params, keyword, base_url, token, heading):
     的 code review 工具不同，產出格式也就不同。這一支只負責把現成的全文交給它。
     """
     key = ai_analysis_gitlab_mr.plain(params["jira_key"])
-    debug_dir = params["debug_dir"]
 
     script_io.progress("查詢 JIRA 議題的附件…")
 
@@ -294,8 +293,7 @@ def _gather(params, keyword, base_url, token, heading):
         raise CodeReviewUnavailable(_jira_reason(exc, key))
 
     picked = _pick_attachment(attachments, keyword)
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, _describe_attachments(attachments, keyword, picked))
+    log(_describe_attachments(attachments, keyword, picked))
 
     if picked is None:
         # 這一段沒有內容，而不是出了錯 —— 不是每一張議題都掛著 code review。
@@ -329,7 +327,7 @@ def _gather(params, keyword, base_url, token, heading):
         text = _read_attachment(picked, token, params["out_path"])
 
         script_io.progress("解析程式碼審閱報告…")
-        parsed = _parse_with_hook(text, heading, key, debug_dir)
+        parsed = _parse_with_hook(text, heading, key, log, write_file)
 
     except CodeReviewUnavailable as exc:
         exc.meta = meta
@@ -341,7 +339,7 @@ def _gather(params, keyword, base_url, token, heading):
         **meta)
 
 
-def _parse_with_hook(text, heading, key, debug_dir):
+def _parse_with_hook(text, heading, key, log, write_file):
     """載入該 device 的 parse_code_review 鉤子並執行它。
 
     **不依種類解析**：這一支雖然跑在步驟 4、種類已經解出來了，但審閱報告的格式是
@@ -367,8 +365,7 @@ def _parse_with_hook(text, heading, key, debug_dir):
     try:
         hook, owner = device.load_hook("parse_code_review")
     except device.DeviceError as exc:
-        ai_analysis_gitlab_mr.write_debug_log(
-            debug_dir, "code_review 鉤子載入失敗 [%s] %s" % (exc.code, exc))
+        log("code_review 鉤子載入失敗 [%s] %s" % (exc.code, exc))
         raise CodeReviewUnavailable("%s（%s）" % (exc, exc.detail))
 
     try:
@@ -376,18 +373,16 @@ def _parse_with_hook(text, heading, key, debug_dir):
             "text": text,
             "heading": heading,
             "jira_key": key,
-            "debug_write": ai_analysis_gitlab_mr.debug_writer(debug_dir),
+            "log_write": write_file,
         })
     except ai_analysis_gitlab_mr.RiskTableError as exc:
         # 文件不合約定。訊息原樣用 —— 它說的是那份附件的事，而使用者要去看的正是它。
-        ai_analysis_gitlab_mr.write_debug_log(
-            debug_dir, "code_review 解析失敗 [%s] %s" % (exc.code, exc))
+        log("code_review 解析失敗 [%s] %s" % (exc.code, exc))
         raise CodeReviewUnavailable(str(exc))
     except Exception as exc:                    # noqa: BLE001 - 見上面的說明
         trace = traceback.format_exc()
         logger.error("device %s 的 parse_code_review 執行失敗：\n%s", owner, trace)
-        ai_analysis_gitlab_mr.write_debug_file(
-            debug_dir, "code_review_hook_error.txt", trace)
+        write_file("code_review_hook_error.txt", trace)
         raise CodeReviewUnavailable(
             "device %s 的 parse_code_review 執行失敗：%s: %s"
             "（這是該 device 的腳本問題，不是來源文件的問題）"
@@ -428,7 +423,7 @@ def main():
                                "只有 ok 才會去取附件。預設 ok，讓命令列只給 "
                                "jira_key 就能執行"),
 
-            script_io.arg("debug_dir", default="",
+            script_io.arg("log_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把結構寫到這個檔案；空字串代表不落檔"),
@@ -438,6 +433,13 @@ def main():
     params = req["params"]
     repo = params["repo"]
     mr_iid = params["mr_iid"]
+
+    # 紀錄綁成兩個可呼叫的東西：一個追加一行，一個寫一整份。兩者都已帶上這一步的身分，
+    # 所以往下傳的仍然只有一個值，而且檔名的步驟前綴不可能漏掉。
+    log = ai_analysis_gitlab_mr.log_appender(
+        params["log_dir"], params["out_path"], ACTION)
+    write_file = ai_analysis_gitlab_mr.log_writer(
+        params["log_dir"], params["out_path"], ACTION)
 
     # --- 部署缺漏：**無條件**先擋 ---
     #
@@ -476,9 +478,7 @@ def main():
         # 每一筆都會白打一趟 JIRA 換回 404。
         logger.info("jira_key=%r state=%r，不取程式碼審閱報告", key, state)
         script_io.progress("略過程式碼審閱報告…")
-        ai_analysis_gitlab_mr.write_debug_log(
-            params["debug_dir"],
-            "code_review skipped repo=%s mr=%s jira_key=%r state=%r"
+        log("code_review skipped repo=%s mr=%s jira_key=%r state=%r"
             % (repo, mr_iid, key, state))
         script_io.reply(
             message="沒有可用的 JIRA key，未取得程式碼審閱報告",
@@ -488,7 +488,8 @@ def main():
 
     # --- 取得、擷取 ---
     try:
-        body = _gather(params, keyword, base_url, token, heading)
+        body = _gather(params, keyword, base_url, token, heading,
+                       log, write_file)
     except CodeReviewUnavailable as exc:
         # 外部服務的回答，或別人的文件不合約定。**不結束流程** —— 這一步跑在 AI 分析
         # 之後，讓它失敗會把一份已經完成、已經付費的分析整份丟掉。
@@ -496,8 +497,7 @@ def main():
         # 已經知道是哪一個附件時 meta 有值，於是報告裡日期／作者／連結三行照樣印得
         # 出來，讀者點連結就能自己看全文。
         logger.warn("取不到程式碼審閱報告：%s", exc)
-        ai_analysis_gitlab_mr.write_debug_log(
-            params["debug_dir"], "code_review unavailable: %s" % exc)
+        log("code_review unavailable: %s" % exc)
         body = ai_analysis_gitlab_mr.code_review_body(error=str(exc),
                                                       **exc.meta)
 
@@ -516,14 +516,11 @@ def main():
     try:
         ai_analysis_gitlab_mr.validate_code_review(payload, source="步驟 4")
     except ai_analysis_gitlab_mr.CodeReviewFormatError as exc:
-        ai_analysis_gitlab_mr.write_debug_file(
-            params["debug_dir"], "bad_code_review.json", payload)
+        write_file("bad_code_review.json", payload)
         script_io.reply_fail(str(exc), detail=exc.detail, code=exc.code)
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], payload)
-    ai_analysis_gitlab_mr.write_debug_log(
-        params["debug_dir"],
-        "code_review repo=%s mr=%s file=%r table=%d error=%r"
+    log("code_review repo=%s mr=%s file=%r table=%d error=%r"
         % (repo, mr_iid, body["filename"], len(body["risk_table"]),
            body["error"]))
 

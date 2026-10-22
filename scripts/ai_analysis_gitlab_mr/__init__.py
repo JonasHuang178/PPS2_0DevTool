@@ -14,6 +14,7 @@ script_utils/ 之下，任何功能都能用。
     輸入  params 裡有內容就用內容；沒內容但有 <key>_path 就讀那個檔
 """
 
+import datetime
 import json
 import os
 import re
@@ -90,17 +91,20 @@ __all__ = [
     "DEFAULT_AI_REASK",
     "ai_verify_ssl",
     "describe_gitlab_error",
-    "DEBUG_LOG_NAME",
+    "LOG_SUFFIX",
     "write_artifact",
-    "write_debug_log",
-    "write_debug_file",
-    "debug_writer",
+    "write_log",
+    "log_stem",
+    "log_name",
+    "log_appender",
+    "write_log_file",
+    "log_writer",
     "resolve_text_input",
     "resolve_json_input",
 ]
 
-# 除錯目錄下的日誌檔名。debug_dir 為空字串時整個機制關閉。
-DEBUG_LOG_NAME = "debug.log"
+# 逐行紀錄的副檔名。檔名本身由該步驟的產物路徑導出（見 log_name）。
+LOG_SUFFIX = ".log"
 
 # 單次查詢願意取回的 Merge Request 上限。
 #
@@ -137,56 +141,116 @@ def write_artifact(out_path, content):
     return True
 
 
-def write_debug_log(debug_dir, message):
-    """把一行訊息追加到除錯目錄下的日誌。debug_dir 為空就什麼都不做。
+def log_stem(out_path, action=""):
+    """這一步的紀錄要用什麼基底名。
+
+        out_path = .../03_summary.json   ->  "03_summary"
+        out_path 為空                     ->  action（例如 "list_models"）
+
+    **為什麼從產物路徑導出，而不是由呼叫端傳一個檔名**：腳本不知道自己是流程的第幾步 ——
+    步驟號是呼叫端的命名慣例（Qt 的產物名表、持續整合的 yml），腳本只照 out_path 寫檔。
+    取基底名換副檔名是「同名、換結尾」，不需要解析那個慣例，也不必新增參數。而這正好使
+    「紀錄與產物同名」成為結構性的結果，不靠任何人記得維持。
+
+    不解析 `NN_` 前綴也是刻意的：那會把腳本耦合到呼叫端的命名慣例上。
+    """
+    name = os.path.basename(plain(out_path))
+    if name:
+        return os.path.splitext(name)[0]
+    return plain(action) or "run"
+
+
+def log_name(out_path, action=""):
+    """這一步的逐行紀錄檔名。"""
+    return log_stem(out_path, action) + LOG_SUFFIX
+
+
+def _stamp():
+    """紀錄用的時間戳，與 debug console 同格式（含毫秒）。"""
+    now = datetime.datetime.now()
+    return now.strftime("%Y-%m-%d %H:%M:%S.") + ("%03d" % (now.microsecond // 1000))
+
+
+def write_log(log_dir, message, out_path="", action=""):
+    """把一行訊息追加到這一步自己的紀錄檔。log_dir 為空就什麼都不做。
 
     「有效的目錄」本身就是「要不要寫」的開關 —— 不另外設一個布林參數，
     也就不會出現「開關為真但路徑為空」這種矛盾狀態。
+
+    **一步一個檔，不共用單一個檔案。** 共用時步驟身分只能靠每一個呼叫端在訊息裡自己
+    寫 —— 而失敗那一行正是最常忘記寫的，於是兩個不同步驟的失敗紀錄長得一模一樣
+    （`FAIL [CODE] message`）。檔名帶著步驟，這件事就成為結構性的保證。
+
+    **時間戳由這裡加，不由呼叫端加。** 加在這裡只有一個地方會寫錯格式，而紀錄要能和
+    debug console、持續整合的 job log 對起來 —— 那兩者都有時間戳。
+
+    多行的訊息（例如 traceback）每一行都蓋上同一個時間戳，所以每一行都看得出屬於哪一筆。
     """
-    if not debug_dir:
+    if not log_dir:
         return False
 
-    if not os.path.isdir(debug_dir):
-        os.makedirs(debug_dir, exist_ok=True)
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
 
-    path = os.path.join(debug_dir, DEBUG_LOG_NAME)
+    stamp = _stamp()
+    body = str(message)
+    lines = "".join("[%s] %s\n" % (stamp, one) for one in body.split("\n"))
+
+    path = os.path.join(log_dir, log_name(out_path, action))
     with open(path, "a", encoding="utf-8") as handle:
-        handle.write(str(message) + "\n")
+        handle.write(lines)
     return True
 
 
-def write_debug_file(debug_dir, name, content):
-    """把一整份內容寫成除錯目錄下的獨立檔案。debug_dir 為空就什麼都不做。
+def write_log_file(log_dir, name, content):
+    """把一整份內容寫成紀錄目錄下的獨立檔案。log_dir 為空就什麼都不做。
 
-    與 write_debug_log() 分開的理由是用途不同：那一支是一行一行追加的流水帳，這一支
+    與 write_log() 分開的理由是用途不同：那一支是一行一行追加的流水帳，這一支
     是「把這次實際送出／收到的東西整份留下來」。prompt 與 AI 的原始回覆都是幾千到幾萬
     字元、含換行的整塊文字，塞進流水帳只會把它淹掉。
 
-    **只在除錯目錄有設定時才寫。** prompt 裡有整份 diff，也就是原始碼；預設就落到磁碟
-    不是使用者要求的事。畫面上那個除錯輸出的勾選才是「我知道我在把這些寫出來」。
+    **只在紀錄目錄有設定時才寫。** prompt 裡有整份 diff，也就是原始碼；預設就落到磁碟
+    不是使用者要求的事。畫面上那個勾選才是「我知道我在把這些寫出來」。
 
     回傳寫出的路徑，沒寫就回 False —— 呼叫端可以據此決定要不要在訊息裡提到它。
     """
-    if not debug_dir:
+    if not log_dir:
         return False
 
-    if not os.path.isdir(debug_dir):
-        os.makedirs(debug_dir, exist_ok=True)
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
 
-    path = os.path.join(debug_dir, name)
+    path = os.path.join(log_dir, name)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(content if isinstance(content, str) else str(content))
     return path
 
 
-def debug_writer(debug_dir):
-    """做一個綁好除錯目錄的 write_debug_file。
+def log_appender(log_dir, out_path="", action=""):
+    """做一個綁好紀錄目錄與這一步身分的 write_log。
 
-    給 device 的鉤子用：它拿到的是一個「寫一份除錯檔」的能力，不必知道目錄在哪、
-    也不必自己判斷除錯有沒有開 —— 沒開的時候這個函式什麼都不做。
+    入口腳本在 main() 裡建一個，然後把**它**往下傳，而不是傳 log_dir —— 原本 log_dir
+    被傳進十幾個輔助函式就只為了寫紀錄，而現在寫一行需要三個值（目錄、產物路徑、動作）。
+    綁成一個可呼叫的東西，往下傳的仍然只有一個值，而且呼叫端不可能漏傳其中一個。
+
+    與 log_writer 同一個形狀：那一支綁的是「寫一份檔案」，這一支綁的是「追加一行」。
     """
+    def append(message):
+        return write_log(log_dir, message, out_path=out_path, action=action)
+    return append
+
+
+def log_writer(log_dir, out_path="", action=""):
+    """做一個綁好紀錄目錄的 write_log_file，檔名自動帶上這一步的前綴。
+
+    給 device 的鉤子用：它拿到的是一個「寫一份紀錄」的能力，不必知道目錄在哪、不必
+    自己判斷紀錄有沒有開（沒開時這個函式什麼都不做），也不必知道自己是第幾步 ——
+    前綴由產物路徑導出（見 log_stem），所以紀錄目錄的列出順序就是流程的執行順序。
+    """
+    prefix = log_stem(out_path, action)
+
     def write(name, content):
-        return write_debug_file(debug_dir, name, content)
+        return write_log_file(log_dir, "%s_%s" % (prefix, name), content)
     return write
 
 
@@ -2447,7 +2511,7 @@ def _escape_link_text(text):
 # device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
 # 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
 SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.12"
+SCRIPT_VERSION = "2.13"
 
 
 def _link(text, url):

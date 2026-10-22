@@ -51,7 +51,7 @@ def main():
                           help="專案，namespace/project 形式"),
             script_io.arg("mr_iid", required=True,
                           help="Merge Request 編號（畫面上的 !123，不是全域 id）"),
-            script_io.arg("debug_dir", default="",
+            script_io.arg("log_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把原始描述寫到這個檔案；空字串代表不落檔"),
@@ -61,7 +61,8 @@ def main():
     params = req["params"]
     repo = params["repo"]
     mr_iid = params["mr_iid"]
-    debug_dir = params["debug_dir"]
+    log = ai_analysis_gitlab_mr.log_appender(
+        params["log_dir"], params["out_path"], ACTION)
 
     try:
         server_url, token, verify_ssl = ai_analysis_gitlab_mr.gitlab_credentials()
@@ -71,8 +72,7 @@ def main():
     logger.info("取得 %s 的 Merge Request !%s 描述（verify_ssl=%s）",
                 repo, mr_iid, verify_ssl)
     script_io.progress("取得 Merge Request 描述…")
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "description repo=%s mr=%s" % (repo, mr_iid))
+    log("description repo=%s mr=%s" % (repo, mr_iid))
 
     try:
         mr = gitlab_utils.get_mr_info(server_url, token, repo, mr_iid,
@@ -107,8 +107,7 @@ def main():
     # 這個行為現在是 write_artifact() 照寫不誤得來的。若哪天有人在那裡加一句
     # 「內容為空就不寫」，這裡會安靜地不再產生檔案，所以把意圖寫在這裡。
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], description)
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "description -> %d 字元" % len(description))
+    log("description -> %d 字元" % len(description))
 
     logger.info("描述取得完成，共 %d 字元", len(description))
 

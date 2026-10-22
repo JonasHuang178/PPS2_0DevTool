@@ -66,7 +66,7 @@ def parse(inputs):
         text          報告全文（字串，一定有值）
         heading       要找的那一節的標題（該 device 的 CODE_REVIEW_SOURCE_HEADING）
         jira_key      這一筆的 JIRA key，只用於診斷訊息
-        debug_write   寫除錯檔的函式；除錯沒開時什麼都不做，所以可以無條件呼叫
+        log_write   寫一份紀錄檔的函式；沒勾選紀錄時什麼都不做，可以無條件呼叫
 
     回傳 contract.code_review_parsed(risk_table, review_result)。
 
@@ -136,7 +136,7 @@ def parse(inputs):
     verdict = (contract.REVIEW_RESULT_PASS if total == 0
                else contract.REVIEW_RESULT_FAIL)
 
-    inputs["debug_write"]("code_review_verdict.txt",
+    inputs["log_write"]("code_review_verdict.txt",
                           "最後一欄：%s\n資料列：%d\n加總：%d\n結論：%s\n"
                           % (title, counted, total, verdict))
 

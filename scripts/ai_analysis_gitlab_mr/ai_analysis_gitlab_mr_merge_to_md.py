@@ -180,7 +180,7 @@ def main():
             script_io.arg("mr_iid", default="",
                           help="Merge Request 編號；只用於診斷訊息"),
 
-            script_io.arg("debug_dir", default="",
+            script_io.arg("log_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
         ],
     )
@@ -317,9 +317,10 @@ def main():
     markdown = "\n\n".join(sections) + "\n"
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], markdown)
-    ai_analysis_gitlab_mr.write_debug_log(
-        params["debug_dir"],
-        "merge_to_md repo=%s mr=%s len=%d" % (repo, mr_iid, len(markdown)))
+    ai_analysis_gitlab_mr.write_log(
+        params["log_dir"],
+        "merge_to_md repo=%s mr=%s len=%d" % (repo, mr_iid, len(markdown)),
+        out_path=params["out_path"], action=ACTION)
 
     script_io.reply(
         message="報告已產生（%d 字元）" % len(markdown),

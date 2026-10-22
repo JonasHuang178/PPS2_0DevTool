@@ -53,19 +53,18 @@ _JIRA_FIELDS = ("summary", "description", "status", "issuetype")
 _JIRA_DESCRIPTION_LIMIT = 8000
 
 
-def _fail(debug_dir, message, detail="", code=""):
+def _fail(log, message, detail="", code=""):
     """回報失敗，並且在除錯目錄留下同一筆紀錄。
 
     成功才寫 log 的話，最需要那份紀錄的時候剛好沒有 —— 而「這次為什麼沒成功」正是
     事後唯一想查的事。detail 通常是 traceback，一併寫進去。
     """
-    ai_analysis_gitlab_mr.write_debug_log(
-        debug_dir, "FAIL [%s] %s%s" % (code or "-", message,
-                                       ("\n" + detail) if detail else ""))
+    log("FAIL [%s] %s%s" % (code or "-", message,
+                            ("\n" + detail) if detail else ""))
     script_io.reply_fail(message, detail=detail, code=code)
 
 
-def _fail_hook(exc, where, debug_dir):
+def _fail_hook(exc, where, log):
     """鉤子在第一輪就失敗 —— 這一步失敗。**這個函式一定會結束行程。**
 
     依型別分派，因為使用者的下一步完全不同。AiError 要排在通用那一條之前 —— 否則一個
@@ -73,10 +72,10 @@ def _fail_hook(exc, where, debug_dir):
     """
     if isinstance(exc, ai_analysis_gitlab_mr.CredentialError):
         # 設定沒填完，不是鉤子寫壞了。
-        _fail(debug_dir, str(exc), exc.detail, exc.code)
+        _fail(log, str(exc), exc.detail, exc.code)
 
     if isinstance(exc, ai_utils.AiError):
-        _fail(debug_dir, str(exc),
+        _fail(log, str(exc),
               "端點：%s\n重試已經做過（見 stderr 的警告）。" % (exc.url or "(未知)"),
               exc.code)
 
@@ -84,7 +83,7 @@ def _fail_hook(exc, where, debug_dir):
     #
     # detail 放完整的 traceback：鉤子裡出錯最常見的是改壞了 prompt 樣板或解析，而
     # 「哪一行」是唯一真正有用的資訊。一行 "KeyError: xxx" 指不出位置。
-    _fail(debug_dir, "%s 執行失敗：%s" % (where, exc),
+    _fail(log, "%s 執行失敗：%s" % (where, exc),
           traceback.format_exc(), "DEVICE_HOOK_RUNTIME_ERROR")
 
 
@@ -118,7 +117,7 @@ def _round_writer(base_write, round_no):
     return write
 
 
-def _fetch_diff(repo, mr_iid, debug_dir):
+def _fetch_diff(repo, mr_iid, log):
     """取得這支 MR 的 unified diff，連同「取得過程中知道的事實」。
 
     失敗就讓整步失敗：沒有 diff 的「程式碼分析」只能靠描述瞎猜，而它會回報成功。
@@ -131,7 +130,7 @@ def _fetch_diff(repo, mr_iid, debug_dir):
     try:
         server_url, token, verify_ssl = ai_analysis_gitlab_mr.gitlab_credentials()
     except ai_analysis_gitlab_mr.CredentialError as exc:
-        _fail(debug_dir, str(exc), exc.detail, exc.code)
+        _fail(log, str(exc), exc.detail, exc.code)
 
     try:
         project_id = gitlab_utils.get_repo_id(server_url, token, repo,
@@ -147,13 +146,13 @@ def _fetch_diff(repo, mr_iid, debug_dir):
     except gitlab_utils.GitLabError as exc:
         message, detail, code = ai_analysis_gitlab_mr.describe_gitlab_error(
             exc, repo)
-        _fail(debug_dir, message, detail, code)
+        _fail(log, message, detail, code)
 
-    _require_diff_content(info, repo, mr_iid, debug_dir)
+    _require_diff_content(info, repo, mr_iid, log)
     return info
 
 
-def _require_diff_content(info, repo, mr_iid, debug_dir):
+def _require_diff_content(info, repo, mr_iid, log):
     """這支 MR 明明有變更，取回來的差異卻一行內容都沒有時，讓這一步失敗。
 
     GitLab 的 diff 大小限制比直覺低得多（patch 到門檻的 10%、預設約 20 KB 就收合），
@@ -176,7 +175,7 @@ def _require_diff_content(info, repo, mr_iid, debug_dir):
     # 用同一段訊息會把人送到一個他根本不需要去的地方，而那個地方改了也沒用。
     skipped = info.get("skipped_files") or []
     if len(skipped) >= info["file_count"]:
-        _fail(debug_dir,
+        _fail(log,
               "這支 Merge Request 的每一個檔案都被排除規則擋掉了"
               "（%s !%s 共 %d 個檔案）" % (repo, mr_iid, info["file_count"]),
               "排除規則來自三個環境變數（由設定檔 Function 底下本功能區塊的\n"
@@ -201,7 +200,7 @@ def _require_diff_content(info, repo, mr_iid, debug_dir):
     if info.get("overflow"):
         reasons.append("GitLab 表示大小限制影響了這次結果")
 
-    _fail(debug_dir,
+    _fail(log,
           "GitLab 沒有提供任何程式碼差異內容（%s !%s 共 %d 個檔案）"
           % (repo, mr_iid, info["file_count"]),
           "取回的差異只有檔名、沒有任何一段內容%s。\n\n"
@@ -302,9 +301,13 @@ def main():
             script_io.arg("mr_type", default="",
                           help="上一步解出的種類；決定用哪一份 summary 鉤子，"
                                "空字串代表用該 device 的通用版"),
+            # 兩個都是憑證，所以宣告遮罩 —— 它只影響寫出的信封紀錄，腳本拿到的仍是原值。
+            # 連線字串只遮尾端的 shareCode：provider 與端點是「送去哪裡」，那正是看紀錄
+            # 時最想知道的事，整串遮掉等於把有用的部分一起丟掉。
             script_io.arg("ai_connection", default="",
+                          mask=ai_utils.mask_connection,
                           help="AI 連線字串 provider:端點:shareCode；provider 可省略"),
-            script_io.arg("ai_api_key", default="", help="AI 金鑰"),
+            script_io.arg("ai_api_key", default="", mask=True, help="AI 金鑰"),
             script_io.arg("ai_timeout", default="",
                           help="問 AI 的逾時秒數；空字串代表用預設值"),
             script_io.arg("ai_retries", default="",
@@ -314,7 +317,7 @@ def main():
             script_io.arg("ai_recheck", default="",
                           help="送進去的檔案沒被全部回報時的重問次數；"
                                "空字串代表用預設值（0，關閉）"),
-            script_io.arg("debug_dir", default="",
+            script_io.arg("log_dir", default="",
                           help="除錯輸出目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把分析結果寫到這個檔案；空字串代表不落檔"),
@@ -324,6 +327,14 @@ def main():
     params = req["params"]
     repo = params["repo"]
     mr_iid = params["mr_iid"]
+
+    # 紀錄綁成兩個可呼叫的東西：一個追加一行，一個寫一整份。兩者都已帶上這一步的身分
+    # （紀錄目錄、產物路徑、動作），所以往下傳進那些輔助函式的仍然只有一個值，而檔名的
+    # 步驟前綴不可能漏掉。
+    log = ai_analysis_gitlab_mr.log_appender(
+        params["log_dir"], params["out_path"], ACTION)
+    write_file = ai_analysis_gitlab_mr.log_writer(
+        params["log_dir"], params["out_path"], ACTION)
 
     # 輸入雙軌：params 有內容就用內容（Qt 走這條），沒內容但有路徑就讀路徑（CI 走這條）。
     description = ai_analysis_gitlab_mr.resolve_text_input(params, "description")
@@ -336,7 +347,7 @@ def main():
         hook, owner = device.load_hook("summary", mr_type=mr_type)
         mr_type = device.normalize_type(mr_type)
     except device.DeviceError as exc:
-        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
+        _fail(log, str(exc), exc.detail, exc.code)
 
     # 訊息要指得出種類：改壞的往往是某個種類專屬的那一份，而不是通用的那一份。
     where = "device %s 的 %ssummary.py" % (owner,
@@ -359,7 +370,7 @@ def main():
         ai_reask = ai_analysis_gitlab_mr.ai_reask(params)
         ai_recheck = ai_analysis_gitlab_mr.ai_recheck(params)
     except ai_analysis_gitlab_mr.CredentialError as exc:
-        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
+        _fail(log, str(exc), exc.detail, exc.code)
 
     logger.info("AI 等待設定：逾時 %s 秒、重試 %d 次、重問 %d 次、重查 %d 次"
                 "（最壞情況約 %d 秒，不含退避）",
@@ -371,7 +382,7 @@ def main():
     # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
     # 把一個連線問題講成腳本寫壞了。
     script_io.progress("取得程式碼差異…")
-    diff_info = _fetch_diff(repo, mr_iid, params["debug_dir"])
+    diff_info = _fetch_diff(repo, mr_iid, log)
     mr_diff = diff_info["text"]
 
     skipped = diff_info.get("skipped_files") or []
@@ -432,7 +443,7 @@ def main():
         #
         # prompt 與 AI 的原始回覆是調 prompt 時唯一真正需要看的兩份東西，而它們
         # 都不進 log（prompt 含原始碼，回覆動輒幾萬字元）。
-        "debug_write": ai_analysis_gitlab_mr.debug_writer(params["debug_dir"]),
+        "log_write": write_file,
     }
 
     # 涵蓋層的重問（次數見 contract.ai_recheck，預設 0 = 關閉）。
@@ -450,7 +461,7 @@ def main():
     # JIRA。要省掉它得把鉤子拆成「準備」與「問」兩段，而那會改掉所有 device 的介面 ——
     # 對一個預設關閉的功能不值得。
     best = None          # (missing 數, 輪次, body, coverage)
-    base_write = inputs["debug_write"]
+    base_write = inputs["log_write"]
 
     for round_no in range(1, ai_recheck + 2):
         if round_no > 1:
@@ -464,14 +475,14 @@ def main():
         # 第二輪起把除錯檔名加上前綴。覆寫的話，ai_reply_1.txt 會被下一輪蓋掉 ——
         # 而「模型第一次漏了什麼」正是這個功能存在的理由，那份檔案不能丟。
         round_inputs = dict(inputs,
-                            debug_write=_round_writer(base_write, round_no))
+                            log_write=_round_writer(base_write, round_no))
 
         try:
             body = hook.analyze(round_inputs)
         except Exception as exc:                    # noqa: BLE001 - 分派見 _fail_hook
             if round_no == 1:
                 # 第一輪失敗就是這一步失敗，行為與加入重查之前完全相同。
-                _fail_hook(exc, where, params["debug_dir"])     # 必定結束行程
+                _fail_hook(exc, where, log)                  # 必定結束行程
             # 重查那幾輪失敗**不該**把一份已經拿到的分析變成失敗 —— 那是把額外的
             # 嘗試變成新的失敗來源，而使用者沒有因此得到任何東西。
             logger.warn("重查第 %d 次失敗（%s），沿用第 %d 輪的結果：%s",
@@ -512,14 +523,13 @@ def main():
     except ai_analysis_gitlab_mr.AnalysisFormatError as exc:
         # 鉤子回了一個形狀不對的結構。把它整份寫進除錯目錄 —— 光看訊息說「某個欄位
         # 型別不對」，還是得看到實際長什麼樣才改得動。
-        ai_analysis_gitlab_mr.write_debug_file(
-            params["debug_dir"], "bad_analysis.json",
+        write_file(
+            "bad_analysis.json",
             json_utils.dump(payload))
-        _fail(params["debug_dir"], str(exc), exc.detail, exc.code)
+        _fail(log, str(exc), exc.detail, exc.code)
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], payload)
-    ai_analysis_gitlab_mr.write_debug_log(
-        params["debug_dir"],
+    log(
         # files 是「提到的檔案數／其中有發現的檔案數」。兩個都記，因為空的發現清單
         # 現在留在 mrDiff 裡（見 default/summary.py 的 parse_reply）—— 只記一個的話，
         # 「模型提了 20 個檔案但只有 2 個有話說」與「模型只提了 2 個」在 log 上長得

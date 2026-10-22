@@ -28,7 +28,8 @@ def parse(inputs):
         heading       要找的那一節的標題。來自你的 device 的
                       CODE_REVIEW_SOURCE_HEADING 宣告，沒宣告就是契約的預設值
         jira_key      這一筆的 JIRA key，只用於診斷訊息
-        debug_write   debug_write(檔名, 內容)；除錯沒開時什麼都不做，可以無條件呼叫
+        log_write   log_write(檔名, 內容)；沒勾選紀錄時什麼都不做，可以無條件呼叫。
+                    檔名會自動帶上這一步的前綴
 
     回傳 contract.code_review_parsed(risk_table, review_result)：
 
