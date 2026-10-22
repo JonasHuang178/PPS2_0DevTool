@@ -54,7 +54,7 @@ _JIRA_DESCRIPTION_LIMIT = 8000
 
 
 def _fail(log, message, detail="", code=""):
-    """回報失敗，並且在除錯目錄留下同一筆紀錄。
+    """回報失敗，並且在這一步的紀錄裡留下同一筆。
 
     成功才寫 log 的話，最需要那份紀錄的時候剛好沒有 —— 而「這次為什麼沒成功」正是
     事後唯一想查的事。detail 通常是 traceback，一併寫進去。
@@ -102,7 +102,7 @@ def _coverage_of(body, diff_info):
 
 
 def _round_writer(base_write, round_no):
-    """第二輪起把除錯檔名加上 `recheckN_` 前綴。
+    """第二輪起把紀錄檔名加上 `recheckN_` 前綴。
 
     不加的話，第二輪的 ai_prompt.txt 與 ai_reply_1.txt 會把第一輪的蓋掉 —— 而第一輪
     那一份正是「模型漏了什麼」的證據，也就是開著重查的人唯一想看的東西。
@@ -318,7 +318,7 @@ def main():
                           help="送進去的檔案沒被全部回報時的重問次數；"
                                "空字串代表用預設值（0，關閉）"),
             script_io.arg("log_dir", default="",
-                          help="除錯輸出目錄；空字串代表不寫任何檔案"),
+                          help="執行紀錄目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把分析結果寫到這個檔案；空字串代表不落檔"),
         ],
@@ -438,7 +438,7 @@ def main():
         # 應該是一個「報進度」的能力，而不是一個可以自行結束行程的模組。
         "progress": script_io.progress,
 
-        # 寫一份除錯檔的能力。除錯目錄沒設定時它什麼都不做，所以鉤子可以無條件
+        # 寫一份紀錄檔的能力。紀錄目錄沒設定時它什麼都不做，所以鉤子可以無條件
         # 呼叫，不必自己判斷除錯有沒有開。
         #
         # prompt 與 AI 的原始回覆是調 prompt 時唯一真正需要看的兩份東西，而它們
@@ -472,7 +472,7 @@ def main():
             logger.info("重查第 %d 次：上一輪有 %d 個檔案沒被回報",
                         round_no - 1, best[0])
 
-        # 第二輪起把除錯檔名加上前綴。覆寫的話，ai_reply_1.txt 會被下一輪蓋掉 ——
+        # 第二輪起把紀錄檔名加上前綴。覆寫的話，ai_reply_1.txt 會被下一輪蓋掉 ——
         # 而「模型第一次漏了什麼」正是這個功能存在的理由，那份檔案不能丟。
         round_inputs = dict(inputs,
                             log_write=_round_writer(base_write, round_no))
@@ -521,7 +521,7 @@ def main():
     try:
         ai_analysis_gitlab_mr.validate_analysis(payload, source=where)
     except ai_analysis_gitlab_mr.AnalysisFormatError as exc:
-        # 鉤子回了一個形狀不對的結構。把它整份寫進除錯目錄 —— 光看訊息說「某個欄位
+        # 鉤子回了一個形狀不對的結構。把它整份寫進紀錄目錄 —— 光看訊息說「某個欄位
         # 型別不對」，還是得看到實際長什麼樣才改得動。
         write_file(
             "bad_analysis.json",

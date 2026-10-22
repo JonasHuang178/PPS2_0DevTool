@@ -181,7 +181,7 @@ def main():
                           help="Merge Request 編號；只用於診斷訊息"),
 
             script_io.arg("log_dir", default="",
-                          help="除錯輸出目錄；空字串代表不寫任何檔案"),
+                          help="執行紀錄目錄；空字串代表不寫任何檔案"),
         ],
     )
 

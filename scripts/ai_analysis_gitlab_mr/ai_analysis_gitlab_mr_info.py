@@ -165,7 +165,7 @@ def main():
             script_io.arg("jira_key_manual", default="",
                           help="使用者手動指定的 JIRA key（僅 manual 模式使用）"),
             script_io.arg("log_dir", default="",
-                          help="除錯輸出目錄；空字串代表不寫任何檔案"),
+                          help="執行紀錄目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把結果寫到這個檔案；空字串代表不落檔"),
 

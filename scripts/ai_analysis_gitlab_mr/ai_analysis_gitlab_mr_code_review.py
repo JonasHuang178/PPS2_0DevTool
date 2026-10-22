@@ -223,8 +223,8 @@ def _read_attachment(item, token, out_path):
     不收 base_url：下載網址是附件自己帶的 item["content"]（JIRA 回的是絕對網址），
     所以這一支不需要知道伺服器在哪裡。
 
-    存檔路徑固定為 <out_path 所在目錄>/04_code_review_src.md —— 勾選除錯分析檔時工作
-    目錄**就是**除錯目錄，所以原始附件自動留在那裡；未勾選時工作目錄是流程結束後會被
+    存檔路徑固定為 <out_path 所在目錄>/04_code_review_src.md —— 它與產物同層，所以勾選
+    Save run log 時原始附件自動留在那裡；未勾選時工作目錄是流程結束後會被
     整個移除的暫存目錄，於是它自動消失。不需要任何分支判斷。
 
     out_path 為空（命令列只想看結果、不要落檔）時下載到暫存目錄並在讀完後刪掉 ——
@@ -360,7 +360,7 @@ def _parse_with_hook(text, heading, key, log, write_file):
 
     攔 Exception 是刻意的，不只攔 RiskTableError：鉤子是使用者寫的，一個 KeyError 不該
     殺掉整條流程。代價是連 KeyboardInterrupt 以外的程式錯誤都被吞成「這一段沒有內容」，
-    所以訊息裡帶上例外的類別名，而完整的 traceback 進除錯輸出。
+    所以訊息裡帶上例外的類別名，而完整的 traceback 進執行紀錄。
     """
     try:
         hook, owner = device.load_hook("parse_code_review")
@@ -424,7 +424,7 @@ def main():
                                "jira_key 就能執行"),
 
             script_io.arg("log_dir", default="",
-                          help="除錯輸出目錄；空字串代表不寫任何檔案"),
+                          help="執行紀錄目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把結構寫到這個檔案；空字串代表不落檔"),
         ],

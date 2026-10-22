@@ -185,7 +185,7 @@ if params["out_path"]:
 script_io.reply(message="完成", data=data)
 ```
 
-**MUST NOT** 改成「寫檔之後回傳路徑」。Qt 端不開檔案 —— 使用者沒有勾選產生除錯檔時，
+**MUST NOT** 改成「寫檔之後回傳路徑」。Qt 端不開檔案 —— 使用者沒有勾選 `Save run log` 時，
 根本沒有檔案可以開。
 
 **輸入**：`params` 裡有內容就用內容，沒內容但有 `<key>_path` 就讀那個檔。

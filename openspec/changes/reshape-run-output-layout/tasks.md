@@ -75,13 +75,13 @@
 
 ## 6. 文件
 
-- [ ] 6.1 更新 `docs/user-guide.md`（勾選字樣、絕對路徑、三層版面）、
+- [x] 6.1 更新 `docs/user-guide.md`（勾選字樣、絕對路徑、三層版面）、
   `docs/ai-analysis-gitlab-mr/README.md`（畫面圖的勾選字樣、行為那一節）、
   `cli.md` 與 `cli.html`（`log_dir`、`requests/` 與遮罩、CI 的 req 路徑）、
   `device-authoring.md` 與 `device-authoring.html`（`inputs["log_write"]`、紀錄版面）、
   `scripts/AUTHORING.md`（`write_log` 系列與遮罩宣告）。驗證：
   `grep -rn "debug_dir\|debug_write\|debug.log\|Add Debug" docs scripts/AUTHORING.md` 無結果。
-- [ ] 6.2 文件中寫明三件代價：遮過的信封要補值才能重跑、`inputs` 鍵名改了（樹外 device 要改
+- [x] 6.2 文件中寫明三件代價：遮過的信封要補值才能重跑、`inputs` 鍵名改了（樹外 device 要改
   一行）、輸入框顯示的絕對路徑不寫回設定檔。驗證：三處都找得到對應段落。
 
 ## 7. 整體驗證

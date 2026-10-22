@@ -131,7 +131,7 @@ PPS2_0DevTool/
 │   │
 │   ├── ai_analysis_gitlab_mr/
 │   │   ├── __init__.py       功能專屬的契約：報告的標題常數與切段、憑證取得、
-│   │   │                     分析結構的建構與驗證、出處、除錯檔
+│   │   │                     分析結構的建構與驗證、出處、執行紀錄
 │   │   ├── ai_analysis_gitlab_mr_list_merge_requests.py  取得 MR 清單
 │   │   ├── ai_analysis_gitlab_mr_description.py   1/5 取得 MR 描述
 │   │   ├── ai_analysis_gitlab_mr_info.py          2/5 取得相關資訊（jira_key、mr_type）
@@ -284,7 +284,7 @@ qmake PPS2_0DevTool.pro && make
 | `script-execution` | `runFunctionScript` 與 `runFunctionFlow` 契約、通道分離、成敗判定、取消狀態機、處理中對話框、行程環境、流程編排與業務運算的分工邊界 |
 | `script-envelope` | Request/Response 信封、`script_io` API、參數與設定宣告、logger、exit code、跨平台、腳本目錄結構 |
 | `single-building` | Single Building 功能：兩個清單的挑選與過濾、四支腳本的觸發與串接、暫存設定檔、失敗與取消的處理 |
-| `ai-analysis-gitlab-mr` | AI Analysis GitLab MR 功能：畫面與查詢、五步流程、GitLab 與 JIRA 連線、AI 呼叫與重試、device 機制、報告版面、除錯輸出 |
+| `ai-analysis-gitlab-mr` | AI Analysis GitLab MR 功能：畫面與查詢、五步流程、GitLab 與 JIRA 連線、AI 呼叫與重試、device 機制、報告版面、執行紀錄 |
 
 **`openspec/changes/archive/`** —— 已完成的變更，保留當時的 `proposal.md`（為什麼要做）、
 `design.md`（決策與取捨理由）與 `tasks.md`（實作與驗證記錄）。

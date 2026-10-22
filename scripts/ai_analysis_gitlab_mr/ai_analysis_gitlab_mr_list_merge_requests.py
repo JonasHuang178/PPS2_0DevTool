@@ -75,7 +75,7 @@ def main():
             script_io.arg("created_after_days", type=int, default=7,
                           help="只取這麼多天內建立的（1-365）"),
             script_io.arg("log_dir", default="",
-                          help="除錯輸出目錄；空字串代表不寫任何檔案"),
+                          help="執行紀錄目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把結果寫到這個檔案；空字串代表不落檔"),
         ],

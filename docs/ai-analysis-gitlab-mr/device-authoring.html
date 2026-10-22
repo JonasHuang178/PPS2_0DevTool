@@ -267,7 +267,7 @@ device/ssd/
         <div class="io-k">收到</div>
         <div class="io-v"><code>text</code> 報告全文（現成的）<br>
         <code>heading</code> 要找哪一節<br>
-        <code>jira_key</code>、<code>debug_write</code></div>
+        <code>jira_key</code>、<code>log_write</code></div>
       </div>
       <div class="io-cell">
         <div class="io-k">要回</div>
@@ -366,7 +366,7 @@ device/ssd/
       <div>
         <div class="step-t">按 AI Analysis 測</div>
         <div class="step-d">每一步都是獨立的 Python 行程，<strong>改完立刻生效</strong>，
-        不必重新建置 Qt。勾 Add Debug file 就看得到每一步的中間產物。</div>
+        不必重新建置 Qt。勾 Save run log 就看得到每一步的中間產物與 <code>logs/</code> 底下的紀錄。</div>
       </div>
     </div>
     <div class="step">
@@ -513,7 +513,7 @@ merge_to_md → default/merge_to_md.py</div></div>
           <div class="spec-v"><code>parse(inputs)</code></div>
           <div class="spec-k">輸入</div>
           <div class="spec-v"><code>text</code> 報告全文、<code>heading</code> 要找的節名、
-            <code>jira_key</code>、<code>debug_write</code><br>
+            <code>jira_key</code>、<code>log_write</code><br>
             <span class="dim">查附件、下載、解碼都在入口做完了，你拿到的是現成全文</span></div>
           <div class="spec-k">輸出</div>
           <div class="spec-v"><code>contract.code_review_parsed(risk_table, review_result)</code><br>

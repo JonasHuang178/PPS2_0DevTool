@@ -52,7 +52,7 @@ def main():
             script_io.arg("mr_iid", required=True,
                           help="Merge Request 編號（畫面上的 !123，不是全域 id）"),
             script_io.arg("log_dir", default="",
-                          help="除錯輸出目錄；空字串代表不寫任何檔案"),
+                          help="執行紀錄目錄；空字串代表不寫任何檔案"),
             script_io.arg("out_path", default="",
                           help="額外把原始描述寫到這個檔案；空字串代表不落檔"),
         ],
@@ -100,7 +100,7 @@ def main():
     # 給了 out_path 才落檔。為空時一個檔案都不會產生。
     #
     # 原始描述是空的時候**仍然要寫出那個檔案**（內容為零位元組）。它是這一步確實
-    # 跑過的證據：勾了除錯分析檔的人打開目錄，看到 01_description.md 在那裡但是空
+    # 跑過的證據：勾了 Save run log 的人打開目錄，看到 01_description.md 在那裡但是空
     # 的，知道的是「這筆 MR 沒填描述」；檔案整個不在，看起來像這一步沒跑或掛了。
     # 步驟 5 也吃得下空檔案 —— 它讀到空內容就整段略過。
     #
