@@ -47,17 +47,17 @@
 
 ## 4. Qt
 
-- [ ] 4.1 `context.debugDir` → `logDir`，值改為 `workDir + "/logs"`（未勾選時仍為空字串）；
+- [x] 4.1 `context.debugDir` → `logDir`，值改為 `workDir + "/logs"`（未勾選時仍為空字串）；
   傳給步驟的參數鍵改為 `log_dir`。驗證：編譯通過；勾選後跑一次，產物在工作目錄、紀錄在
   `logs/`、信封在 `requests/`。
-- [ ] 4.2 `m_widgets.debugFileCheck` → `logFileCheck`、`.ui` 的 `aiDebugFileCheckBox` →
+- [x] 4.2 `m_widgets.debugFileCheck` → `logFileCheck`、`.ui` 的 `aiDebugFileCheckBox` →
   `aiLogFileCheckBox`、字樣 → `Save run log`。驗證：編譯通過；
   `grep -rn "aiDebugFileCheckBox\|debugFileCheck\|Add Debug" *.cpp *.h *.ui` 無結果。
-- [ ] 4.3 `saveDirEdit` 填入時改用 `resolvedSaveDir()` 的絕對路徑。驗證：設定填 `./analysis`，
+- [x] 4.3 `saveDirEdit` 填入時改用 `resolvedSaveDir()` 的絕對路徑。驗證：設定填 `./analysis`，
   啟動後輸入框顯示絕對路徑，而設定檔的值未被改寫。
-- [ ] 4.4 `showResultDialog()` 新增選填的 `folder`：非空時加一行可選取的路徑與一顆開啟按鈕
+- [x] 4.4 `showResultDialog()` 新增選填的 `folder`：非空時加一行可選取的路徑與一顆開啟按鈕
   （`QDesktopServices::openUrl`），空時版面不變。驗證：編譯通過；兩種情況各跑一次看版面。
-- [ ] 4.5 `onFlowFinished()` 的失敗路徑改用 `showResultDialog()`（標題與內容標明第幾步失敗與
+- [x] 4.5 `onFlowFinished()` 的失敗路徑改用 `showResultDialog()`（標題與內容標明第幾步失敗與
   原因），成功與失敗都帶上 `context.logDir`。驗證：
   - 成功時結果視窗有路徑與按鈕，按下會開啟那一次的 `logs/`
   - 故意讓某一步失敗，失敗的視窗同樣有路徑與按鈕，且仍指出第幾步與原因
@@ -65,7 +65,7 @@
 
 ## 5. 持續整合
 
-- [ ] 5.1 `ci/pps-ai-analysis.gitlab-ci.yml`：新增變數指向 `$CI_PROJECT_DIR/pps-requests`，
+- [x] 5.1 `ci/pps-ai-analysis.gitlab-ci.yml`：新增變數指向 `$CI_PROJECT_DIR/pps-requests`，
   五步的 `cat > "$W/req<N>.json"` 改寫到該目錄，`D` 改為 `pps-work/logs`，移除兩行 `rm -f`。
   驗證：
   - `grep -n "req[1-5].json" ci/` 的路徑都不在 `pps-work/` 之下

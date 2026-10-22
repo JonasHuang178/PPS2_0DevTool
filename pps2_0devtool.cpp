@@ -12,8 +12,12 @@
 #include <QAction>
 #include <QCloseEvent>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFileDialog>
+#include <QPushButton>
+#include <QUrl>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
@@ -164,7 +168,7 @@ void PPS2_0DevTool::UI_SetupSignal()
     if (m_aiAnalysisGitLabMR) {
         AIAnalysisGitLabMRWidgets widgets;
         widgets.providerCombo       = ui->aiProviderComboBox;
-        widgets.debugFileCheck      = ui->aiDebugFileCheckBox;
+        widgets.logFileCheck      = ui->aiLogFileCheckBox;
         widgets.saveDirEdit         = ui->aiSaveDirLineEdit;
         widgets.saveDirBrowseButton = ui->aiSaveDirBrowseButton;
         widgets.jiraKeyEdit         = ui->aiJiraKeyLineEdit;
@@ -557,7 +561,8 @@ void PPS2_0DevTool::showUI_ErrorMessageBox(const QString &text)
 
 void PPS2_0DevTool::showResultDialog(const QString &title,
                                      const QString &content,
-                                     qint64 elapsedMs)
+                                     qint64 elapsedMs,
+                                     const QString &folder)
 {
     QDialog dialog(this);
     dialog.setWindowTitle(title);
@@ -577,6 +582,26 @@ void PPS2_0DevTool::showResultDialog(const QString &title,
     QDialogButtonBox *buttons =
             new QDialogButtonBox(QDialogButtonBox::Ok, &dialog);
     connect(buttons, SIGNAL(accepted()), &dialog, SLOT(accept()));
+
+    // 紀錄目錄的入口。功能沒給目錄就整段不出現 —— 沒勾選紀錄時那次的產物在暫存目錄，
+    // 流程一結束就被移除，入口會指向一個不存在的位置。
+    if (!folder.isEmpty()) {
+        const QString native = QDir::toNativeSeparators(folder);
+
+        // 路徑要能選取複製：使用者下一步往往是把它貼到檔案總管或訊息裡。QLabel 預設
+        // 不能選取，所以明確打開。
+        QLabel *path = new QLabel(native, &dialog);
+        path->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        path->setToolTip(native);
+        layout->addWidget(path);
+
+        QPushButton *open = buttons->addButton(QString("Open log folder"),
+                                               QDialogButtonBox::ActionRole);
+        connect(open, &QPushButton::clicked, &dialog, [folder]() {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        });
+    }
+
     layout->addWidget(buttons);
 
     dialog.exec();

@@ -156,8 +156,14 @@ public:
     void showUI_InfoMessageBox(const QString &text);
     void showUI_WarningMessageBox(const QString &text);
     void showUI_ErrorMessageBox(const QString &text);
+    // folder 非空時，視窗多出一行可選取的完整路徑與一顆開啟它的按鈕；空的時候版面與
+    // 沒有這項功能時完全相同。
+    //
+    // 要不要給、給哪一個，由**功能**決定 —— 外殼不認得任何功能的產物放在哪裡，只有
+    // 功能知道「剛才那一次」的目錄是哪一個。
     void showResultDialog(const QString &title, const QString &content,
-                          qint64 elapsedMs);
+                          qint64 elapsedMs,
+                          const QString &folder = QString());
     QString getUI_sourcePathLineEditText() const;
     bool    removeTabByTitle(const QString &title);
 

@@ -281,9 +281,9 @@
                </property>
                <layout class="QVBoxLayout" name="aiParamLayout">
                 <item>
-                 <widget class="QCheckBox" name="aiDebugFileCheckBox">
+                 <widget class="QCheckBox" name="aiLogFileCheckBox">
                   <property name="text">
-                   <string>Add Debug Analysis file</string>
+                   <string>Save run log</string>
                   </property>
                   <property name="checked">
                    <bool>true</bool>

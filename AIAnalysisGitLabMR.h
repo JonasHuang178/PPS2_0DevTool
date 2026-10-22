@@ -40,7 +40,7 @@ QT_END_NAMESPACE
 struct AIAnalysisGitLabMRWidgets
 {
     QComboBox    *providerCombo;
-    QCheckBox    *debugFileCheck;
+    QCheckBox    *logFileCheck;
     QLineEdit    *saveDirEdit;
     QPushButton  *saveDirBrowseButton;
     QLineEdit    *jiraKeyEdit;
@@ -73,7 +73,7 @@ struct AIAnalysisGitLabMRWidgets
 
     AIAnalysisGitLabMRWidgets()
         : providerCombo(Q_NULLPTR)
-        , debugFileCheck(Q_NULLPTR)
+        , logFileCheck(Q_NULLPTR)
         , saveDirEdit(Q_NULLPTR)
         , saveDirBrowseButton(Q_NULLPTR)
         , jiraKeyEdit(Q_NULLPTR)
@@ -249,13 +249,15 @@ private:
     {
         QString repo;
         QString mrIid;
-        QString debugDir;        // 空字串 = 未勾選除錯，不寫 debug.log
+        // 執行紀錄的目錄：workDir 底下的 logs/。空字串 = 未勾選 Save run log，
+        // 腳本因此什麼紀錄都不寫（信封紀錄也在這之下，由腳本自己建子目錄）。
+        QString logDir;
 
         // 每一步的產物都寫進這裡，第 5 步再以路徑把它們讀回來合併。
         //
-        // **一定有值** —— 勾了除錯就是 debugDir，沒勾就是一個暫存目錄。
-        // 中間產物落檔不再是「除錯才開啟」的選項，因為第 5 步的輸入就是檔案
-        // 路徑；沒勾除錯時改走暫存目錄，使用者看得到的結果完全一樣。
+        // **一定有值** —— 勾了紀錄就是那個帶時間戳的目錄，沒勾就是一個暫存目錄。
+        // 中間產物落檔不再是「勾了才開啟」的選項，因為第 5 步的輸入就是檔案
+        // 路徑；沒勾時改走暫存目錄，使用者看得到的結果完全一樣。
         QString workDir;
 
         // 沒勾除錯時持有上面那個暫存目錄。它的生命週期綁在這份 context 上，
@@ -315,7 +317,11 @@ private:
             int index,
             const AnalysisContext &context,
             const QList<PythonRunner::PythonRunnerResult> &done) const;
-    void onFlowFinished(const PPS2_0DevTool::FlowResult &result);
+    // logDir 是這一次的紀錄目錄（未勾選時為空字串），成功與失敗都交給結果視窗當作
+    // 開啟入口。不從畫面重讀 —— 那是「存放目錄」，而這一次的紀錄在它底下某個帶時間戳
+    // 的子目錄裡，只有這條流程知道是哪一個。
+    void onFlowFinished(const PPS2_0DevTool::FlowResult &result,
+                        const QString &logDir);
 
     PPS2_0DevTool *m_shell;
     AIAnalysisGitLabMRWidgets m_widgets;

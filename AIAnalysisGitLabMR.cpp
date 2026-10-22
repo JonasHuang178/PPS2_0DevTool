@@ -476,8 +476,21 @@ void AIAnalysisGitLabMR::attachWidgets(const AIAnalysisGitLabMRWidgets &widgets)
         m_widgets.providerCombo->addItem(QString());
     refreshProviderItems();
 
+    // **填入解析後的絕對路徑，不是設定檔的原值。** 使用者要的是「複製這個路徑就到得
+    // 了」，而設定檔裡多半是相對路徑（`./analysis`），讀的人看不出它最後落在哪裡。
+    //
+    // 相對路徑是相對**執行檔目錄**解析的（見 resolvedSaveDir）。
+    //
+    // 解析後的值不寫回設定檔 —— 設定檔裡仍然是相對路徑。畫面狀態本來就不持久化，
+    // 所以顯示與設定值不同不算破例；而使用者改填相對路徑的行為也完全不變，
+    // resolvedSaveDir() 讀的是輸入框，它本來就吃相對路徑。
+    // 設兩次是因為 resolvedSaveDir() 讀的是輸入框本身：先放進設定檔的原值給它當輸入，
+    // 再用解析結果覆蓋。設定檔的值為空時 resolvedSaveDir() 回空字串，於是輸入框留空，
+    // 與原本的行為相同。
     m_widgets.saveDirEdit->setText(
                 cfg.value(QString("Save_Analysis_File_Dir")).toString());
+    m_widgets.saveDirEdit->setText(
+                QDir::toNativeSeparators(resolvedSaveDir()));
 
     // --- Filter 群組 ---
     m_widgets.authorView->setModel(m_authorModel);
@@ -525,7 +538,7 @@ void AIAnalysisGitLabMR::attachWidgets(const AIAnalysisGitLabMRWidgets &widgets)
     connect(m_widgets.analysisButton, SIGNAL(clicked()),
             this, SLOT(onAnalysisClicked()));
 
-    connect(m_widgets.debugFileCheck, SIGNAL(toggled(bool)),
+    connect(m_widgets.logFileCheck, SIGNAL(toggled(bool)),
             this, SLOT(onDebugFileToggled()));
     connect(m_widgets.saveDirEdit, SIGNAL(textChanged(QString)),
             this, SLOT(updateButtonStates()));
@@ -896,7 +909,7 @@ void AIAnalysisGitLabMR::onSourceModeToggled()
 // 不產生檔案時，存放目錄那一列沒有意義 —— 留著可編輯會讓人以為它還有作用。
 void AIAnalysisGitLabMR::onDebugFileToggled()
 {
-    const bool enabled = m_widgets.debugFileCheck->isChecked();
+    const bool enabled = m_widgets.logFileCheck->isChecked();
     m_widgets.saveDirEdit->setEnabled(enabled);
     m_widgets.saveDirBrowseButton->setEnabled(enabled);
     updateButtonStates();
@@ -911,7 +924,7 @@ void AIAnalysisGitLabMR::onJiraModeToggled()
 void AIAnalysisGitLabMR::onSaveDirBrowseClicked()
 {
     const QString dir = QFileDialog::getExistingDirectory(
-                Q_NULLPTR, QString("選擇分析檔存放目錄"), resolvedSaveDir());
+                Q_NULLPTR, QString("選擇紀錄存放目錄"), resolvedSaveDir());
     if (dir.isEmpty())
         return;
     m_widgets.saveDirEdit->setText(QDir::toNativeSeparators(dir));
@@ -952,7 +965,7 @@ void AIAnalysisGitLabMR::updateButtonStates()
     bool ready = !selectedRepo().isEmpty()
             && !effectiveMrIid().isEmpty();
 
-    if (m_widgets.debugFileCheck->isChecked()
+    if (m_widgets.logFileCheck->isChecked()
             && m_widgets.saveDirEdit->text().trimmed().isEmpty())
         ready = false;
 
@@ -1407,12 +1420,12 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
     context.jiraKeyManual = m_widgets.jiraKeyEdit->text().trimmed();
     context.envVars       = serviceEnvVars();
 
-    // 除錯目錄在流程啟動**之前**建立。路徑打錯或沒有寫入權限會在這一刻就
+    // 工作目錄在流程啟動**之前**建立。路徑打錯或沒有寫入權限會在這一刻就
     // 爆出來，而不是等到跑完前三步、付完 AI 的錢，才在第四步發現寫不進去。
     //
     // 時間戳只取一次，五個步驟因此寫進同一個目錄 —— 若每步各自取，跨秒時
     // 會冒出兩個目錄，而且是偶發的。
-    if (m_widgets.debugFileCheck->isChecked()) {
+    if (m_widgets.logFileCheck->isChecked()) {
         const QString baseDir = resolvedSaveDir();
         const QString stamp =
                 QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
@@ -1431,17 +1444,32 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
         // mkpath() 而不是 mkdir()：後者只建一層，存放目錄本身還不存在時會失敗。
         if (!QDir().mkpath(dir)) {
             m_shell->showUI_ErrorMessageBox(
-                        QString("無法建立分析檔目錄：\n%1")
+                        QString("無法建立工作目錄：\n%1")
                         .arg(QDir::toNativeSeparators(dir)));
             return;
         }
 
-        QTDebug(QString("[%1] 分析檔目錄：%2").arg(functionName(), dir));
-        context.debugDir = dir;
-        context.workDir  = dir;
+        // 三層：產物在工作目錄本身，執行紀錄在 logs/，信封紀錄在 logs/requests/
+        // （後者由腳本自己建）。產物是固定五個、名稱已知的交付物；紀錄是會隨 AI 的
+        // 嘗試次數與重查輪數增長的開放集合 —— 混在一層時，固定的那五個會被淹沒。
+        //
+        // logs/ 這裡就建起來，與工作目錄同一個時機失敗 —— 留給腳本建的話，寫不進去
+        // 要等到第一步跑完才知道。
+        const QString logs = QDir(dir).absoluteFilePath(QString("logs"));
+        if (!QDir().mkpath(logs)) {
+            m_shell->showUI_ErrorMessageBox(
+                        QString("無法建立紀錄目錄：\n%1")
+                        .arg(QDir::toNativeSeparators(logs)));
+            return;
+        }
+
+        QTDebug(QString("[%1] 工作目錄：%2").arg(functionName(), dir));
+        context.logDir  = logs;
+        context.workDir = dir;
     } else {
-        // 沒勾除錯也要有地方放中間產物 —— 第 5 步的輸入是檔案路徑，不是內容。
+        // 沒勾紀錄也要有地方放中間產物 —— 第 5 步的輸入是檔案路徑，不是內容。
         // 用暫存目錄，流程結束時連同 context 一起被刪，使用者的磁碟上不留東西。
+        // logDir 留空，於是腳本一個紀錄檔都不寫。
         QSharedPointer<QTemporaryDir> temp(new QTemporaryDir);
         if (!temp->isValid()) {
             m_shell->showUI_ErrorMessageBox(
@@ -1474,9 +1502,10 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
         return buildStep(done.size(), context, done);
     };
 
+    const QString logDir = context.logDir;
     PPS2_0DevTool::FlowCallback finished =
-            [this](const PPS2_0DevTool::FlowResult &result) {
-        onFlowFinished(result);
+            [this, logDir](const PPS2_0DevTool::FlowResult &result) {
+        onFlowFinished(result, logDir);
     };
 
     m_shell->runFunctionFlow(functionName(), decide, finished);
@@ -1493,7 +1522,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
     QJsonObject params;
     params.insert(QString("repo"),    context.repo);
     params.insert(QString("mr_iid"),  context.mrIid);
-    params.insert(QString("debug_dir"), context.debugDir);
+    params.insert(QString("log_dir"), context.logDir);
 
     // 每一步都落檔。工作目錄一定有值（勾除錯就是使用者指定的目錄，否則是
     // 暫存目錄），因此不再有「這一步沒有輸出檔」的情況 —— 第 5 步要靠這些
@@ -1598,7 +1627,8 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
     return step;
 }
 
-void AIAnalysisGitLabMR::onFlowFinished(const PPS2_0DevTool::FlowResult &result)
+void AIAnalysisGitLabMR::onFlowFinished(const PPS2_0DevTool::FlowResult &result,
+                                        const QString &logDir)
 {
     if (!result.success) {
         const int stepNumber = result.failedStepIndex + 1;
@@ -1608,17 +1638,23 @@ void AIAnalysisGitLabMR::onFlowFinished(const PPS2_0DevTool::FlowResult &result)
                 : QString("未提供失敗原因");
 
         // 失敗即停：後續步驟沒有被啟動，畫面也沒有任何元素改變。
-        m_shell->showUI_ErrorMessageBox(
-                    QString("AI 分析在第 %1 步失敗：\n%2")
-                    .arg(stepNumber).arg(reason));
+        //
+        // **失敗走的是同一個結果視窗，不是訊息框。** 失敗比成功更需要紀錄目錄的入口，
+        // 而訊息框的文字不能選取 —— 最需要那個路徑的那一刻連抄都抄不到。走同一個視窗
+        // 也使入口只有一份程式碼，不會有一邊有、一邊忘了加的情況。
+        m_shell->showResultDialog(
+                    QString("AI Analysis — 失敗"),
+                    QString("AI 分析在第 %1 步失敗：\n\n%2")
+                    .arg(stepNumber).arg(reason),
+                    result.elapsedMs, logDir);
         return;
     }
 
-    // 內容取自最後一步的 data，不開任何檔案 —— 未勾選除錯時根本沒有檔案。
+    // 內容取自最後一步的 data，不開任何檔案 —— 未勾選紀錄時根本沒有檔案。
     const QString markdown = result.results.isEmpty()
             ? QString()
             : result.results.last().data.value(QString("markdown")).toString();
 
     m_shell->showResultDialog(QString("AI Analysis"), markdown,
-                              result.elapsedMs);
+                              result.elapsedMs, logDir);
 }
