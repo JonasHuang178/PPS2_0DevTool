@@ -185,6 +185,9 @@ def write_log(log_dir, message, out_path="", action=""):
     debug console、持續整合的 job log 對起來 —— 那兩者都有時間戳。
 
     多行的訊息（例如 traceback）每一行都蓋上同一個時間戳，所以每一行都看得出屬於哪一筆。
+
+    尾端的換行先去掉再切行：traceback.format_exc() 結尾有一個換行，不去掉的話每一筆失敗
+    紀錄都會多出一行只有時間戳、後面什麼都沒有的空行 —— 而那正是出問題時要讀的檔案。
     """
     if not log_dir:
         return False
@@ -194,7 +197,8 @@ def write_log(log_dir, message, out_path="", action=""):
 
     stamp = _stamp()
     body = str(message)
-    lines = "".join("[%s] %s\n" % (stamp, one) for one in body.split("\n"))
+    lines = "".join("[%s] %s\n" % (stamp, one)
+                    for one in body.rstrip("\n").split("\n"))
 
     path = os.path.join(log_dir, log_name(out_path, action))
     with open(path, "a", encoding="utf-8") as handle:
