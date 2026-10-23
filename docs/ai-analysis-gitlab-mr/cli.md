@@ -31,7 +31,7 @@
 | `params` | 意思 |
 |---|---|
 | `out_path` | 產物寫到哪裡。**不給就不落檔**，結果只出現在 stdout 的回應信封裡 |
-| `log_dir` | 執行紀錄寫到哪裡。不給就一個檔都不寫。這一步的逐行紀錄落在它底下，檔名與產物同名（`03_summary.json` → `03_summary.log`）；腳本另外把**遮過憑證的 `params`**（只有 params，不含信封其餘欄位）寫進 `<log_dir>/requests/<action>.json` |
+| `log_dir` | 執行紀錄寫到哪裡。不給就一個檔都不寫。這一步的逐行紀錄落在它底下，檔名與產物同名（`03_summary.json` → `03_summary.log`）；腳本另外把**遮過憑證的 `params`** 以 `{"params": {...}}` 的形狀寫進 `<log_dir>/requests/<action>.json` —— 補回金鑰後可直接 `--request` 重跑那一步 |
 
 **步驟 3 的參數**比較多，因為 AI 的連線字串與金鑰走 `params` 而不是環境變數。實務上的後果是它們
 會**落在請求檔裡** —— 那個檔案用完要刪，見下面的坑那一節。

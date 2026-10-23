@@ -779,8 +779,19 @@ console、以及持續整合的 job log 對起來。
 
 **只有 `params`，不含信封的其餘欄位。** `action` 已經是檔名；`config`（呼叫端那一整個
 功能區塊）這幾支腳本一律宣告 `config=[]` 根本不讀，寫進來只會把真正要看的那幾個鍵淹掉，
-而且它不受參數上的遮罩宣告管。代價是這份紀錄不是一份完整的信封，不能直接拿去 `--request`
-重跑 —— 要自己補上 `action`、所需的設定，以及被遮掉的值。
+而且它不受參數上的遮罩宣告管。
+
+**但那份 `params` 包在 `{"params": {...}}` 裡**，所以整份檔案就是一份合法的信封，補回
+被遮掉的金鑰之後可以直接拿去重跑那一步：
+
+```bash
+python scripts/ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_summary.py \
+    --request <那一次>/logs/requests/ai_summary.json -v
+```
+
+兩個坑：補回金鑰之前跑會拿 `***` 去打 AI（症狀是 401）；而裡面的 `out_path` 與 `log_dir`
+指的是**那一次**的目錄，原地重跑會覆寫那次的產物、並往那一份 `.log` 後面繼續追加 ——
+要留著原樣就先把 json 複製出去，或改掉那兩個值。
 
 `04_code_review_src.md` **是原始附件、不是擷取結果** —— 擷取到的總表在
 `04_code_review.json` 裡。留著它的理由是「擷取對不對」只能拿原文比對；它與產物同層

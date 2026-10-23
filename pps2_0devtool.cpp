@@ -16,6 +16,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
+#include <QHBoxLayout>
 #include <QPushButton>
 #include <QUrl>
 #include <QLabel>
@@ -583,26 +584,28 @@ void PPS2_0DevTool::showResultDialog(const QString &title,
             new QDialogButtonBox(QDialogButtonBox::Ok, &dialog);
     connect(buttons, SIGNAL(accepted()), &dialog, SLOT(accept()));
 
-    // 紀錄目錄的入口。功能沒給目錄就整段不出現 —— 沒勾選紀錄時那次的產物在暫存目錄，
+    // 按鈕列自己排，不交給 QDialogButtonBox 的角色順序：那個順序由平台樣式決定
+    // （Windows 把 ActionRole 排在 Accept 之後），而這裡要的是開啟入口在 OK 左邊。
+    // OK 仍然留在 button box 裡，所以 Enter 與 Esc 的預設行為不變。
+    QHBoxLayout *buttonRow = new QHBoxLayout;
+    buttonRow->addStretch();
+
+    // 紀錄目錄的入口。功能沒給目錄就不出現 —— 沒勾選紀錄時那次的產物在暫存目錄，
     // 流程一結束就被移除，入口會指向一個不存在的位置。
+    //
+    // 只有按鈕，不另外顯示路徑：那一行字在這個視窗的最底下，而真正要做的事（打開它）
+    // 按鈕已經做完了。要路徑本身的人開了目錄就能從檔案總管取得。
     if (!folder.isEmpty()) {
-        const QString native = QDir::toNativeSeparators(folder);
-
-        // 路徑要能選取複製：使用者下一步往往是把它貼到檔案總管或訊息裡。QLabel 預設
-        // 不能選取，所以明確打開。
-        QLabel *path = new QLabel(native, &dialog);
-        path->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        path->setToolTip(native);
-        layout->addWidget(path);
-
-        QPushButton *open = buttons->addButton(QString("Open log folder"),
-                                               QDialogButtonBox::ActionRole);
+        QPushButton *open = new QPushButton(QString("Open log folder"), &dialog);
+        open->setToolTip(QDir::toNativeSeparators(folder));
         connect(open, &QPushButton::clicked, &dialog, [folder]() {
             QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
         });
+        buttonRow->addWidget(open);
     }
 
-    layout->addWidget(buttons);
+    buttonRow->addWidget(buttons);
+    layout->addLayout(buttonRow);
 
     dialog.exec();
 }

@@ -222,14 +222,21 @@ def mask_params(params, param_defs):
 def write_request_log(log_dir, action, params, param_defs):
     """把**實際收到的參數**遮罩後寫進 <log_dir>/requests/<action>.json。
 
+    寫出的形狀是 `{"params": {...}}` —— 一個可以直接 --request 投遞回去的信封。
+
     `log_dir` 為空就什麼都不做 —— 與其他紀錄同一個開關，所以不會出現「開關為真但路徑
     為空」這種矛盾狀態。
 
-    **只記 params，不記整個信封。** 這份紀錄要回答的是「這一步被餵了什麼參數」，而
+    **只記 params，不記信封的其餘欄位。** 這份紀錄要回答的是「這一步被餵了什麼參數」，而
     `source_path`、`action`、`config` 都不是參數：action 已經是檔名，config 是呼叫端
     那一整個功能區塊、這些腳本一律宣告 `config=[]` 根本不讀它，寫進來只會把真正要看的
     那幾個鍵淹掉。而且遮罩規則只宣告在參數上，少記一個不受遮罩管的區塊，也就少一條
     憑證外流的路。
+
+    **但是放在 `params` 這個鍵之下，而不是裸的一個物件。** 多這一層使整份檔案本身就是
+    一個合法的請求信封，可以直接 `--request` 投遞回同一支腳本（action 由腳本自己的預設
+    補上，config 這些腳本不讀）—— 一個**只差補回被遮掉的值**就能重跑的檔案，比一份
+    只能讀的參數清單有用得多，而代價只是一層括號。
 
     **這份紀錄由腳本寫，不由呼叫端寫。** 腳本是唯一同時握有參數、紀錄目錄與「哪些參數
     是憑證」這三件事的地方。交給呼叫端，遮罩規則就得在每個呼叫端各實作一次，而圖形介面
@@ -241,8 +248,9 @@ def write_request_log(log_dir, action, params, param_defs):
     **為什麼是遮罩而不是寫完再刪**：刪除要靠每一條失敗路徑都執行到，而這份紀錄的用途
     正是在失敗時被讀。遮過之後它可以安全地留著，不需要任何清理步驟。
 
-    代價寫明白：這份紀錄不是一份完整的信封，不能直接拿去 --request 重跑那一步 ——
-    要自己補上 `action`、缺少的設定，以及被遮掉的值。
+    代價寫明白兩件事：一是被遮掉的值要自己補回去才重跑得動；二是裡面的 `out_path` 與
+    `log_dir` 指的是**那一次**的目錄，原地重跑會覆寫那一次的產物、並往那一份逐行紀錄
+    後面繼續追加 —— 要留著原樣就先把檔案複製出去，或改掉那兩個值。
 
     寫檔失敗不讓腳本失敗 —— 一份診斷紀錄寫不出來，不該讓一次已經在進行的工作中斷。
     """
@@ -255,7 +263,7 @@ def write_request_log(log_dir, action, params, param_defs):
     try:
         os.makedirs(folder, exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
-            json.dump(mask_params(params, param_defs), handle,
+            json.dump({"params": mask_params(params, param_defs)}, handle,
                       ensure_ascii=False, indent=2)
             handle.write("\n")
     except OSError as exc:
