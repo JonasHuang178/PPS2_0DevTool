@@ -301,7 +301,7 @@ def main():
             script_io.arg("mr_type", default="",
                           help="上一步解出的種類；決定用哪一份 summary 鉤子，"
                                "空字串代表用該 device 的通用版"),
-            # 兩個都是憑證，所以宣告遮罩 —— 它只影響寫出的信封紀錄，腳本拿到的仍是原值。
+            # 兩個都是憑證，所以宣告遮罩 —— 它只影響寫出的參數紀錄，腳本拿到的仍是原值。
             # 連線字串只遮尾端的 shareCode：provider 與端點是「送去哪裡」，那正是看紀錄
             # 時最想知道的事，整串遮掉等於把有用的部分一起丟掉。
             script_io.arg("ai_connection", default="",

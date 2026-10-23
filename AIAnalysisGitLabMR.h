@@ -250,7 +250,7 @@ private:
         QString repo;
         QString mrIid;
         // 執行紀錄的目錄：workDir 底下的 logs/。空字串 = 未勾選 Save run log，
-        // 腳本因此什麼紀錄都不寫（信封紀錄也在這之下，由腳本自己建子目錄）。
+        // 腳本因此什麼紀錄都不寫（參數紀錄也在這之下，由腳本自己建子目錄）。
         QString logDir;
 
         // 每一步的產物都寫進這裡，第 5 步再以路徑把它們讀回來合併。

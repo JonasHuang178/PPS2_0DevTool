@@ -731,7 +731,7 @@ diff --git a/src/b.cpp b/src/b.cpp
 每一步。目錄建立失敗（路徑打錯、沒有寫入權限）會在按下按鈕的當下就跳錯誤框，
 流程不啟動 —— 不會等到跑完前三步才發現寫不進去。
 
-目錄分三層：**產物**在上層，**執行紀錄**在 `logs/`，**信封紀錄**在 `logs/requests/`。
+目錄分三層：**產物**在上層，**執行紀錄**在 `logs/`，**參數紀錄**在 `logs/requests/`。
 產物是固定五個、名稱已知的交付物；紀錄是會隨 AI 的嘗試次數與重查輪數增長的開放集合 ——
 混在一層時，固定的那五個會被淹沒。
 
@@ -755,7 +755,7 @@ gitlab_mr_result_lw-os_123_20260912_143012/
     03_summary_bad_analysis.json    鉤子回傳的結構沒通過驗證時才會有
     04_code_review_bad_code_review.json  步驟 4 的結構沒通過驗證時才會有
     requests/
-      mr_description.json    各步**實際收到的信封**，憑證已遮掉
+      mr_description.json    各步**實際收到的 params**，憑證已遮掉
       mr_info.json
       ai_summary.json
       fetch_code_review.json
@@ -771,11 +771,16 @@ gitlab_mr_result_lw-os_123_20260912_143012/
 **每一行都以 `[YYYY-MM-DD HH:MM:SS.mmm]` 開頭**，與 debug console 同格式 —— 紀錄要能和
 console、以及持續整合的 job log 對起來。
 
-`logs/requests/` 裡那幾份是**各步實際收到的信封**，由腳本自己寫出，兩個呼叫端（圖形介面
-走 stdin、持續整合走檔案）的結果相同。逐行紀錄說的是「發生了什麼」，信封說的是「它被
+`logs/requests/` 裡那幾份是**各步實際收到的 `params`**，由腳本自己寫出，兩個呼叫端（圖形
+介面走 stdin、持續整合走檔案）的結果相同。逐行紀錄說的是「發生了什麼」，參數說的是「它被
 要求做什麼」—— 參數打錯、呼叫端送錯欄位這一類問題只有後者看得出來。宣告為憑證的欄位
 會被遮掉（`ai_api_key` 整個遮成 `***`，連線字串只遮尾端的 shareCode，provider 與端點
-留著）。代價是那份信封不能直接拿去 `--request` 重跑，要先補回被遮掉的值。
+留著）。
+
+**只有 `params`，不含信封的其餘欄位。** `action` 已經是檔名；`config`（呼叫端那一整個
+功能區塊）這幾支腳本一律宣告 `config=[]` 根本不讀，寫進來只會把真正要看的那幾個鍵淹掉，
+而且它不受參數上的遮罩宣告管。代價是這份紀錄不是一份完整的信封，不能直接拿去 `--request`
+重跑 —— 要自己補上 `action`、所需的設定，以及被遮掉的值。
 
 `04_code_review_src.md` **是原始附件、不是擷取結果** —— 擷取到的總表在
 `04_code_review.json` 裡。留著它的理由是「擷取對不對」只能拿原文比對；它與產物同層

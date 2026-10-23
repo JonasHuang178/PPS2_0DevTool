@@ -1449,7 +1449,7 @@ void AIAnalysisGitLabMR::onAnalysisClicked()
             return;
         }
 
-        // 三層：產物在工作目錄本身，執行紀錄在 logs/，信封紀錄在 logs/requests/
+        // 三層：產物在工作目錄本身，執行紀錄在 logs/，參數紀錄在 logs/requests/
         // （後者由腳本自己建）。產物是固定五個、名稱已知的交付物；紀錄是會隨 AI 的
         // 嘗試次數與重查輪數增長的開放集合 —— 混在一層時，固定的那五個會被淹沒。
         //

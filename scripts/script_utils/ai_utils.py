@@ -136,7 +136,7 @@ def mask_connection(connection):
         openai:https://host/api/external/v1/chat:ABC123
         →  openai:https://host/api/external/v1/chat:***
 
-    給信封紀錄用（script_io.arg(mask=...)）。**只遮第三段**：前兩段是「送去哪一個供應者
+    給參數紀錄用（script_io.arg(mask=...)）。**只遮第三段**：前兩段是「送去哪一個供應者
     的哪一個端點」，那正是看紀錄時最想知道的事；整串遮掉等於把有用的部分一起丟掉。
 
     沒有 shareCode 時原樣回傳 —— 沒有東西可遮，而硬加一個 `:***` 會讓讀的人以為有。

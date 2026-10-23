@@ -38,7 +38,7 @@ DESCRIPTION      = "列出每一個 AI provider 項目對應的模型名稱"
 
 
 def _mask_modes(raw):
-    """遮掉 modes 裡每一筆的憑證，給信封紀錄用。
+    """遮掉 modes 裡每一筆的憑證，給參數紀錄用。
 
     憑證在這個參數裡是**巢狀**的（一個陣列，每一筆有 connection 與 api_key），所以
     遮罩宣告用函式而不是 True —— 整個陣列換成 `***` 會讓紀錄看不出有幾筆、provider 是
