@@ -22,23 +22,59 @@
 <!-- ============ 為什麼 ============ -->
 <section>
   <h2>為什麼需要它</h2>
-  <h3>同一條流程，不同產品線要問的問題不一樣</h3>
+  <h3>五個步驟，你只換<br>其中四格的內容</h3>
 
-  <div class="ba">
-    <div class="ba-card">
-      <div class="ba-ico">🧩</div>
-      <div class="ba-t">不變的</div>
-      <div class="ba-d">五個步驟、取資料、<br>報告的外框、憑證處理。<br>這些你碰不到也不必管。</div>
-    </div>
-    <div class="ba-arrow">→</div>
-    <div class="ba-card">
-      <div class="ba-ico">✍️</div>
-      <div class="ba-t">你決定的</div>
-      <div class="ba-d">單號怎麼抽、問 AI 什麼、<br>怎麼看懂 code review、<br>分析那一段怎麼排版。</div>
-    </div>
+  <p class="lead">流程、取資料、憑證、報告的外框都是固定的。你寫的是四個位置上的答案 ——
+  也就是下面這五個檔案。</p>
+
+  <div class="fig-wrap">
+  <svg class="fig" viewBox="0 0 800 320" role="img"
+       aria-label="五步流程圖：步驟 1 不因 device 而異，步驟 2 到 5 各掛一或兩支鉤子檔案，每支負責回答一個問題">
+    <text class="f-cap" x="8" y="13">工具固定的流程</text>
+    <rect class="f-pipe" x="8" y="24" width="784" height="70" rx="14"/>
+    <rect class="f-fix" x="22"  y="40" width="144" height="38" rx="9"/>
+    <text class="f-stepf" x="94"  y="64" text-anchor="middle">① 取得描述</text>
+    <rect class="f-fix" x="174" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="246" y="64" text-anchor="middle">② 單號與種類</text>
+    <rect class="f-fix" x="326" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="398" y="64" text-anchor="middle">③ AI 分析</text>
+    <rect class="f-fix" x="478" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="550" y="64" text-anchor="middle">④ 取審閱報告</text>
+    <rect class="f-fix" x="630" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="702" y="64" text-anchor="middle">⑤ 合成 markdown</text>
+
+    <text class="f-cap" x="8" y="114">你寫的</text>
+    <line class="f-link" x1="246" y1="94" x2="246" y2="124"/>
+    <line class="f-link" x1="398" y1="94" x2="398" y2="124"/>
+    <line class="f-link" x1="550" y1="94" x2="550" y2="124"/>
+    <line class="f-link" x1="702" y1="94" x2="702" y2="124"/>
+
+    <rect class="f-dev" x="174" y="124" width="144" height="64" rx="10"/>
+    <text class="f-file" x="188" y="150">jira_key.py</text>
+    <text class="f-q"    x="188" y="172">哪一張單號？</text>
+    <rect class="f-dev" x="174" y="196" width="144" height="64" rx="10"/>
+    <text class="f-file" x="188" y="222">mr_type.py</text>
+    <text class="f-q"    x="188" y="244">哪一種 MR？</text>
+
+    <rect class="f-devt" x="326" y="124" width="144" height="64" rx="10"/>
+    <text class="f-filet" x="340" y="150">summary.py</text>
+    <text class="f-q"     x="340" y="172">問 AI 什麼？</text>
+
+    <rect class="f-dev" x="478" y="124" width="144" height="64" rx="10"/>
+    <text class="f-file" x="492" y="146">parse_code_</text>
+    <text class="f-file" x="492" y="161">review.py</text>
+    <text class="f-q"    x="492" y="180">審閱報告怎麼讀？</text>
+
+    <rect class="f-devt" x="630" y="124" width="144" height="64" rx="10"/>
+    <text class="f-filet" x="644" y="150">merge_to_md.py</text>
+    <text class="f-q"     x="644" y="172">那一段怎麼排？</text>
+
+    <text class="f-note" x="8" y="288"><tspan class="g">綠色兩支</tspan>還能再依種類分開（見下一節）；<tspan class="b">藍色三支</tspan>不行。</text>
+    <text class="f-note" x="8" y="310">五支都是選用的：只放你要覆寫的，缺的自動用 <tspan class="b">default</tspan> 的。</text>
+  </svg>
   </div>
 
-  <p class="muted" style="font-size:15px;margin-top:18px">
+  <p class="muted" style="font-size:15px">
     一個 device = 一個目錄。放進去就是新增一個，<strong>沒有註冊表要改</strong>。
     用哪一個由環境變數 <code>PPS_DEVICE</code> 決定（Qt 從設定檔注入，CI 由 runner 設）。
   </p>

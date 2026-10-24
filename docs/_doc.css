@@ -357,3 +357,37 @@ footer a { color: var(--accent); }
   }
   .spec-v { padding-top: 4px; }
 }
+
+/* ---------- 流程圖 ----------
+ *
+ * 用 SVG 而不是一堆 div：五格要與下面的鉤子欄位對齊，grid 做得到，但窄螢幕上
+ * 會各自換行、對齊就散了。SVG 整張等比縮放，手機上只是變小，關係不會變。
+ *
+ * 顏色一律取 CSS 變數（不寫死色碼），深色模式才跟著換。字級直接寫在類別上，
+ * 因為 SVG 的 font-size 不吃 em 繼承那一套。 */
+.fig-wrap { overflow-x: auto; margin: 26px 0 8px; }
+.fig { width: 100%; height: auto; display: block; }
+.fig text {
+  font-family: -apple-system, "Noto Sans TC", "PingFang TC",
+               "Microsoft JhengHei", system-ui, sans-serif;
+}
+.fig .f-cap  { font-size: 12.5px; fill: var(--ink2); letter-spacing: .04em; }
+.fig .f-pipe { fill: var(--bg2); stroke: var(--line); }
+.fig .f-fix  { fill: var(--bg);  stroke: var(--line); }
+.fig .f-step { font-size: 13px; fill: var(--ink); }
+.fig .f-stepf{ font-size: 13px; fill: var(--ink2); }
+/* 可依種類再分的兩支用綠色，其餘用藍色 —— 與 .hook-name 的語意一致 */
+.fig .f-dev  { fill: var(--accent-bg); stroke: var(--accent); }
+.fig .f-devt { fill: var(--ok-bg);     stroke: var(--ok); }
+.fig .f-file { font: 700 11.5px var(--mono); fill: var(--accent); }
+.fig .f-filet{ font: 700 11.5px var(--mono); fill: var(--ok); }
+.fig .f-q    { font-size: 12px; fill: var(--ink2); }
+.fig .f-link { stroke: var(--ink2); stroke-dasharray: 3 3; opacity: .55; }
+.fig .f-note { font-size: 12.5px; fill: var(--ink2); }
+.fig .f-note .b { fill: var(--accent); font-weight: 700; }
+.fig .f-note .g { fill: var(--ok);     font-weight: 700; }
+@media (max-width: 680px) {
+  /* 等比縮下去的話，圖上的字會比內文小一半以上。寧可讓它維持可讀的寬度、
+     由外層橫向捲動 —— 與 .spec-pre 同一個作法。 */
+  .fig { min-width: 660px; }
+}
