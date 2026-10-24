@@ -85,5 +85,5 @@ from ai_analysis_gitlab_mr.device.default.bug import summary as base
 要改成報錯，在 device 的 `__init__.py` 宣告 `STRICT_TYPE = True`。那時失敗發生在
 **步驟 2**，也就是在任何 AI 花費之前。
 
-`STRICT_TYPE` **不要求種類目錄放齊鉤子** —— `bug/` 底下只有 `summary.py` 時，
+`STRICT_TYPE` **不要求種類目錄放齊擴充腳本** —— `bug/` 底下只有 `summary.py` 時，
 `merge_to_md` 照常回退。
