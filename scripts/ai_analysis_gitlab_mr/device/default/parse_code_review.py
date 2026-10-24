@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""default device 的步驟 4 鉤子：看懂別人的 code review 報告。
+"""default device 的步驟 4 擴充腳本：看懂別人的 code review 報告。
 
 這是所有 device 的起點 —— 沒有自己 parse_code_review.py 的 device 都用這一份。
 
@@ -125,7 +125,7 @@ def parse(inputs):
                 "風險評估總表最後一欄「%s」的第 %d 列是 %r，不是數量"
                 % (title, index, cells[-1]),
                 "這一份判定規則把最後一欄當數量，全部列加總為 0 判定通過。\n"
-                "若該 device 的總表不是這個形狀，請提供自己的 parse_code_review 鉤子。",
+                "若該 device 的總表不是這個形狀，請提供自己的 parse_code_review 擴充腳本。",
                 "CODE_REVIEW_COUNT_NOT_A_NUMBER")
 
         total += count

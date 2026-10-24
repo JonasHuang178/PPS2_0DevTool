@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""步驟 2 的鉤子：抽出 Merge Request 的**種類**。
+"""步驟 2 的擴充腳本：抽出 Merge Request 的**種類**。
 
 種類決定步驟 3 與步驟 5 會用哪一份 `summary.py` 與 `merge_to_md.py`（見
 `_type_template/`）。**這一支只負責讀出來**，認不認得、要不要報錯都不在這裡。
@@ -27,7 +27,7 @@ def extract(mr):
         repo            namespace/project
         mr_iid          編號
 
-    要更多欄位（例如 GitLab 的 label）目前拿不到。真的需要的話，這支鉤子可以自己
+    要更多欄位（例如 GitLab 的 label）目前拿不到。真的需要的話，這支擴充腳本可以自己
     `from script_utils import gitlab_utils` 並用 `contract.gitlab_credentials()` 去抓
     —— 它是普通的 Python，沒東西擋你。代價是連線與錯誤處理變成你的事。
 
@@ -42,7 +42,7 @@ def extract(mr):
     不合法的字串（`緊急`、`bug fix`、含路徑分隔字元的東西）視同**沒有種類**，不會報錯
     —— 那是 MR 作者打的字，不是部署的問題。後續行為見 `__init__.py` 的 `STRICT_TYPE`。
 
-    回傳非字串會直接失敗（那是這支鉤子寫壞了，不是「這筆 MR 沒有種類」）。
+    回傳非字串會直接失敗（那是這支擴充腳本寫壞了，不是「這筆 MR 沒有種類」）。
     """
     title = mr.get("title") or ""
 

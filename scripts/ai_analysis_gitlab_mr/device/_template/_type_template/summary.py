@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""某一個種類專屬的步驟 3 鉤子：AI 分析。
+"""某一個種類專屬的步驟 3 擴充腳本：AI 分析。
 
 **與 device 層的 summary.py 是同一個介面** —— 一樣的 analyze(inputs)、一樣的 inputs、
 一樣要回 contract.analysis_body(...) 的結果。唯一的差別是它只在這個種類被選中時執行。

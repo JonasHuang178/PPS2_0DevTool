@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""default device 的步驟 5 鉤子：AI 分析那一段的版面。
+"""default device 的步驟 5 擴充腳本：AI 分析那一段的版面。
 
 這是所有 device 的起點 —— 沒有自己 merge_to_md.py 的 device 都用這一份。
 
@@ -217,7 +217,7 @@ def _jira_entry(analysis):
     移除了（見 `contract.render_footer`），所以 key 現在只存在於產物的資料裡 —— 讀報告
     的人看不到，而那張單子正是這份分析的前提。
 
-    **狀態不在這裡重新判定。** `jira_state` 由步驟 3 的 summary 鉤子判定並隨結構帶過來；
+    **狀態不在這裡重新判定。** `jira_state` 由步驟 3 的 summary 擴充腳本判定並隨結構帶過來；
     規格明文要求這一步沿用它。自己再認一次 key 的樣式就有第二份規則，而兩份必然漂移。
 
     只有 `ok` 會出現這一節：

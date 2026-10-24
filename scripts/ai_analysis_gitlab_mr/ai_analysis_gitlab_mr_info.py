@@ -44,7 +44,7 @@ DESCRIPTION      = "取得 Merge Request 的相關資訊並解出 JIRA key 與�
 
 
 def _mr_fields(repo, mr_iid, mr):
-    """把 GitLab 原樣的 MR 物件收斂成交給鉤子的欄位。
+    """把 GitLab 原樣的 MR 物件收斂成交給擴充腳本的欄位。
 
     不直接把原樣物件丟過去：那會讓 GitLab 回應的四十幾個欄位成為對 device 作者的契約，
     日後想換取得方式就動不了。
@@ -61,9 +61,9 @@ def _mr_fields(repo, mr_iid, mr):
 
 
 def _resolve_jira_key(mode, manual, fields, repo, mr_iid, log):
-    """依模式決定這次的 JIRA key。只有 auto 會呼叫 device 的鉤子。
+    """依模式決定這次的 JIRA key。只有 auto 會呼叫 device 的擴充腳本。
 
-    這裡**不判定有效性** —— 判定在步驟 3 的 summary 鉤子，與抽取規則同屬一個 device，
+    這裡**不判定有效性** —— 判定在步驟 3 的 summary 擴充腳本，與抽取規則同屬一個 device，
     放在一起才不會各自漂移。
     """
     if mode == "none":
@@ -75,7 +75,7 @@ def _resolve_jira_key(mode, manual, fields, repo, mr_iid, log):
         return ai_analysis_gitlab_mr.plain(manual)
 
     hook, owner = device.load_hook("jira_key")
-    logger.info("JIRA 模式為 auto，使用 device %s 的 jira_key 鉤子", owner)
+    logger.info("JIRA 模式為 auto，使用 device %s 的 jira_key 擴充腳本", owner)
 
     try:
         key = hook.extract(fields)
@@ -98,7 +98,7 @@ def _resolve_mr_type(fields, device_name):
     """
     # device 明著傳進去，不讓 load_hook 自己再去讀一次環境變數 —— 這一支的其餘判斷
     # （認得哪些種類、嚴不嚴格）都以 device_name 為準，載入卻用另一個來源的話，兩者
-    # 一旦不同就會「載入 A 的鉤子、卻拿 B 的種類清單去檢查」，而且不會有任何徵兆。
+    # 一旦不同就會「載入 A 的擴充腳本、卻拿 B 的種類清單去檢查」，而且不會有任何徵兆。
     hook, owner = device.load_hook("mr_type", device=device_name)
 
     try:
@@ -109,7 +109,7 @@ def _resolve_mr_type(fields, device_name):
             "%s: %s" % (exc.__class__.__name__, exc),
             "DEVICE_HOOK_RUNTIME_ERROR")
 
-    # 正規化在入口，不在鉤子：去空白、轉小寫、檢查形狀。不合法的字串視同沒有種類 ——
+    # 正規化在入口，不在擴充腳本：去空白、轉小寫、檢查形狀。不合法的字串視同沒有種類 ——
     # 那是 MR 作者打的字，不是部署者的錯誤。
     mr_type = device.normalize_type(raw)
 
@@ -169,7 +169,7 @@ def main():
             script_io.arg("out_path", default="",
                           help="額外把結果寫到這個檔案；空字串代表不落檔"),
 
-            # 種類沒有對應的參數：它完全由 device 的鉤子自標題等欄位解出，
+            # 種類沒有對應的參數：它完全由 device 的擴充腳本自標題等欄位解出，
             # 呼叫端不能指定。可指定的話，兩個呼叫端就會各自長出一套判斷。
         ],
     )

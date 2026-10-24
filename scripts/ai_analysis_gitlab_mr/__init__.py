@@ -247,7 +247,7 @@ def log_appender(log_dir, out_path="", action=""):
 def log_writer(log_dir, out_path="", action=""):
     """做一個綁好紀錄目錄的 write_log_file，檔名自動帶上這一步的前綴。
 
-    給 device 的鉤子用：它拿到的是一個「寫一份紀錄」的能力，不必知道目錄在哪、不必
+    給 device 的擴充腳本用：它拿到的是一個「寫一份紀錄」的能力，不必知道目錄在哪、不必
     自己判斷紀錄有沒有開（沒開時這個函式什麼都不做），也不必知道自己是第幾步 ——
     前綴由產物路徑導出（見 log_stem），所以紀錄目錄的列出順序就是流程的執行順序。
     """
@@ -325,8 +325,8 @@ AI_HEADING = "# AI 分析結果"
 
 # 涵蓋範圍那一段的標題。與 AI 分析**同層**，位置緊接在它之後。
 #
-# 不放進 AI 分析那一段**之內**，是因為那一段的內容由 device 的鉤子產生 —— 而涵蓋範圍
-# 正是用來說「那支鉤子回報了多少」的。交給被檢查的一方渲染，它可以選擇不渲染。
+# 不放進 AI 分析那一段**之內**，是因為那一段的內容由 device 的擴充腳本產生 —— 而涵蓋範圍
+# 正是用來說「那支擴充腳本回報了多少」的。交給被檢查的一方渲染，它可以選擇不渲染。
 #
 # 它也不是切段的邊界：在 AI 分析之後，所以下一輪重新分析時會與分析一起被切掉，不會在
 # Merge Request 的描述裡越疊越多。
@@ -794,7 +794,7 @@ def _coverage_list(title, bucket):
 def render_coverage_section(analysis):
     """報告裡「分析涵蓋範圍」那一段。沒有缺口時回傳空字串。
 
-    這一段由**合併那一步**寫出，不由 device 的鉤子產生 —— 它說的正是「那支鉤子回報了
+    這一段由**合併那一步**寫出，不由 device 的擴充腳本產生 —— 它說的正是「那支擴充腳本回報了
     多少」，交給被檢查的一方渲染，它可以選擇不渲染。
 
     四類缺口分開列，不合成一個比例：每一類的下一步完全不同（調上限、調 prompt、無能
@@ -1039,7 +1039,7 @@ def skip_filter():
     """依三個環境變數組出「這個檔案要不要排除」的判斷。都沒設定時回 None。
 
     **這是 device 作者的公開 API**，但 device 通常用不到它 —— 排除在入口取差異時就做完
-    了，鉤子拿到的 `mr_diff` 裡已經沒有那些檔案。
+    了，擴充腳本拿到的 `mr_diff` 裡已經沒有那些檔案。
 
     回 None 而不是一個「永遠回 False」的函式，是為了讓呼叫端據此完全跳過那一層：
     `skipped_files` 於是是空清單而不是「排除了 0 個」，兩者在日誌上看起來不同。
@@ -1104,13 +1104,13 @@ def skip_filter():
 
 
 def ai_credentials(inputs):
-    """自鉤子的 inputs 取出 AI 的連線資訊，回傳 (connection, api_key)。
+    """自擴充腳本的 inputs 取出 AI 的連線資訊，回傳 (connection, api_key)。
 
     與另外兩個不同，AI 的連線資訊走 **params 而不是環境變數**（見步驟 3 的入口腳本）——
     因此它們從 inputs 進來，不從 os.environ 讀。
 
     connection 是連線字串 `provider:位址:shareCode`，**原樣交回、不在這裡拆**：拆解是
-    鉤子明寫的必要步驟（見範本），由 ai_utils.split_connection 一份規則負責。
+    擴充腳本明寫的必要步驟（見範本），由 ai_utils.split_connection 一份規則負責。
 
     只有 **connection 是必要的**；金鑰可以是空的 —— 這個服務以 shareCode 辨識呼叫者，
     Api_Key 有填才會多送一個標頭（見 ai_utils._headers）。
@@ -1250,7 +1250,7 @@ def ai_recheck(inputs):
     """送進去的檔案沒被全部回報時，重問的次數。沒給就是 DEFAULT_AI_RECHECK（0）。
 
     **這一個不交給 ai_utils.ask()，由入口腳本自己跑迴圈。** 理由與涵蓋範圍由入口蓋章
-    同一條：判斷「回報得夠不夠」要拿鉤子的輸出對照入口手上的差異，而那是 ask() 看不到
+    同一條：判斷「回報得夠不夠」要拿擴充腳本的輸出對照入口手上的差異，而那是 ask() 看不到
     的東西 —— 它只認得「服務有沒有回應」與「回來的東西解析得開不開」。
 
     與另外兩個是**不同層**的東西：
@@ -1349,7 +1349,7 @@ def describe_gitlab_error(exc, repo):
 # 版本 7 相對於 6 在 coverage 底下多了 skipped —— 依設定排除、一開始就沒打算送的那些
 # 檔案。它必須跟著產物走的理由與 coverage 本身完全相同：報告要靠它回答「我的檔案為什麼
 # 不在這份分析裡」，而步驟 5 收到的只有檔案。
-# 版本 8 相對於 7 多了 provider —— 這次分析送往哪一個 AI 供應者，由鉤子拆連線字串取得。
+# 版本 8 相對於 7 多了 provider —— 這次分析送往哪一個 AI 供應者，由擴充腳本拆連線字串取得。
 # 它跟著產物走的理由與 model 相同：出處說的是「這份分析是誰做的」，那是分析當下的事實，
 # 而步驟 5 收到的只有檔案。
 ANALYSIS_SCHEMA_VERSION = 8
@@ -1582,7 +1582,7 @@ def _is_sentinel(path):
 
 
 def resolve_reported_path(diff_text, path, hunk_headers=()):
-    """把鉤子回報的路徑收斂成差異中真正的檔案路徑。認不出來就原樣回傳。
+    """把擴充腳本回報的路徑收斂成差異中真正的檔案路徑。認不出來就原樣回傳。
 
     **這是 device 作者的公開 API。** 自己解析模型回的 code_changes 時先過一次這一支。
 
@@ -1631,13 +1631,13 @@ def resolve_reported_path(diff_text, path, hunk_headers=()):
                 new_files = narrowed
 
     if len(new_files) != 1:
-        logger.warn("鉤子把路徑回報成 %r（unified diff 的哨兵值，不是檔名），"
+        logger.warn("擴充腳本把路徑回報成 %r（unified diff 的哨兵值，不是檔名），"
                     "而差異中有 %d 個新增檔案 —— 無法確定是哪一個，原樣留著",
                     path, len(new_files))
         return path
 
     resolved = new_files[0][0]
-    logger.warn("鉤子把路徑回報成 %r（unified diff 的哨兵值，不是檔名），"
+    logger.warn("擴充腳本把路徑回報成 %r（unified diff 的哨兵值，不是檔名），"
                 "依差異的檔頭收斂為 %r", path, resolved)
     return resolved
 
@@ -1790,15 +1790,15 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
                   bytes_total=0, bytes_sent=0, files_skipped=()):
     """算出這次分析涵蓋了多少，以及缺口分別落在哪一類。
 
-    **由入口腳本呼叫，不給鉤子用。** 這份數字是用來檢查鉤子回報了多少的 —— 讓被檢查的
-    一方提供它，這個機制就等於不存在：一支宣稱自己涵蓋全部的鉤子不會有任何一步發現它
-    說謊。入口腳本同時握有差異（呼叫鉤子之前就取得了）與鉤子的回傳，兩樣都在手上。
+    **由入口腳本呼叫，不給擴充腳本用。** 這份數字是用來檢查擴充腳本回報了多少的 —— 讓被檢查的
+    一方提供它，這個機制就等於不存在：一支宣稱自己涵蓋全部的擴充腳本不會有任何一步發現它
+    說謊。入口腳本同時握有差異（呼叫擴充腳本之前就取得了）與擴充腳本的回傳，兩樣都在手上。
 
     缺口分四類，彼此獨立計數 —— 因為每一類的下一步完全不同：
 
         dropped  差異超過送出上限，整個檔案沒有送進去     → 要調上限或分批
         empty    差異內容是空的（二進位、僅模式變更、來源沒給）→ 無能為力，但要說出來
-        missing  完整送進去了，但鉤子**完全沒提到**它      → 要調 prompt
+        missing  完整送進去了，但擴充腳本**完全沒提到**它      → 要調 prompt
         unknown  回報的路徑在差異中找不到對應的檔案        → 模型給了不存在的路徑
 
     另外還有一類，**不算缺口**：
@@ -1814,12 +1814,12 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
     檔案，怪它沒回報是記在錯的一方頭上。少了這一條，涵蓋層的重查（見入口腳本的
     ai_recheck）會為了一個使用者刻意排除的檔案一次又一次重問，而它永遠補不回來。
 
-    **「有回報」＝ mrDiff 裡有這個鍵，不要求它底下有發現。** 鉤子給一個空的發現清單
+    **「有回報」＝ mrDiff 裡有這個鍵，不要求它底下有發現。** 擴充腳本給一個空的發現清單
     （`"a.cpp": []`）意思是「這個檔案看過了，沒有值得注意的地方」—— 那是交代過了，不是
     漏掉。把它算進 missing 的話，報告會對一個誠實回答的模型指控「AI 沒有回報」，而使用者
     照著那個訊息去調 prompt 是找錯方向。
 
-    因此 files_reported 數的是**鉤子提到的檔案數**，不是「有發現的檔案數」。報告裡實際
+    因此 files_reported 數的是**擴充腳本提到的檔案數**，不是「有發現的檔案數」。報告裡實際
     列出來的只有有發現的那些（渲染端對空清單整個略過），兩個數字可以不同，這是刻意的。
 
     合成單一個比例會把「要調什麼」重新藏起來，而那正是這份資料要解決的問題。
@@ -1858,14 +1858,14 @@ def diff_coverage(mr_diff=None, files_sent=(), files_dropped=(),
                if one not in matched and one not in empty]
 
     # unknown 與 missing **同時**出現，意思幾乎一定是「路徑比對失敗」而不是兩件事：
-    # 鉤子回的那個路徑配不上任何送出的檔案（進 unknown），而它本來想指的那個檔案
+    # 擴充腳本回的那個路徑配不上任何送出的檔案（進 unknown），而它本來想指的那個檔案
     # 因此沒人認領（進 missing）。
     #
     # 這一行把兩邊的實際字串並排印出來 —— 少了它，使用者在報告上看到的是「AI 沒有回報」
     # 加「差異中找不到」兩句話，而那兩句話都指不出真正的原因是一個 `/dev/null` 或多一層
     # 目錄這類字串差異。問題查到這裡就只能靠猜。
     if unknown and missing:
-        logger.warn("路徑比對失敗：鉤子回報了 %s，而這些送出的檔案沒人認領 %s"
+        logger.warn("路徑比對失敗：擴充腳本回報了 %s，而這些送出的檔案沒人認領 %s"
                     "（兩者同時出現時，多半是同一個檔案的路徑寫法對不上）",
                     unknown[:MAX_COVERAGE_PATHS],
                     missing[:MAX_COVERAGE_PATHS])
@@ -1921,7 +1921,7 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
                   jira_url="", mr_diff=None, mr_type="", coverage=None, provider=""):
     """組出 analysis 的**內容**。
 
-    刻意不含 schema_version —— 版本由入口腳本蓋章。讓鉤子自己填，遲早有人複製範本時
+    刻意不含 schema_version —— 版本由入口腳本蓋章。讓擴充腳本自己填，遲早有人複製範本時
     忘了改，於是拿到一個聲稱是某版、實際是別的形狀的檔案。
 
     mrDiff 以檔案路徑為鍵，每個值是**那個檔案的 finding 清單**（沒有中間層）。想寫
@@ -1934,13 +1934,13 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
     jira_state 的三個值見 JIRA_STATES。invalid 時 jira_key 請保留**被拒絕的原值** ——
     報告要靠它告訴讀者「抽到的是 WIP」，只說「無效」等於要人自己猜。
 
-    mr_type 由**入口腳本蓋章**，鉤子不必填（填了也會被覆蓋）—— 與 schema_version 同一個
+    mr_type 由**入口腳本蓋章**，擴充腳本不必填（填了也會被覆蓋）—— 與 schema_version 同一個
     理由。它必須進到產物裡，因為步驟 5 要靠它決定用哪一份版面，而步驟 5 拿到的只有檔案。
 
     coverage 同樣由**入口腳本蓋章**（見 diff_coverage），而且理由更強：它是用來檢查這份
-    mrDiff 回報了多少的。鉤子填了會被覆蓋。
+    mrDiff 回報了多少的。擴充腳本填了會被覆蓋。
 
-    provider 與 model 由**鉤子**填：前者以 ai_utils.split_connection 拆連線字串取得，
+    provider 與 model 由**擴充腳本**填：前者以 ai_utils.split_connection 拆連線字串取得，
     後者以 ai_utils.lookup_model 查得。兩者都只印在報告出處；沒填就是出處少那一半，
     不會失敗。
     """
@@ -1960,7 +1960,7 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
 def wrap_analysis(body):
     """把 analysis 的內容包成落檔與回傳用的完整結構，並蓋上版本號。
 
-    入口腳本用這一支 —— 鉤子只交內容，版本永遠由這裡填。
+    入口腳本用這一支 —— 擴充腳本只交內容，版本永遠由這裡填。
     """
     return {
         "schema_version": ANALYSIS_SCHEMA_VERSION,
@@ -1971,7 +1971,7 @@ def wrap_analysis(body):
 def validate_analysis(payload, source=""):
     """驗證分析結構，通過就回傳 analysis 的內容；不通過丟 AnalysisFormatError。
 
-    兩個呼叫點共用這一份：AI 分析那一步**收到鉤子回傳的當下**，以及合併那一步渲染之前。
+    兩個呼叫點共用這一份：AI 分析那一步**收到擴充腳本回傳的當下**，以及合併那一步渲染之前。
     共用的理由很具體 —— 曾經有一次 summary 欄位變成巢狀物件，根因在 AI 分析那一步，
     症狀卻爆在兩步之後的渲染，訊息是一句 "dict object has no attribute strip"，既沒說
     是哪個檔案也沒說是哪個欄位。驗在產生它的那一步，訊息才點得出是誰寫壞的。
@@ -2046,7 +2046,7 @@ def validate_analysis(payload, source=""):
         raise AnalysisFormatError(
             "%sAI 分析結果的 coverage 不是物件" % where,
             "coverage 的型別是 %s。這個欄位由入口腳本蓋章（見 diff_coverage），"
-            "鉤子不必填。" % type(coverage).__name__,
+            "擴充腳本不必填。" % type(coverage).__name__,
             "ANALYSIS_COVERAGE_BAD_TYPE")
 
     # 型別檢查要在「沒給就當空的」之前 —— 反過來寫的話，一個打錯成 [] 的
@@ -2383,7 +2383,7 @@ def code_review_body(risk_table="", filename="", created="", author="",
     而**附件資訊仍然要填** —— 那時連結的價值最高，讀者點進去就能自己看全文。
 
     review_result 是那份審閱的結論（見 REVIEW_RESULTS），由 device 的 parse_code_review
-    鉤子判定。不認得的值收斂成「判不出來」而不是原樣留著 —— 報告會把它印成一行結果，
+    擴充腳本判定。不認得的值收斂成「判不出來」而不是原樣留著 —— 報告會把它印成一行結果，
     一個拼錯的值印出去比不印更糟。
     """
     verdict = plain(review_result).strip().lower()
@@ -2405,13 +2405,13 @@ def code_review_body(risk_table="", filename="", created="", author="",
 
 
 def code_review_parsed(risk_table="", review_result=REVIEW_RESULT_UNKNOWN):
-    """device 的 parse_code_review 鉤子要回傳的東西。
+    """device 的 parse_code_review 擴充腳本要回傳的東西。
 
-    **這是 device 作者的公開 API。** 鉤子只負責這兩件事：擷取出總表、判定結論。附件的
-    檔名／上傳時間／作者／網址由入口填 —— 那四個來自議題系統的 metadata，鉤子拿不到，
+    **這是 device 作者的公開 API。** 擴充腳本只負責這兩件事：擷取出總表、判定結論。附件的
+    檔名／上傳時間／作者／網址由入口填 —— 那四個來自議題系統的 metadata，擴充腳本拿不到，
     而讓它回傳就等於邀請它編造。
 
-    用這一支組而不要自己寫 dict literal：欄位名散在鉤子與入口兩邊，改名漏一邊的症狀
+    用這一支組而不要自己寫 dict literal：欄位名散在擴充腳本與入口兩邊，改名漏一邊的症狀
     是安靜地少一段。
     """
     return {

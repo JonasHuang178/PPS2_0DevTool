@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""default device 的步驟 2 鉤子：從 Merge Request 標題抽出 JIRA key。
+"""default device 的步驟 2 擴充腳本：從 Merge Request 標題抽出 JIRA key。
 
 慣例是 key 寫在標題的第一個方括號裡：
 

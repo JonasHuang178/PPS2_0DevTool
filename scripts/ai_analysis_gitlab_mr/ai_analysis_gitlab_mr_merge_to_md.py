@@ -53,10 +53,10 @@ def _is_given(path):
 
 
 def _code_review_text(body):
-    """給 device 鉤子的 code_review 值：總表的 markdown，沒有就是空字串。
+    """給 device 擴充腳本的 code_review 值：總表的 markdown，沒有就是空字串。
 
-    鉤子拿到的維持是**字串**（它原本就是），所以既有的鉤子簽章不因這次改動而失效。
-    完整的結構另外以 code_review_info 交出去 —— 想印出附件檔名或連結的鉤子從那裡取。
+    擴充腳本拿到的維持是**字串**（它原本就是），所以既有的擴充腳本簽章不因這次改動而失效。
+    完整的結構另外以 code_review_info 交出去 —— 想印出附件檔名或連結的擴充腳本從那裡取。
     """
     if not isinstance(body, dict):
         return ""
@@ -85,7 +85,7 @@ def _analysis_section(payload, path, inputs):
 
     吃兩種形狀：
 
-        結構化（schema_version / analysis）  驗證後交給 device 的 merge_to_md 鉤子
+        結構化（schema_version / analysis）  驗證後交給 device 的 merge_to_md 擴充腳本
         整份就是一段文字，或 summary 是字串  原樣採用
 
     第二種是相容用的：版本欄位存在的意義就是同時支援多種形狀，而不是改一邊就讓另一邊
@@ -193,7 +193,7 @@ def main():
 
     # --- 讀入三段內容 ---
     #
-    # 順序有意義：AI 分析那一段交給 device 的鉤子渲染，而鉤子的輸入包含描述與
+    # 順序有意義：AI 分析那一段交給 device 的擴充腳本渲染，而擴充腳本的輸入包含描述與
     # 審閱報告（唯讀參考），所以那兩段要先讀好。
     description = ""
     if _is_given(params["ori_md_file_path"]):
@@ -231,7 +231,7 @@ def main():
                 detail=str(exc), code="MERGE_SUMMARY_NOT_JSON")
         summary, analysis = _analysis_section(payload, path, {
             "description": description,
-            # 維持既有的型別（字串，沒有就是空字串）—— device 作者的鉤子簽章不因這次
+            # 維持既有的型別（字串，沒有就是空字串）—— device 作者的擴充腳本簽章不因這次
             # 改動而變。完整的結構另外以 code_review_info 給出去，是加法式的。
             "code_review": _code_review_text(code_review),
             "code_review_info": code_review,
@@ -281,7 +281,7 @@ def main():
     # 絕大多數的 MR 不會有缺口，每份報告都加一段「涵蓋 21/21」只是噪音；常駐的訊號在
     # 末尾的出處那一行。
     #
-    # 不交給 device 的鉤子渲染：這一段說的正是「那支鉤子回報了多少」，交給被檢查的一方
+    # 不交給 device 的擴充腳本渲染：這一段說的正是「那支擴充腳本回報了多少」，交給被檢查的一方
     # 它可以選擇不渲染。放在 AI 分析之後則讓它跟著既有的切段規則 —— 下一輪重新分析時，
     # 它與分析一起被切掉，不會在 MR 的描述裡越疊越多。
     coverage_section = ai_analysis_gitlab_mr.render_coverage_section(analysis)
@@ -299,7 +299,7 @@ def main():
     # 種類不必在這裡取得 —— 它在 analysis 裡，render_footer 自己會讀。多傳一次的話
     # 就有兩個來源，而它們可以不一致。
     # device 的名稱與版本由這一步自己讀環境變數取得 —— 它本來就要讀那個變數來
-    # 載入自己的鉤子，不必經參數、也不必動 schema。
+    # 載入自己的擴充腳本，不必經參數、也不必動 schema。
     device_name = ""
     device_ver = ""
     try:

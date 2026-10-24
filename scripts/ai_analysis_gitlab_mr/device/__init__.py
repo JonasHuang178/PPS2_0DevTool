@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""依 device 載入客製化的鉤子。
+"""依 device 載入客製化的擴充腳本。
 
 一個 MR 該怎麼分析，會因為它屬於哪一條產品線而不同。這個套件底下每一個目錄是一個
 device，目錄名就是 device 名：
 
     device/
       default/          未指定 device 時用這一份
-      ssd/              只放想覆寫的鉤子，缺的自動用 default 的
+      ssd/              只放想覆寫的擴充腳本，缺的自動用 default 的
       _template/        底線開頭，不是 device
 
-五個鉤子，分成兩類 —— 差別在**解析時要不要考慮種類**：
+五支擴充腳本，分成兩類 —— 差別在**解析時要不要考慮種類**：
 
     不因種類而異
       jira_key.py            步驟 2：怎麼從 Merge Request 抽出 JIRA key
@@ -36,7 +36,7 @@ merge_to_md。種類以子目錄表示：
 **種類只在自己的 device 之內解析**（見 load_hook）。各 device 的字彙互相獨立 ——
 認得哪些種類就是「有哪些子目錄」，不需要跨產品線的共識。
 
-**這個模組只負責找到與載入鉤子，不決定何時呼叫。** 三種 JIRA 模式的分派、參數的組裝、
+**這個模組只負責找到與載入擴充腳本，不決定何時呼叫。** 三種 JIRA 模式的分派、參數的組裝、
 回傳的驗證都在入口腳本裡 —— 那些是政策，每個 device 重寫一次只會寫歪。
 """
 
@@ -89,11 +89,11 @@ DEFAULT_DEVICE = "default"
 # 一次，才能確定自己不需要它。
 UNTYPED_HOOKS = ("jira_key", "mr_type", "parse_code_review")
 
-# 因種類而異的鉤子。三段解析（<device>/<type>/ -> <device>/ -> default/）。
+# 因種類而異的擴充腳本。三段解析（<device>/<type>/ -> <device>/ -> default/）。
 TYPED_HOOKS = ("summary", "merge_to_md")
 
-# 全部鉤子的模組名。分成上面兩組而不是在解析時用字串比對，是為了讓「這一支要不要
-# 考慮種類」只有一個地方寫著 —— 散在各處的話，新增鉤子時一定會漏掉一處。
+# 全部擴充腳本的模組名。分成上面兩組而不是在解析時用字串比對，是為了讓「這一支要不要
+# 考慮種類」只有一個地方寫著 —— 散在各處的話，新增擴充腳本時一定會漏掉一處。
 HOOK_NAMES = UNTYPED_HOOKS + TYPED_HOOKS
 
 # device 與種類的名稱都只接受這個形狀。
@@ -195,7 +195,7 @@ def known_types(device=None):
 
     底線開頭的目錄不算，所以 __pycache__ 與種類範本都不會被誤認。
 
-    一個沒有任何鉤子的空目錄仍算一個認得的種類。那是刻意的：搭配 STRICT_TYPE 時，
+    一個沒有任何擴充腳本的空目錄仍算一個認得的種類。那是刻意的：搭配 STRICT_TYPE 時，
     建幾個空目錄正好可以宣告「這些種類我認得，但不需要客製」。
     """
     name = resolve_name() if device is None else device
@@ -213,7 +213,7 @@ def known_types(device=None):
 
 
 def normalize_type(raw):
-    """把鉤子抽出來的字串收斂成一個可用的種類名稱；不合用時回空字串。
+    """把擴充腳本抽出來的字串收斂成一個可用的種類名稱；不合用時回空字串。
 
     轉小寫是因為標題裡寫的是給人看的形式（`[NewTestCase]`），而目錄名一律小寫。
 
@@ -221,15 +221,15 @@ def normalize_type(raw):
     而兩者的後續處理相同（走通用版，或在嚴格模式下失敗）—— 分開回報只會多一種
     使用者無法行動的訊息。
 
-    回傳非字串則是另一回事：那是鉤子寫壞了，所以明確失敗。把它當成「沒有種類」會讓
-    一個壞掉的鉤子看起來像是這筆 MR 沒標種類。
+    回傳非字串則是另一回事：那是擴充腳本寫壞了，所以明確失敗。把它當成「沒有種類」會讓
+    一個壞掉的擴充腳本看起來像是這筆 MR 沒標種類。
     """
     if raw is None:
         return ""
 
     if not isinstance(raw, str):
         raise DeviceError(
-            "mr_type 鉤子回傳的不是字串",
+            "mr_type 擴充腳本回傳的不是字串",
             "收到的型別是 %s。extract() 必須回傳一個字串；沒有種類就回空字串。"
             % type(raw).__name__,
             "DEVICE_HOOK_BAD_RETURN")
@@ -276,11 +276,11 @@ def code_review_source_heading(device=None, default=""):
     各條產品線的 code review 工具是各自的，產出格式不保證相同 —— 那一節不一定叫同一個
     名字。所以這個字串掛在 device 上。
 
-    **這是一個宣告，不是鉤子。** 讀這個值本身不會載入或執行任何 device 的程式碼 ——
+    **這是一個宣告，不是擴充腳本。** 讀這個值本身不會載入或執行任何 device 的程式碼 ——
     變的只有「要找哪一節」這個字串，所以宣告寫壞了可以在任何網路往來之前就擋下來。
 
-    步驟 4 本身**另外**會載入該 device 的 parse_code_review 鉤子（擷取與判定在那裡）。
-    這個宣告的值由入口讀出來、當 heading 傳給那支鉤子 —— 既有 device 的宣告因此不必改，
+    步驟 4 本身**另外**會載入該 device 的 parse_code_review 擴充腳本（擷取與判定在那裡）。
+    這個宣告的值由入口讀出來、當 heading 傳給那支擴充腳本 —— 既有 device 的宣告因此不必改，
     而「要找哪一節」仍然只有一個地方決定。
 
     default 由呼叫端明著傳入（入口腳本傳 ai_analysis_gitlab_mr.CODE_REVIEW_SOURCE_HEADING）
@@ -312,7 +312,7 @@ def _import(module_name, device, what):
 
     圖形介面的錯誤視窗只顯示結果訊息，不顯示診斷細節。而 device 腳本的開發者的迴路是
     「改腳本、按按鈕、看結果」—— 訊息裡沒有檔案與位置的話，那個迴路就轉不動。所以這裡
-    自己攔下來，把 device 名、鉤子名與原始錯誤組進訊息。
+    自己攔下來，把 device 名、擴充腳本名與原始錯誤組進訊息。
     """
     # 剛建立的目錄要先讓 import 機制重新看一次。
     #
@@ -343,19 +343,19 @@ def _import(module_name, device, what):
 
 
 def _hook_file(owner, sub, hook):
-    """某個候選位置的鉤子檔路徑。sub 為空字串代表 device 層。"""
+    """某個候選位置的擴充腳本檔路徑。sub 為空字串代表 device 層。"""
     parts = [_HERE, owner] + ([sub] if sub else []) + ["%s.py" % hook]
     return os.path.join(*parts)
 
 
 def load_hook(hook, device=None, mr_type=None):
-    """載入鉤子模組，回傳 (模組, 實際提供它的 device 名稱)。
+    """載入擴充腳本模組，回傳 (模組, 實際提供它的 device 名稱)。
 
-    **不因種類而異的鉤子**（見 UNTYPED_HOOKS）忽略 mr_type，兩段解析：
+    **不因種類而異的擴充腳本**（見 UNTYPED_HOOKS）忽略 mr_type，兩段解析：
 
         <device>/   ->   default/
 
-    **因種類而異的鉤子**（見 TYPED_HOOKS）三段解析：
+    **因種類而異的擴充腳本**（見 TYPED_HOOKS）三段解析：
 
         <device>/<type>/   ->   <device>/   ->   default/
 
@@ -371,11 +371,11 @@ def load_hook(hook, device=None, mr_type=None):
     種類目錄不需要 __init__.py（namespace package），所以「放一個目錄進去」字面上就是
     新增一個種類。
 
-    逐鉤子回退：種類目錄只放 summary.py 是合法的，merge_to_md 會落到下一段。只想改
+    逐支回退：種類目錄只放 summary.py 是合法的，merge_to_md 會落到下一段。只想改
     prompt 的種類不該被迫複製版面，那份複本會漸漸漂移。
 
     回傳的第二個值是 **device 名稱**，不含種類 —— 呼叫端把它當成「這是哪一個 device」
-    使用（含交給鉤子的 inputs）。錯誤訊息裡要指名種類的話，載入失敗由這裡處理（見下面
+    使用（含交給擴充腳本的 inputs）。錯誤訊息裡要指名種類的話，載入失敗由這裡處理（見下面
     的 what），執行期的例外由呼叫端自己組（它手上有 mr_type）。
     """
     assert hook in HOOK_NAMES, hook
@@ -404,7 +404,7 @@ def load_hook(hook, device=None, mr_type=None):
         return _import(".".join(parts), owner, what), owner
 
     raise DeviceError(
-        "找不到 %s 鉤子" % hook,
+        "找不到 %s 擴充腳本" % hook,
         "找過這些位置都沒有 %s.py：%s。\n"
         "這是部署不完整，不是設定的問題。"
         % (hook, "、".join("%s/%s" % (o, sub) if sub else "%s/" % o

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """AI Analysis GitLab MR —— 步驟 3/5：AI 分析。
 
-這一步的業務運算全部交給 device 的 summary 鉤子 —— 要問 AI 什麼、怎麼解析、組出什麼
+這一步的業務運算全部交給 device 的 summary 擴充腳本 —— 要問 AI 什麼、怎麼解析、組出什麼
 分析內容，由該 device 決定。入口負責信封、參數、**把素材備好**、驗證與落檔。
 
 「備好素材」指的是 MR 的 diff 與 JIRA issue 的內容：兩者都要連線、要憑證、要處理錯誤，
-而寫 prompt 的人不該為了改一句話去面對 HTTP。鉤子收到的是現成的文字（見 inputs 的
+而寫 prompt 的人不該為了改一句話去面對 HTTP。擴充腳本收到的是現成的文字（見 inputs 的
 mr_diff 與 jira_issue），它只決定怎麼把那些素材排進 prompt。
 
-**鉤子回傳的結構在收到的當下就驗證。** 不驗的話，錯誤會在兩步之後的渲染才爆，而訊息
+**擴充腳本回傳的結構在收到的當下就驗證。** 不驗的話，錯誤會在兩步之後的渲染才爆，而訊息
 指的是合併那一步、不是寫壞的那個 device。
 
     python ai_analysis_gitlab_mr_summary.py --help
@@ -42,7 +42,7 @@ from script_utils import logger
 
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "ai_summary"
-DESCRIPTION      = "以 AI 分析 Merge Request（內容由 device 的鉤子決定）"
+DESCRIPTION      = "以 AI 分析 Merge Request（內容由 device 的擴充腳本決定）"
 
 # 從 JIRA 取哪些欄位。只取組 prompt 用得到的 —— 整張 issue 回來會有幾十個欄位，
 # 絕大多數是工作流程的內部狀態，塞進 prompt 只是浪費 context。
@@ -65,13 +65,13 @@ def _fail(log, message, detail="", code=""):
 
 
 def _fail_hook(exc, where, log):
-    """鉤子在第一輪就失敗 —— 這一步失敗。**這個函式一定會結束行程。**
+    """擴充腳本在第一輪就失敗 —— 這一步失敗。**這個函式一定會結束行程。**
 
     依型別分派，因為使用者的下一步完全不同。AiError 要排在通用那一條之前 —— 否則一個
     429 會被報成「device X 的 summary.py 執行失敗」，把限流講成腳本寫壞了。
     """
     if isinstance(exc, ai_analysis_gitlab_mr.CredentialError):
-        # 設定沒填完，不是鉤子寫壞了。
+        # 設定沒填完，不是擴充腳本寫壞了。
         _fail(log, str(exc), exc.detail, exc.code)
 
     if isinstance(exc, ai_utils.AiError):
@@ -79,16 +79,16 @@ def _fail_hook(exc, where, log):
               "端點：%s\n重試已經做過（見 stderr 的警告）。" % (exc.url or "(未知)"),
               exc.code)
 
-    # 鉤子是使用者寫的，任何東西都可能從這裡冒出來。訊息要指得出是哪一支。
+    # 擴充腳本是使用者寫的，任何東西都可能從這裡冒出來。訊息要指得出是哪一支。
     #
-    # detail 放完整的 traceback：鉤子裡出錯最常見的是改壞了 prompt 樣板或解析，而
+    # detail 放完整的 traceback：擴充腳本裡出錯最常見的是改壞了 prompt 樣板或解析，而
     # 「哪一行」是唯一真正有用的資訊。一行 "KeyError: xxx" 指不出位置。
     _fail(log, "%s 執行失敗：%s" % (where, exc),
           traceback.format_exc(), "DEVICE_HOOK_RUNTIME_ERROR")
 
 
 def _coverage_of(body, diff_info):
-    """這一輪的涵蓋範圍。由入口算，不採用鉤子提供的任何數字。"""
+    """這一輪的涵蓋範圍。由入口算，不採用擴充腳本提供的任何數字。"""
     return ai_analysis_gitlab_mr.diff_coverage(
         mr_diff=body.get("mrDiff"),
         files_sent=diff_info["files"],
@@ -107,7 +107,7 @@ def _round_writer(base_write, round_no):
     不加的話，第二輪的 ai_prompt.txt 與 ai_reply_1.txt 會把第一輪的蓋掉 —— 而第一輪
     那一份正是「模型漏了什麼」的證據，也就是開著重查的人唯一想看的東西。
 
-    包在入口這一側，鉤子因此完全不必知道自己被問了第幾次。
+    包在入口這一側，擴充腳本因此完全不必知道自己被問了第幾次。
     """
     if round_no <= 1:
         return base_write
@@ -219,11 +219,11 @@ def _require_diff_content(info, repo, mr_iid, log):
 def _fetch_jira(jira_key):
     """取得 JIRA issue 的內容，回傳 dict；取不到時回 None。
 
-    **這一支是交給鉤子按需呼叫的，不是入口自己先跑。** 「這個 key 有沒有效」是 device
+    **這一支是交給擴充腳本按需呼叫的，不是入口自己先跑。** 「這個 key 有沒有效」是 device
     的政策（見各 device 的 summary.py），而入口不認得那個政策 —— 先抓的話，`[WIP]`、
     `[Draft]` 這種從標題方括號抽出來的東西每次都會去打一次 JIRA，換回一個 404。
 
-    交出去的是函式而不是 HTTP 的零件：憑證、錯誤分類、截斷都留在這裡，鉤子拿到的仍然
+    交出去的是函式而不是 HTTP 的零件：憑證、錯誤分類、截斷都留在這裡，擴充腳本拿到的仍然
     只是「呼叫一下就有內容」的能力，改 prompt 的人不必面對這些。
 
     **取不到不讓流程失敗。** JIRA 在這裡是補充資料，查不到的原因多半無害。為了一張查
@@ -295,11 +295,11 @@ def main():
             script_io.arg("description_path", default="",
                           help="描述檔的路徑（命令列與 CI 走這條）"),
             script_io.arg("jira_key", default="",
-                          help="上一步解出的 JIRA key；有效性由 device 的鉤子判定"),
+                          help="上一步解出的 JIRA key；有效性由 device 的擴充腳本判定"),
             script_io.arg("jira_mode", default="auto",
-                          help="none / manual / auto；唯讀傳給鉤子，讓它分辨 key 的來源"),
+                          help="none / manual / auto；唯讀傳給擴充腳本，讓它分辨 key 的來源"),
             script_io.arg("mr_type", default="",
-                          help="上一步解出的種類；決定用哪一份 summary 鉤子，"
+                          help="上一步解出的種類；決定用哪一份 summary 擴充腳本，"
                                "空字串代表用該 device 的通用版"),
             # 兩個都是憑證，所以宣告遮罩 —— 它只影響寫出的參數紀錄，腳本拿到的仍是原值。
             # 連線字串只遮尾端的 shareCode：provider 與端點是「送去哪裡」，那正是看紀錄
@@ -352,7 +352,7 @@ def main():
     # 訊息要指得出種類：改壞的往往是某個種類專屬的那一份，而不是通用的那一份。
     where = "device %s 的 %ssummary.py" % (owner,
                                            ("%s/" % mr_type) if mr_type else "")
-    # provider 只拆來記 log。真正用它的是鉤子（寫進分析結構），由它自己拆 —— 這一行
+    # provider 只拆來記 log。真正用它的是擴充腳本（寫進分析結構），由它自己拆 —— 這一行
     # 用的是同一支函式，所以兩邊看到的值不會不同。
     logger.info("AI 分析：device=%s type=%s provider=%s jira_key=%s",
                 owner,
@@ -378,7 +378,7 @@ def main():
                 int(ai_seconds * (ai_retries + 1) * (ai_reask + 1)
                     * (ai_recheck + 1)))
 
-    # 素材在呼叫鉤子**之前**備好。連線失敗要在這裡爆，而不是從使用者寫的鉤子裡
+    # 素材在呼叫擴充腳本**之前**備好。連線失敗要在這裡爆，而不是從使用者寫的擴充腳本裡
     # 冒出一個 GitLabError —— 那時訊息會被包成「device X 的 summary.py 執行失敗」，
     # 把一個連線問題講成腳本寫壞了。
     script_io.progress("取得程式碼差異…")
@@ -396,14 +396,14 @@ def main():
         logger.info("依設定排除的檔案：%s",
                     skipped[:ai_analysis_gitlab_mr.MAX_COVERAGE_PATHS])
 
-    # 這一行描述的是**當下**：素材備好了，正要把它交給鉤子。
+    # 這一行描述的是**當下**：素材備好了，正要把它交給擴充腳本。
     #
-    # 它曾經寫成「送交 AI 分析…」，而那是錯的 —— 報這一行的時候 prompt 還不存在，鉤子
+    # 它曾經寫成「送交 AI 分析…」，而那是錯的 —— 報這一行的時候 prompt 還不存在，擴充腳本
     # 接下來可能先去取 JIRA、也可能根本不呼叫 AI（端點沒設定時走替代內容）。真正送出去
-    # 的那一行由鉤子自己報，因為只有它知道什麼時候送出去。
+    # 的那一行由擴充腳本自己報，因為只有它知道什麼時候送出去。
     #
-    # 但這一行不能省：鉤子是使用者寫的，不保證報任何進度。什麼都不報的話，一支沉默的
-    # 鉤子會讓「取得程式碼差異…」留在畫面上直到整步結束。
+    # 但這一行不能省：擴充腳本是使用者寫的，不保證報任何進度。什麼都不報的話，一支沉默的
+    # 擴充腳本會讓「取得程式碼差異…」留在畫面上直到整步結束。
     script_io.progress("準備 AI 分析…")
 
     inputs = {
@@ -413,15 +413,15 @@ def main():
         "jira_key": params["jira_key"],
         "jira_mode": params["jira_mode"],
 
-        # 唯讀轉送：讓鉤子知道自己是被哪一個種類選中的。通用的那一份可以據此微調，
+        # 唯讀轉送：讓擴充腳本知道自己是被哪一個種類選中的。通用的那一份可以據此微調，
         # 而種類專屬的那一份通常不需要看它。
         "mr_type": mr_type,
         "ai_connection": params["ai_connection"],
         "ai_api_key": params["ai_api_key"],
 
-        # 已經正規化過，鉤子再呼叫一次那三支也只是原樣拿回去。
+        # 已經正規化過，擴充腳本再呼叫一次那三支也只是原樣拿回去。
         #
-        # **ai_recheck 刻意不在這裡。** 它是入口自己的迴圈次數（見底下那一段），鉤子
+        # **ai_recheck 刻意不在這裡。** 它是入口自己的迴圈次數（見底下那一段），擴充腳本
         # 不需要也不該看到它 —— 傳進去就等於邀請 device 作者自己再實作一次同樣的迴圈，
         # 而那會讓「回報得夠不夠」重新變成被檢查的一方自己說。
         "ai_timeout": ai_seconds,
@@ -434,11 +434,11 @@ def main():
         # 回報進度用。AI 的呼叫是分鐘級的，而那個對話框是固定尺寸、只有一行字 ——
         # 一個兩分鐘沒動靜的視窗看起來就是當掉了。
         #
-        # 傳函式進來而不是讓鉤子自己 import script_io：鉤子是使用者寫的，它拿到的
+        # 傳函式進來而不是讓擴充腳本自己 import script_io：擴充腳本是使用者寫的，它拿到的
         # 應該是一個「報進度」的能力，而不是一個可以自行結束行程的模組。
         "progress": script_io.progress,
 
-        # 寫一份紀錄檔的能力。紀錄目錄沒設定時它什麼都不做，所以鉤子可以無條件
+        # 寫一份紀錄檔的能力。紀錄目錄沒設定時它什麼都不做，所以擴充腳本可以無條件
         # 呼叫，不必自己判斷除錯有沒有開。
         #
         # prompt 與 AI 的原始回覆是調 prompt 時唯一真正需要看的兩份東西，而它們
@@ -448,17 +448,17 @@ def main():
 
     # 涵蓋層的重問（次數見 contract.ai_recheck，預設 0 = 關閉）。
     #
-    # **迴圈在入口，不在鉤子裡。** 理由與涵蓋範圍由入口蓋章完全相同：判斷「回報得夠不
-    # 夠」要拿鉤子的輸出對照入口手上的那份差異，而讓被檢查的一方決定自己要不要重做，
+    # **迴圈在入口，不在擴充腳本裡。** 理由與涵蓋範圍由入口蓋章完全相同：判斷「回報得夠不
+    # 夠」要拿擴充腳本的輸出對照入口手上的那份差異，而讓被檢查的一方決定自己要不要重做，
     # 這個機制就等於不存在。放在這裡同時讓每一個 device 都免費得到這個行為，不必各自
-    # 實作一次 —— 鉤子完全不知道自己被問了第幾次。
+    # 實作一次 —— 擴充腳本完全不知道自己被問了第幾次。
     #
     # 只看 missing 那一類：dropped（太大沒送進去）與 empty（差異本身是空的）再問幾次
     # 都不會變，unknown（回了一個不存在的路徑）是另一種錯。把它們算進來就會為了永遠
     # 補不回來的東西反覆付錢。
     #
     # 已知代價：每一輪都重新呼叫 hook.analyze()，所以有 JIRA issue 的那幾次會多打一趟
-    # JIRA。要省掉它得把鉤子拆成「準備」與「問」兩段，而那會改掉所有 device 的介面 ——
+    # JIRA。要省掉它得把擴充腳本拆成「準備」與「問」兩段，而那會改掉所有 device 的介面 ——
     # 對一個預設關閉的功能不值得。
     best = None          # (missing 數, 輪次, body, coverage)
     base_write = inputs["log_write"]
@@ -489,9 +489,9 @@ def main():
                         round_no - 1, exc.__class__.__name__, best[1], exc)
             break
 
-        # 版本與種類都由入口蓋章，鉤子不填 —— 讓它自己填，遲早有人複製範本時忘了改。
+        # 版本與種類都由入口蓋章，擴充腳本不填 —— 讓它自己填，遲早有人複製範本時忘了改。
         #
-        # 種類覆寫而不是「沒有才補」：鉤子若回了一個與實際解析結果不同的種類，那份產物會
+        # 種類覆寫而不是「沒有才補」：擴充腳本若回了一個與實際解析結果不同的種類，那份產物會
         # 讓步驟 5 挑到另一份版面，而兩步的說法互相矛盾卻都回報成功。
         body["mr_type"] = mr_type
 
@@ -511,9 +511,9 @@ def main():
         logger.info("採用第 %d 輪的分析（共 %d 輪），仍有 %d 個檔案沒被回報",
                     round_used, round_no, missing)
 
-    # 涵蓋範圍由入口蓋章，而且理由比種類更強：這份數字是用來檢查**鉤子回報了多少**的。
-    # 讓被檢查的一方提供它，這個機制就等於不存在 —— 一支宣稱自己涵蓋全部的鉤子不會有
-    # 任何一步發現它說謊。入口同時握有差異與鉤子的回傳，兩樣都在手上。
+    # 涵蓋範圍由入口蓋章，而且理由比種類更強：這份數字是用來檢查**擴充腳本回報了多少**的。
+    # 讓被檢查的一方提供它，這個機制就等於不存在 —— 一支宣稱自己涵蓋全部的擴充腳本不會有
+    # 任何一步發現它說謊。入口同時握有差異與擴充腳本的回傳，兩樣都在手上。
     body["coverage"] = coverage
 
     payload = ai_analysis_gitlab_mr.wrap_analysis(body)
@@ -521,7 +521,7 @@ def main():
     try:
         ai_analysis_gitlab_mr.validate_analysis(payload, source=where)
     except ai_analysis_gitlab_mr.AnalysisFormatError as exc:
-        # 鉤子回了一個形狀不對的結構。把它整份寫進紀錄目錄 —— 光看訊息說「某個欄位
+        # 擴充腳本回了一個形狀不對的結構。把它整份寫進紀錄目錄 —— 光看訊息說「某個欄位
         # 型別不對」，還是得看到實際長什麼樣才改得動。
         write_file(
             "bad_analysis.json",

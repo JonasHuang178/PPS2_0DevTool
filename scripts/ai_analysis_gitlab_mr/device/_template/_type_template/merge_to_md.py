@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""某一個種類專屬的步驟 5 鉤子：AI 分析那一段的版面。
+"""某一個種類專屬的步驟 5 擴充腳本：AI 分析那一段的版面。
 
 **與 device 層的 merge_to_md.py 是同一個介面** —— 一樣的 render(inputs)，一樣只負責
 「AI 分析標題底下那一段」。

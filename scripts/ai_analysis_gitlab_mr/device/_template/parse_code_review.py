@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""步驟 4 的鉤子：看懂別人的 code review 報告。
+"""步驟 4 的擴充腳本：看懂別人的 code review 報告。
 
 來源是**別人的文件** —— 工程師用 AI code review 工具產出一份 markdown，以附件掛在該
 Merge Request 標題所指的 JIRA 議題上。各條產品線用的工具不同，那份文件的格式也就不同，

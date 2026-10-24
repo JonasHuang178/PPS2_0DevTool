@@ -3,11 +3,11 @@
 
 來源是**別人的文件**：工程師用 AI code review 工具產出一份 markdown，以附件掛在該
 Merge Request 標題所指的 JIRA 議題上。這一步取回最新的那一份，交給該 device 的
-parse_code_review 鉤子擷取與判定，結果交給步驟 5。
+parse_code_review 擴充腳本擷取與判定，結果交給步驟 5。
 
-**取得在這裡，看懂在鉤子裡。** 查附件、挑最新那一份、擋大小上限、下載、解碼都要 JIRA
+**取得在這裡，看懂在擴充腳本裡。** 查附件、挑最新那一份、擋大小上限、下載、解碼都要 JIRA
 權杖與統一的政策，所以留在入口；而「那份文件長什麼樣、怎麼算通過」因產品線而異，所以
-在 device。鉤子失敗不會中斷流程（見 _parse_with_hook）。
+在 device。擴充腳本失敗不會中斷流程（見 _parse_with_hook）。
 
 報告裡只放總表，全文靠那個連結回去看 —— 所以這一步交出的結構除了表格，還帶著附件的
 檔名、上傳時間、上傳者與網址。那四個值只有這一步拿得到（步驟 5 收到的只是一個檔案
@@ -277,10 +277,10 @@ def _gather(params, keyword, base_url, token, heading, log, write_file):
     """取得附件並擷取總表，回傳步驟 4 的結構內容。
 
     議題上沒有符合的附件時回 None（那一段沒有內容，不是出了錯）。取不到內容、或該
-    device 的 parse_code_review 鉤子失敗時拋 CodeReviewUnavailable，並把已經知道的附件
+    device 的 parse_code_review 擴充腳本失敗時拋 CodeReviewUnavailable，並把已經知道的附件
     資訊掛在它的 meta 上。
 
-    **擷取與判定本身不在這裡**，在該 device 的鉤子（見 _parse_with_hook）—— 各條產品線
+    **擷取與判定本身不在這裡**，在該 device 的擴充腳本（見 _parse_with_hook）—— 各條產品線
     的 code review 工具不同，產出格式也就不同。這一支只負責把現成的全文交給它。
     """
     key = ai_analysis_gitlab_mr.plain(params["jira_key"])
@@ -340,32 +340,32 @@ def _gather(params, keyword, base_url, token, heading, log, write_file):
 
 
 def _parse_with_hook(text, heading, key, log, write_file):
-    """載入該 device 的 parse_code_review 鉤子並執行它。
+    """載入該 device 的 parse_code_review 擴充腳本並執行它。
 
     **不依種類解析**：這一支雖然跑在步驟 4、種類已經解出來了，但審閱報告的格式是
     device 的屬性 —— 一個 device 底下只有一種格式。詳見 device/__init__.py 的分組說明。
 
-    回傳鉤子的結果；任何失敗都轉成 CodeReviewUnavailable —— 訊息進結構的 error 欄位、
+    回傳擴充腳本的結果；任何失敗都轉成 CodeReviewUnavailable —— 訊息進結構的 error 欄位、
     報告顯示那一段、**流程繼續**。這一步跑在 AI 分析之後，讓它失敗會把一份已經完成、
-    已經付費的分析整份丟掉，而這一條對「鉤子壞了」與「文件不合約定」同樣成立。
+    已經付費的分析整份丟掉，而這一條對「擴充腳本壞了」與「文件不合約定」同樣成立。
 
     **訊息分三種，因為該去改的東西不同：**
 
-        文件不合約定（RiskTableError）  去看那份附件，或覆寫這個 device 的鉤子
-        鉤子載不進來（DeviceError）     語法錯誤或 import 失敗，訊息已帶檔名與行號
-        其他任何例外                    那支鉤子的程式錯誤
+        文件不合約定（RiskTableError）  去看那份附件，或覆寫這個 device 的擴充腳本
+        擴充腳本載不進來（DeviceError）     語法錯誤或 import 失敗，訊息已帶檔名與行號
+        其他任何例外                    那支擴充腳本的程式錯誤
 
-    後兩種要**點名 device 與鉤子**。沿用第一種的句子的話，使用者會跑去查 JIRA、查權限、
+    後兩種要**點名 device 與擴充腳本**。沿用第一種的句子的話，使用者會跑去查 JIRA、查權限、
     查附件在不在 —— 全都沒問題，真正該改的是那支腳本。
 
-    攔 Exception 是刻意的，不只攔 RiskTableError：鉤子是使用者寫的，一個 KeyError 不該
+    攔 Exception 是刻意的，不只攔 RiskTableError：擴充腳本是使用者寫的，一個 KeyError 不該
     殺掉整條流程。代價是連 KeyboardInterrupt 以外的程式錯誤都被吞成「這一段沒有內容」，
     所以訊息裡帶上例外的類別名，而完整的 traceback 進執行紀錄。
     """
     try:
         hook, owner = device.load_hook("parse_code_review")
     except device.DeviceError as exc:
-        log("code_review 鉤子載入失敗 [%s] %s" % (exc.code, exc))
+        log("code_review 擴充腳本載入失敗 [%s] %s" % (exc.code, exc))
         raise CodeReviewUnavailable("%s（%s）" % (exc, exc.detail))
 
     try:
@@ -388,7 +388,7 @@ def _parse_with_hook(text, heading, key, log, write_file):
             "（這是該 device 的腳本問題，不是來源文件的問題）"
             % (owner, exc.__class__.__name__, exc))
 
-    # 鉤子是使用者寫的，回傳值不保證形狀對。在這裡擋住，訊息點名是哪一個 device ——
+    # 擴充腳本是使用者寫的，回傳值不保證形狀對。在這裡擋住，訊息點名是哪一個 device ——
     # 讓一個缺鍵的 dict 流到下游，症狀會是報告裡那一段安靜地空白。
     if not isinstance(parsed, dict):
         raise CodeReviewUnavailable(
@@ -456,7 +456,7 @@ def main():
 
     # 總表那一節叫什麼**可由 device 宣告** —— 各條產品線的 code review 工具產出格式
     # 不同。但那只是一個字串，所以宣告寫壞了可以在這裡、在任何網路往來之前就擋下來；
-    # 擷取與判定本身在該 device 的 parse_code_review 鉤子裡（見 _parse_with_hook），
+    # 擷取與判定本身在該 device 的 parse_code_review 擴充腳本裡（見 _parse_with_hook），
     # 這個值會當 heading 傳給它。
     #
     # 與上面兩項一起讀，理由相同：宣告寫壞了是部署問題，在任何網路往來之前就該擋下來。

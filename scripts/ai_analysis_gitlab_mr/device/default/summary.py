@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""default device 的步驟 3 鉤子：AI 分析。
+"""default device 的步驟 3 擴充腳本：AI 分析。
 
 這一支要改的地方集中在**最上面那幾個字串常數**：ROLE_PROMPT、PROMPT_TEMPLATE、
 JIRA_TEMPLATE、OUTPUT_SPEC。想換問法、加一段規則、改輸出格式，改字串就好，底下的
@@ -446,7 +446,7 @@ def analyze(inputs):
     """產生這次分析的內容。
 
     只回內容。版本、種類與涵蓋範圍（這次分析涵蓋了多少個檔案）都由入口腳本蓋章 ——
-    涵蓋範圍尤其不在這裡填：報告會拿它對照 mrDiff，把「差異裡有、這支鉤子沒回報」的
+    涵蓋範圍尤其不在這裡填：報告會拿它對照 mrDiff，把「差異裡有、這支擴充腳本沒回報」的
     檔案列出來，所以它不能由被對照的一方提供。
     """
     key = contract.plain(inputs.get("jira_key"))
