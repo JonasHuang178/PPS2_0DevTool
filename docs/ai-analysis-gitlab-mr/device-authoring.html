@@ -352,35 +352,6 @@ device/ssd/
   </div>
 </section>
 
-<!-- ============ 三個陷阱 ============ -->
-<section>
-  <h2>三個會靜默出錯的陷阱</h2>
-  <h3>它們都不會讓任何一步失敗</h3>
-
-  <div class="stuck">
-    <div class="st">
-      <div class="st-q">只寫了 <code>mr_type.py</code>，忘了 <code>jira_key.py</code></div>
-      <div class="st-a">如果你們的標題格式與 default 不同，<code>jira_key</code> 會沿用
-      default 的規則（取第一個方括號），於是<strong>安靜地抽到錯的東西</strong>。
-      症狀只有報告末尾一行 <code>JIRA: Alpha (invalid)</code> —— 要跑完、讀到末尾，
-      而且要知道那一行本來該長什麼樣，才看得出來。<br>
-      <strong>標題格式與 default 不同的話，這兩支通常要一起寫。</strong></div>
-    </div>
-    <div class="st">
-      <div class="st-q"><code>render()</code> 回傳了 dict 而不是字串</div>
-      <div class="st-a">入口把回傳交給 <code>contract.plain()</code>，而它會<strong>靜默</strong>
-      <code>str()</code> 非字串 —— 實測 <code>plain({'overview': 'x'})</code> 回的是
-      <code>"{'overview': 'x'}"</code>。那段字面會印進報告，而<strong>五個步驟全部回報成功</strong>。</div>
-    </div>
-    <div class="st">
-      <div class="st-q">自己寫死三個反引號當程式碼圍籬</div>
-      <div class="st-a">內容本身含反引號的 diff（改到 markdown 檔就會）會讓程式碼區塊
-      <strong>提前結束</strong>，而報告仍然「成功」產出。用
-      <code>contract.fence_for(code)</code> 算長度。</div>
-    </div>
-  </div>
-</section>
-
 <section>
   <h2>常見問題</h2>
   <h3>開始寫之前會想問的</h3>
