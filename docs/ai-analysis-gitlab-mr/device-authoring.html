@@ -381,38 +381,6 @@ device/ssd/
   </div>
 </section>
 
-<!-- ============ 開發流程 ============ -->
-<section>
-  <h2>開發流程</h2>
-  <h3>寫、按按鈕、提交 —— 不必重建 Qt</h3>
-
-  <div class="steps">
-    <div class="step">
-      <div class="num">1</div>
-      <div>
-        <div class="step-t">在執行檔旁邊的 <code>scripts/</code> 底下寫</div>
-        <div class="step-d">路徑是
-        <code>scripts/ai_analysis_gitlab_mr/device/&lt;你的名字&gt;/</code>。</div>
-      </div>
-    </div>
-    <div class="step">
-      <div class="num">2</div>
-      <div>
-        <div class="step-t">按 AI Analysis 測</div>
-        <div class="step-d">每一步都是獨立的 Python 行程，<strong>改完立刻生效</strong>，
-        不必重新建置 Qt。勾 Save run log 就看得到每一步的中間產物與 <code>logs/</code> 底下的紀錄。</div>
-      </div>
-    </div>
-    <div class="step">
-      <div class="num">3</div>
-      <div>
-        <div class="step-t">把目錄提交進 repo</div>
-        <div class="step-d">CI 也就跟著有了 —— 它跑的是同一批腳本、同一個解析鏈。</div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <section>
   <h2>常見問題</h2>
   <h3>開始寫之前會想問的</h3>
