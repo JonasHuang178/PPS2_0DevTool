@@ -743,9 +743,9 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 同時是下一輪切出原始描述的邊界 —— 某個 device 把它寫成別的字，下一輪就找不到邊界，
 整份舊報告被當成原始描述，於是每跑一次疊一段，而每一步都回報成功。
 
-> **`device/default/` 每次建置會被覆蓋。** 它在 repo 裡，而 `scripts/` 的複製是無條件
-> 覆蓋。要客製就**新增自己的目錄**，不要改 default —— 你自己加的目錄因為 repo 裡沒有
-> 同名檔案，不會被覆蓋也不會被刪除。
+> **不要改 `device/default/`。** 它是所有 device 的共同後備 —— 每一支沒有被覆寫的鉤子
+> 都會落到它身上，別條產品線的也一樣，所以改它等於同時改掉所有人的行為。要客製就
+> **新增自己的目錄**，只放要覆寫的那幾支。
 
 開發流程是：在執行檔旁的 `scripts/ai_analysis_gitlab_mr/device/` 寫、按按鈕測（每一步
 都是獨立的 Python 行程，改完立刻生效，不必重建），完成後把目錄提交進 repo —— CI 也就

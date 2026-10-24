@@ -145,9 +145,9 @@ device/ssd/
   <div class="stuck" style="margin-top:20px">
     <div class="st">
       <div class="st-q">不要改 <code>device/default/</code></div>
-      <div class="st-a">建置會把 repo 的 <code>scripts/</code> 複製到執行檔旁邊，
-      <strong>同名檔一律覆蓋</strong> —— 改在 <code>default/</code> 的東西，下一次建置就沒了。<br>
-      你自己新增的目錄 repo 裡沒有同名檔，不會被覆蓋，也不會被刪。</div>
+      <div class="st-a">它是<strong>所有 device 的共同後備</strong>：每一支沒有被覆寫的鉤子
+      都會落到它身上，別條產品線的也一樣。改 <code>default/</code> 等於同時改掉所有人的行為。<br>
+      要不一樣的做法，在自己的目錄裡放一支同名檔覆寫它就好。</div>
     </div>
   </div>
 </section>
@@ -439,8 +439,8 @@ device/ssd/
           <div class="spec-k">5</div>
           <div class="spec-v">跑一次，看報告末尾出處的 <code>Device</code> 欄位</div>
         </div>
-        <p class="spec-note">⚠️ 不要改 <code>device/default/</code> —— 每次建置會覆蓋它。
-        你新增的目錄不會被動到。</p>
+        <p class="spec-note">⚠️ 不要改 <code>device/default/</code> —— 那是所有 device 的共同
+        後備，改它等於改掉所有產品線。要不一樣的做法，在自己的目錄裡覆寫。</p>
       </span></div>
     </div>
 
