@@ -237,7 +237,14 @@ scripts/
   <功能>/                        入口腳本依功能分組
     __init__.py                  這個功能自己的共用定義
     <功能>_<動作>.py
+    device/                      選用：這個功能要依產品線換做法時才有
+      default/                   所有 device 的共同後備
+      <device 名>/               一個目錄＝一個 device，只放要覆寫的擴充腳本
 ```
+
+`device/` 底下那幾支可被覆寫的 `.py` 叫**擴充腳本**，由入口腳本依 `PPS_DEVICE`
+逐支解析、缺的回退到 `default/`。目前只有 `ai_analysis_gitlab_mr` 用到，機制與寫法
+見 `docs/ai-analysis-gitlab-mr/device-authoring.md`。
 
 入口腳本開頭那行 `sys.path.insert(...)` **不能刪**。Qt 會注入指向 `scripts/` 的
 `PYTHONPATH`，但那不能當成前提 —— 命令列與 CI 直接執行時沒有那個環境，而那是本專案
