@@ -1543,7 +1543,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         step.label      = QString("步驟 2/5：取得相關資訊");
         step.scriptPath = QString(kMrInfoScript);
         step.action     = QString("mr_info");
-        // 這一步自己連 GitLab 取 MR —— 抽 JIRA key 的規則讀的是標題，而步驟 1
+        // 這一步自己連 GitLab 取 MR —— 擷取 JIRA key 的規則讀的是標題，而步驟 1
         // 的產物只有描述本文，手動輸入編號時畫面上也沒有標題。
         //
         // 模式與手動輸入的值一併送出，由腳本決定採用哪一個；在這裡挑的話，CI
@@ -1568,7 +1568,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         // 那份檔案。轉送兩次就有兩個來源，而它們可以不一致。
         params.insert(QString("mr_type"),
                       done.at(1).data.value(QString("mr_type")).toString());
-        // 模式唯讀轉送，讓擴充腳本能分辨 key 是抽出來的還是使用者手填的。
+        // 模式唯讀轉送，讓擴充腳本能分辨 key 是擷取出來的還是使用者手填的。
         params.insert(QString("jira_mode"), context.jiraMode);
         // AI 的連線資訊走 params（不注入環境變數），因此不會出現在命令列上。
         // provider 與模型名稱不送 —— 兩者都由這一步的擴充腳本自己取得。

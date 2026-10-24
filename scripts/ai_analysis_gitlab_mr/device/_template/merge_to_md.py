@@ -39,7 +39,7 @@ def render(inputs):
 
     `analysis` 裡有這三個，想在你的版面裡提到那張單子就用它們：
 
-        jira_state  "ok"（採用了）／"none"（沒要用）／"invalid"（抽到但不是 key）
+        jira_state  "ok"（採用了）／"none"（沒要用）／"invalid"（擷取到但不是 key）
         jira_key    該次採用的 key；invalid 時是**被拒絕的原值**
         jira_url    組好的網址；沒設 JIRA_SERVER_URL 時是空字串
 

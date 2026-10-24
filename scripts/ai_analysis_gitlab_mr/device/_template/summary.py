@@ -40,10 +40,10 @@ def analyze(inputs):
 
                         **這是函式而不是現成的內容，因為「key 有沒有效」是你的
                         政策。** 入口不認得那個政策，先抓的話 [WIP]、[Draft] 這種
-                        從標題方括號抽出來的東西每次都會白打一趟 JIRA。判定有效
+                        從標題方括號擷取出來的東西每次都會白打一趟 JIRA。判定有效
                         之後再呼叫它。憑證與錯誤分類仍然在入口那邊。
         jira_key        該次採用的 key；沒有就是空字串
-        jira_mode       none / manual / auto —— 讓你分辨 key 是抽的還是使用者填的
+        jira_mode       none / manual / auto —— 讓你分辨 key 是擷取的還是使用者填的
         mr_type         選中這一份的種類名稱；沒有種類時是空字串
         ai_connection   AI 連線字串 provider:端點:shareCode（provider 可省略）。
                         **拆它是你的必要步驟**，見下面「必要步驟」。
@@ -90,7 +90,7 @@ def analyze(inputs):
 
         通過檢查    jira_state=contract.JIRA_STATE_OK，jira_key 放那個 key
         沒有要用    jira_state=contract.JIRA_STATE_NONE
-        抽到但無效  jira_state=contract.JIRA_STATE_INVALID，jira_key 放**被拒絕的原值**
+        擷取到但無效  jira_state=contract.JIRA_STATE_INVALID，jira_key 放**被拒絕的原值**
 
     最後一項很重要：報告會印出那個原值（`JIRA: WIP (invalid)`），讀的人一眼就知道標題
     的第一個方括號放錯了東西。只說「無效」等於要人自己猜。

@@ -414,10 +414,10 @@ def main():
             script_io.arg("mr_iid", required=True,
                           help="Merge Request 編號"),
 
-            # 上一步抽出的 key 與 AI 分析那一步判定的狀態。兩者一起決定「要不要真的
+            # 上一步擷取出的 key 與 AI 分析那一步判定的狀態。兩者一起決定「要不要真的
             # 去抓」，所以不需要（也不該有）一個獨立的布林開關。
             script_io.arg("jira_key", default="",
-                          help="步驟 2 抽出的 JIRA key；空字串代表這筆沒有 key"),
+                          help="步驟 2 擷取出的 JIRA key；空字串代表這筆沒有 key"),
             script_io.arg("jira_state", default="ok",
                           help="步驟 3 判定的 key 狀態（ok / none / invalid）；"
                                "只有 ok 才會去取附件。預設 ok，讓命令列只給 "
@@ -471,7 +471,7 @@ def main():
     state = ai_analysis_gitlab_mr.plain(params["jira_state"])
 
     if not key or state != ai_analysis_gitlab_mr.JIRA_STATE_OK:
-        # 沒有 key（標題裡抽不出來）或 key 被判定為無效時不發任何請求。
+        # 沒有 key（標題裡擷取不出來）或 key 被判定為無效時不發任何請求。
         #
         # 有效性是 device 的政策、在步驟 3 判定，這一步只是照它的結論行事 —— 自己
         # 重判就會有第二份規則，兩份必然漂移。不先擋的話，[WIP]、[Draft] 這類前綴

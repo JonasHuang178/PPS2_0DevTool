@@ -12,8 +12,8 @@ device，目錄名就是 device 名：
 五支擴充腳本，分成兩類 —— 差別在**解析時要不要考慮種類**：
 
     不因種類而異
-      jira_key.py            步驟 2：怎麼從 Merge Request 抽出 JIRA key
-      mr_type.py             步驟 2：怎麼從 Merge Request 抽出種類
+      jira_key.py            步驟 2：怎麼從 Merge Request 擷取出 JIRA key
+      mr_type.py             步驟 2：怎麼從 Merge Request 擷取出種類
       parse_code_review.py   步驟 4：怎麼看懂別人的 code review 報告
 
     因種類而異
@@ -213,7 +213,7 @@ def known_types(device=None):
 
 
 def normalize_type(raw):
-    """把擴充腳本抽出來的字串收斂成一個可用的種類名稱；不合用時回空字串。
+    """把擴充腳本擷取出來的字串收斂成一個可用的種類名稱；不合用時回空字串。
 
     轉小寫是因為標題裡寫的是給人看的形式（`[NewTestCase]`），而目錄名一律小寫。
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""步驟 2 的擴充腳本：抽出 Merge Request 的**種類**。
+"""步驟 2 的擴充腳本：擷取出 Merge Request 的**種類**。
 
 種類決定步驟 3 與步驟 5 會用哪一份 `summary.py` 與 `merge_to_md.py`（見
 `_type_template/`）。**這一支只負責讀出來**，認不認得、要不要報錯都不在這裡。
 
 與 `jira_key.py` 是對稱的一對：同一份 Merge Request、同一次連線、同一組欄位，只是
-各自抽不同的東西。這一支**不因種類而異** —— 它就是決定種類的那一支。
+各自擷取不同的東西。這一支**不因種類而異** —— 它就是決定種類的那一支。
 
 ⚠️ **標題格式與 default 不同的話，這兩支通常要一起寫。** 只寫 `mr_type.py` 的話，
-`jira_key.py` 會沿用 default 的規則（標題第一個方括號），於是安靜地抽到錯的東西。
+`jira_key.py` 會沿用 default 的規則（標題第一個方括號），於是安靜地擷取到錯的東西。
 症狀看得見（報告印出 `JIRA: Alpha (invalid)`），但要看報告才看得見。
 """
 
@@ -16,7 +16,7 @@ import ai_analysis_gitlab_mr as contract       # noqa: F401  （需要時使用�
 
 
 def extract(mr):
-    """自 Merge Request 的欄位抽出種類。**回傳字串；沒有就回空字串。**
+    """自 Merge Request 的欄位擷取出種類。**回傳字串；沒有就回空字串。**
 
     收到的 mr 是整理過的欄位，與 `jira_key.py` 完全相同：
 

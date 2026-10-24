@@ -12,8 +12,8 @@
 **四支擴充腳本都是選用的。** 只放你要覆寫的那幾支，缺的會自動用 `default` 的 —— 只想改
 報告版面的 device 不需要複製 summary。
 
-    jira_key.py     步驟 2：怎麼抽出 JIRA key          不因種類而異
-    mr_type.py      步驟 2：怎麼抽出種類                不因種類而異
+    jira_key.py     步驟 2：怎麼擷取出 JIRA key          不因種類而異
+    mr_type.py      步驟 2：怎麼擷取出種類                不因種類而異
     summary.py      步驟 3：問 AI 什麼、怎麼解析        **因種類而異**
     merge_to_md.py  步驟 5：AI 分析那一段的版面         **因種類而異**
 
@@ -49,7 +49,7 @@ VERSION = "2.2"
 
 # 要求每一筆 Merge Request 都解析出這個 device 認得的種類。
 #
-#   False（預設）  抽不到種類、或抽到的名稱這裡沒有對應目錄 -> 用通用的 summary /
+#   False（預設）  擷取不到種類、或擷取到的名稱這裡沒有對應目錄 -> 用通用的 summary /
 #                  merge_to_md，流程照常完成
 #   True           上述兩種情況都直接失敗，而且**失敗在步驟 2**，也就是在任何 AI
 #                  花費之前

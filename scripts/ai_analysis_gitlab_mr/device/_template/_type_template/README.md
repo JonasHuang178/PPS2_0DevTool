@@ -6,7 +6,7 @@
 ```
 device/ssd/
   __init__.py       VERSION、STRICT_TYPE
-  mr_type.py        怎麼從標題等欄位抽出種類
+  mr_type.py        怎麼從標題等欄位擷取出種類
   summary.py        通用的 prompt（選用）
   merge_to_md.py    通用的版面（選用）
   bug/              <- 一個種類
@@ -73,13 +73,13 @@ from ai_analysis_gitlab_mr.device.default.bug import summary as base
 目錄名會被當成模組名 import，所以：小寫英數與底線、不以數字開頭。`fw_update` 可以，
 `fw-update` 不行。
 
-抽出來的字串一律轉小寫後比對，所以標題寫 `[NewTestCase]` 對應到 `newtestcase/`。
+擷取出來的字串一律轉小寫後比對，所以標題寫 `[NewTestCase]` 對應到 `newtestcase/`。
 
 底線開頭的目錄不算種類（這份範本就是靠這個不被誤認）。
 
 ## 認不得的種類會怎樣
 
-抽不到、名稱不合法、或這裡沒有對應目錄時，**預設回退到通用版**，流程照常完成 ——
+擷取不到、名稱不合法、或這裡沒有對應目錄時，**預設回退到通用版**，流程照常完成 ——
 種類來自 MR 標題，也就是別人打的字，不該為了一個沒照約定的標題讓分析做不出來。
 
 要改成報錯，在 device 的 `__init__.py` 宣告 `STRICT_TYPE = True`。那時失敗發生在

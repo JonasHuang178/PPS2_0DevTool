@@ -7,11 +7,11 @@
 JIRA key 都是從同一份 MR 的同一個標題解出來的，所以在同一步進行 —— 分成兩步會讓
 同一筆 MR 被取得三次。
 
-**自己連線 GitLab。** 抽 JIRA key 的預設規則讀的是標題，而步驟 1 的產物只有描述本文；
+**自己連線 GitLab。** 擷取 JIRA key 的預設規則讀的是標題，而步驟 1 的產物只有描述本文；
 畫面也不可靠 —— 使用者手動輸入編號時沒有標題。自己抓的代價是同一個 MR 被抓兩次，換到
 的是這一步可以單獨執行，而且 Qt 與 CI 都不必多傳東西。
 
-**三種 JIRA 模式的分派在這裡，抽取在 device。** 三選一是政策不是演算法；交給每個 device
+**三種 JIRA 模式的分派在這裡，擷取在 device。** 三選一是政策不是演算法；交給每個 device
 各自實作，同一段判斷會出現多次並可能寫歪。
 
     python ai_analysis_gitlab_mr_info.py --help
@@ -63,11 +63,11 @@ def _mr_fields(repo, mr_iid, mr):
 def _resolve_jira_key(mode, manual, fields, repo, mr_iid, log):
     """依模式決定這次的 JIRA key。只有 auto 會呼叫 device 的擴充腳本。
 
-    這裡**不判定有效性** —— 判定在步驟 3 的 summary 擴充腳本，與抽取規則同屬一個 device，
+    這裡**不判定有效性** —— 判定在步驟 3 的 summary 擴充腳本，與擷取規則同屬一個 device，
     放在一起才不會各自漂移。
     """
     if mode == "none":
-        logger.info("JIRA 模式為 none，不抽取")
+        logger.info("JIRA 模式為 none，不擷取")
         return ""
 
     if mode == "manual":
@@ -136,7 +136,7 @@ def _resolve_mr_type(fields, device_name):
             "這筆 Merge Request 沒有宣告 type",
             "device %s 宣告了 STRICT_TYPE = True，要求每一筆 Merge Request 都標明"
             "種類。\n"
-            "抽取規則見 device/%s/mr_type.py（沒有的話是 device/%s/mr_type.py）。\n"
+            "擷取規則見 device/%s/mr_type.py（沒有的話是 device/%s/mr_type.py）。\n"
             "目前認得的 type：%s。"
             % (device_name, device_name, device.DEFAULT_DEVICE,
                "、".join(known) or "(無)"),

@@ -90,8 +90,8 @@ ai-analysis:
     - end pps1
 
     # --- 步驟 2/5：JIRA key 與 MR 種類 -> 02_mr_info.json ----------------------
-    # 這一步自己連 GitLab 取 MR（抽 key 讀的是標題，步驟 1 的產物只有描述本文）。
-    # jira_mode: auto 從標題第一個方括號抽 / manual 用 jira_key_manual / none 不用。
+    # 這一步自己連 GitLab 取 MR（擷取 key 讀的是標題，步驟 1 的產物只有描述本文）。
+    # jira_mode: auto 從標題第一個方括號擷取 / manual 用 jira_key_manual / none 不用。
     - |
       cat > "$R/req2.json" <<EOF
       {"action": "mr_info", "config": {}, "params": {

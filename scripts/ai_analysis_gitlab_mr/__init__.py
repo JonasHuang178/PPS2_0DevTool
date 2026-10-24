@@ -1375,9 +1375,9 @@ ACCEPTED_SCHEMA_VERSIONS = (3, 4, 5, 6, 7, 8)
 
 # 一次分析的 JIRA 狀態。
 #
-#   ok       抽到（或使用者給了）一個通過檢查的 key
+#   ok       擷取到（或使用者給了）一個通過檢查的 key
 #   none     這次不使用 JIRA
-#   invalid  抽到東西，但沒通過檢查 —— 原值保留在 jira_key 供報告顯示
+#   invalid  擷取到東西，但沒通過檢查 —— 原值保留在 jira_key 供報告顯示
 #
 # 三種要分得開：把 invalid 併進 none 的話，標題寫成 [WIP] 的那種錯誤就再也看不見了。
 JIRA_STATE_OK = "ok"
@@ -1477,7 +1477,7 @@ _DIFF_FILE_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
 
 
 def hunk_header_of(text):
-    """從一段文字裡抽出第一個 hunk 標頭，正規化成 `@@ -a,b +c,d @@`。找不到回空字串。
+    """從一段文字裡擷取出第一個 hunk 標頭，正規化成 `@@ -a,b +c,d @@`。找不到回空字串。
 
     **這是 device 作者的公開 API。**
 
@@ -1490,7 +1490,7 @@ def hunk_header_of(text):
 
 
 def hunk_range_of(text):
-    """從一段文字裡抽出第一個 hunk 的行號，回 `(舊起點, 舊行數, 新起點, 新行數)`。
+    """從一段文字裡擷取出第一個 hunk 的行號，回 `(舊起點, 舊行數, 新起點, 新行數)`。
     找不到回 None。
 
     **這是 device 作者的公開 API。** 它與 hunk_header_of() 的差別只在寬容度：這一支
@@ -1932,7 +1932,7 @@ def analysis_body(overview, model="", jira_key="", jira_state=JIRA_STATE_NONE,
     這裡放進去的先後。
 
     jira_state 的三個值見 JIRA_STATES。invalid 時 jira_key 請保留**被拒絕的原值** ——
-    報告要靠它告訴讀者「抽到的是 WIP」，只說「無效」等於要人自己猜。
+    報告要靠它告訴讀者「擷取到的是 WIP」，只說「無效」等於要人自己猜。
 
     mr_type 由**入口腳本蓋章**，擴充腳本不必填（填了也會被覆蓋）—— 與 schema_version 同一個
     理由。它必須進到產物裡，因為步驟 5 要靠它決定用哪一份版面，而步驟 5 拿到的只有檔案。
@@ -2014,7 +2014,7 @@ def validate_analysis(payload, source=""):
         raise AnalysisFormatError(
             "%sAI 分析結果的 jira_state 不是認得的值：%r" % (where, state),
             "認得的是 %s。\n"
-            "沒有要使用 JIRA 時填 \"%s\"；抽到東西但沒通過檢查時填 \"%s\"，"
+            "沒有要使用 JIRA 時填 \"%s\"；擷取到東西但沒通過檢查時填 \"%s\"，"
             "並把原值留在 jira_key。"
             % ("、".join(JIRA_STATES), JIRA_STATE_NONE, JIRA_STATE_INVALID),
             "ANALYSIS_JIRA_STATE_BAD")

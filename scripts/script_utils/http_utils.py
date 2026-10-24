@@ -9,7 +9,7 @@
     錯誤訊息怎麼挖        GitLab 回 {"message": ...}，Jira 回 {"errorMessages": [...]}
     分頁怎麼翻            GitLab 看 X-Next-Page 標頭，Jira 用 startAt / total
 
-抽出來的理由：這段東西兩個服務一字不差。各寫一份的話兩份會慢慢長歪，而且改了
+擷取出來的理由：這段東西兩個服務一字不差。各寫一份的話兩份會慢慢長歪，而且改了
 一邊忘了另一邊時，症狀只在其中一個服務出現 —— 那種不對稱最難聯想到成因。
 
 與其他共用模組遵守同一組規則（見 openspec/specs/script-envelope）：不印任何
