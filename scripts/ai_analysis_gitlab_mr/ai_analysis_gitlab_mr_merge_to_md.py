@@ -118,7 +118,7 @@ def _analysis_section(payload, path, inputs):
         # 種類自**產物**讀取，不由 Qt 再轉送一次。步驟 5 收到的只有檔案路徑，而那個值
         # 已經在分析結構裡 —— 少一個參數，Qt 也就只需要為這件事改一行。
         #
-        # 沒有 mr_type 的舊結構（版本 3）視為沒有種類，走通用版面，不失敗。
+        # 結構裡沒有 mr_type 時視為沒有種類，走通用版面，不失敗。
         mr_type = ai_analysis_gitlab_mr.plain(analysis.get("mr_type"))
 
         try:

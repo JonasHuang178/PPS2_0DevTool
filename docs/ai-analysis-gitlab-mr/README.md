@@ -304,7 +304,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 
 ---
 
-<sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.12`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+<sub>**Device** `ssd` `2.0` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.0`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 ````
 
 **`## 詳細資料` 只在這次真的用了 JIRA 議題時出現。** 條件是分析結構裡的 `jira_state`
@@ -412,7 +412,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
   `diffCode` 全是空字串，那幾筆就無從分辨彼此 —— 而「位置寫歪了」恰好是最需要分組的情況
   之一（新增檔案的標頭最常被寫歪）。鍵的取法三層：讀得出行號就用那組行號（帶不帶
     函式名、結尾那對 `@@` 在不在都算同一個）；讀不出但字串非空就用原字串；兩者皆無則退回
-  `diffCode`（版本 5 以前的產物沒有 `hunkHeader`）
+  `diffCode`（那份產物沒有 `hunkHeader`）
 - **位置用 `contract.hunk_range_of()` 的寬鬆讀法比，不用嚴格的 `hunk_header_of()`。**
   模型對新增檔案常回 `@@ -0,0 +1,433`（掉了結尾的 `@@`）—— 嚴格讀法會把它當成「沒給位置」，
   於是那幾筆各自成組，而那正是這個功能要處理的情況。寬鬆讀法連它一起認，而且把省略的行數

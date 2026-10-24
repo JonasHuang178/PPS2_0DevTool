@@ -13,7 +13,7 @@
 
 ````json
 {
-  "schema_version": 8,
+  "schema_version": 1,
   "analysis": {
     "provider": "openai",
     "model": "gpt-4o",
@@ -54,25 +54,23 @@
 - `jira_state` 是 `ok` / `none` / `invalid` 三選一。`invalid` 時 `jira_key` 留的是
   **被拒絕的原值**（例如某個 device 取標題的第一個方括號，而那裡放的是 `WIP`），但它只留在產物的資料裡 ——
   `invalid` 時「詳細資料」那一節整個不出現，所以**報告上看不到**（出處也不印它，見 [README.md](README.md) 的「報告的版面」一節）
-- `provider` 與 `model` 由**擴充腳本**填（版本 8 起才有 `provider`），只印在報告出處的 AI 那一行
+- `provider` 與 `model` 由**擴充腳本**填，只印在報告出處的 AI 那一行
   （`` **AI** **Provider** `openai` | **Model** `gpt-4o` ``），缺哪一半就省略哪一半。
   取得方式見下面「呼叫 AI」的**必要步驟**
 - `mr_type` 是這一筆的種類，決定步驟 5 用哪一份版面；沒有種類時是空字串。它由**入口
   腳本蓋章**，device 的擴充腳本不必填（填了也會被覆蓋）
 - 某個檔案的清單為空時，該檔案整個不出現，編號也只算實際出現的檔案
-- `coverage` 是這次分析涵蓋了多少（見上一節）。四類缺口加上 `skipped`（版本 7 起）各自
+- `coverage` 是這次分析涵蓋了多少（見上一節）。四類缺口加上 `skipped` 各自
   有精確的 `count` 與一份有長度上限的 `paths`。它同樣由**入口腳本蓋章**，擴充腳本填了會被覆蓋 —— 而且理由比
   `mr_type` 更強：這份數字就是用來檢查擴充腳本回報了多少的
-- `hunkHeader` 是**模型原本指的那個位置**，原樣留著（版本 6 起）。它與 `diffCode` 是
+- `hunkHeader` 是**模型原本指的那個位置**，原樣留著。它與 `diffCode` 是
   兩回事：`diffCode` 是解析成功後從差異切出來的那一段，解析不出來就是空的；`hunkHeader`
   則不論解析成不成功都在。報告靠它把「指向同一個位置的數筆發現」收成一組 —— 只留
   `diffCode` 的話，位置寫歪的那些全是空值就再也分不開
-- `schema_version` 比對時寬鬆：`8`、`"8"`、`"8.0"` 是同一個版本；`"8.5"` 與 `true` 不收
-- **讀得懂版本 3 到 8**（寫出去的一律是 8）。版本 3 少的是 `mr_type`，讀法是「視為沒有
-  種類」；3、4 少的是 `coverage`，讀法是「視為沒有涵蓋範圍資訊」，報告就不印那一段；
-  3、4、5 少的是 `hunkHeader`，讀法是「每一筆沒有位置」，分組退回用 `diffCode`；3 到 6
-  少的是 `coverage.skipped`，讀法是「視為沒有任何檔案被設定排除」—— 那正是那幾版的事實，
-  當時還沒有排除機制；3 到 7 少的是 `provider`，讀法是「沒有 provider」，出處只印模型那一半。
+- `schema_version` 比對時寬鬆：`1`、`"1"`、`"1.0"` 是同一個版本；`"1.5"` 與 `true` 不收
+- **目前只有版本 1**（首次公布從 1 起算），讀得懂的也只有這一版。日後加了版本，舊版的讀法
+  會列在 `ACCEPTED_SCHEMA_VERSIONS` 的註解裡 —— 只多一個選填欄位的改版，讀法通常就是
+  「視為沒有那個欄位」。
 那不是猜測，是五條知道的讀法。實際的好處是開發時常常拿昨天的
   `03_summary.json` 單獨重跑步驟 5 看版面，只認最新版會讓那個迴路每次改版就斷一次
 - 建構用 `ai_analysis_gitlab_mr` 的 `finding()` 與 `analysis_body()`，不要自己寫
@@ -90,7 +88,7 @@
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "code_review": {
     "filename": "CodeReview_20260910_092900.md",
     "created": "2026-09-10T09:29:00.000+0800",
@@ -107,7 +105,7 @@
   dict 被 `str()` 起來會變成 `{'a': 1}` 然後原樣印進報告
 - `risk_table` 是**原樣**的表格，不對齊、不排序、不改欄序。欄位名稱因 device 而異，
   任何正規化都可能弄壞某一個 device 的表格
-- `review_result` 是**那份審閱的結論**（版本 2 起），由 `parse_code_review` 擴充腳本判定：
+- `review_result` 是**那份審閱的結論**，由 `parse_code_review` 擴充腳本判定：
   `"pass"` / `"fail"` / `""`（判不出來）。另外檢查值域 —— 一個拼錯的 `"PASSED"` 印進
   報告比不印更糟，讀的人會以為那是真的結論
 - **叫 `review_result` 而不是 `result`。** 回應 JSON 最外層已經有 `result`（`PASS`/`FAIL`），
@@ -118,8 +116,8 @@
 - `error` 有值時 `risk_table` 通常是空的，但**前四個欄位照樣填** —— 報告要靠那三行
   讓讀者自己點連結去看全文。那時 `review_result` 是空字串，結果那一行不印：**不能印
   PASS 也不能印 FAIL**，兩個都是在說一件我們並不知道的事
-- **讀得懂版本 1 到 2**（寫出去的一律是 2）。版本 1 少的是 `review_result`，讀法是
-  「視為判不出來」—— 那正是那一版的事實
+- **目前只有版本 1**（與 `ANALYSIS_SCHEMA_VERSION` 一樣，首次公布從 1 起算），讀得懂的
+  也只有這一版
 - `schema_version` 由**入口腳本蓋章**，與 `ANALYSIS_SCHEMA_VERSION` **各自獨立編號**
   （兩者是不同的產物，共用一個號碼會讓其中一邊改版莫名其妙地讓另一邊的舊檔失效）
 - 比對與 `03_summary.json` 一樣寬鬆：`1` 與 `"1"` 是同一個版本，`"1.5"` 與 `true` 不收
@@ -693,7 +691,7 @@ STRICT_TYPE = True
       |
       |  Qt 轉送（case 2 那一行）
       v
-03_summary.json   { "schema_version": 7, "analysis": { "mr_type": "bug", ... } }
+03_summary.json   { "schema_version": 1, "analysis": { "mr_type": "bug", ... } }
                                                             |
                                                             |  步驟 5 讀這份檔案
                                                             v

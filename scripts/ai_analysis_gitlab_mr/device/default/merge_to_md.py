@@ -81,7 +81,7 @@ def _group_key(item):
                                   （所以帶不帶後面的函式名、結尾那對 @@ 在不在，
                                   都算同一個位置）
         讀不出但字串非空          去頭尾空白後的原字串
-        兩者皆無                  退回 diffCode（版本 5 以前的產物沒有 hunkHeader）
+        兩者皆無                  退回 diffCode（那份產物沒有 hunkHeader）
 
     **第一層用 contract.hunk_range_of() 的寬鬆讀法。** 模型對新增檔案常回
     `@@ -0,0 +1,433`（少了結尾的 `@@`）—— 嚴格讀法會把它當成「沒給位置」，於是那幾筆
@@ -102,7 +102,7 @@ def _group_key(item):
         position = contract.hunk_range_of(header)
         return "H:%s" % (position,) if position else "H:" + header.strip()
 
-    # 版本 5 以前的產物沒有 hunkHeader。那一版的讀法就是退回用 diffCode —— 同一個 hunk
+    # 產物沒有 hunkHeader 時的讀法就是退回用 diffCode —— 同一個 hunk
     # 切出來的文字一字不差，所以它在「位置解析成功」的情況下與標頭等價。
     code = contract.plain(item.get("diffCode"))
     if code:
