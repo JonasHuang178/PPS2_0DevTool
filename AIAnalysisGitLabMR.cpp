@@ -1558,20 +1558,20 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         step.action     = QString("ai_summary");
         params.insert(QString("description"),
                       done.at(0).data.value(QString("description")).toString());
-        // 上一步解出來的 key。有效性由該 device 的鉤子判定，不在這裡也不在上一步。
+        // 上一步解出來的 key。有效性由該 device 的擴充腳本判定，不在這裡也不在上一步。
         params.insert(QString("jira_key"),
                       done.at(1).data.value(QString("jira_key")).toString());
-        // 上一步解出來的種類。它決定該 device 的哪一份 summary 鉤子被載入，但
+        // 上一步解出來的種類。它決定該 device 的哪一份 summary 擴充腳本被載入，但
         // 「誰被載入」仍由腳本端決定 —— Qt 只是原樣轉送，不認得任何種類。
         //
         // 步驟 5 不需要這一行：種類會被步驟 3 寫進分析結果，而步驟 5 本來就要讀
         // 那份檔案。轉送兩次就有兩個來源，而它們可以不一致。
         params.insert(QString("mr_type"),
                       done.at(1).data.value(QString("mr_type")).toString());
-        // 模式唯讀轉送，讓鉤子能分辨 key 是抽出來的還是使用者手填的。
+        // 模式唯讀轉送，讓擴充腳本能分辨 key 是抽出來的還是使用者手填的。
         params.insert(QString("jira_mode"), context.jiraMode);
         // AI 的連線資訊走 params（不注入環境變數），因此不會出現在命令列上。
-        // provider 與模型名稱不送 —— 兩者都由這一步的鉤子自己取得。
+        // provider 與模型名稱不送 —— 兩者都由這一步的擴充腳本自己取得。
         params.insert(QString("ai_connection"), context.aiConnection);
         params.insert(QString("ai_api_key"),    context.aiApiKey);
         params.insert(QString("ai_timeout"),   context.aiTimeout);
@@ -1589,7 +1589,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
         // 「要不要真的去抓」由 key 與它的狀態決定，**不另設布林開關** —— 那樣會出現
         // 「開關為真但沒有 key」這種自相矛盾的狀態。
         //
-        // key 來自步驟 2，狀態來自步驟 3：有效性是該 device 的政策、由它的鉤子在
+        // key 來自步驟 2，狀態來自步驟 3：有效性是該 device 的政策、由它的擴充腳本在
         // 步驟 3 判定，所以那個結論住在分析結構裡。這一步只是原樣轉送，Qt 不重判 ——
         // 重判就會有第二份規則，而兩份必然漂移。
         params.insert(QString("jira_key"),
@@ -1598,7 +1598,7 @@ PPS2_0DevTool::FlowStep AIAnalysisGitLabMR::buildStep(
                       done.at(2).data.value(QString("analysis")).toObject()
                               .value(QString("jira_state")).toString());
         //
-        // **不轉送種類。** 這一步的鉤子不依種類解析 —— 審閱報告的格式是 device 的
+        // **不轉送種類。** 這一步的擴充腳本不依種類解析 —— 審閱報告的格式是 device 的
         // 屬性，一個 device 底下只有一種格式（見 device/__init__.py 的分組說明）。
         break;
 
