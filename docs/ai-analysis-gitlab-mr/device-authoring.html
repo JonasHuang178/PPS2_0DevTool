@@ -84,7 +84,7 @@
 
   <div class="hooks">
   <div class="hook-row"><div class="hook-step"><span class="s">步驟 1</span><b>取得 MR 描述</b></div><div class="hook-none">不因 device 而異</div><div></div></div>
-  <div class="hook-row"><div class="hook-step"><span class="s">步驟 2</span><b>抽 JIRA key 與種類</b></div><div class="hook-name u">jira_key.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 2</span><b>擷取 JIRA key 與種類</b></div><div class="hook-name u">jira_key.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
   <div class="hook-row"><div class="hook-step">&nbsp;</div><div class="hook-name u">mr_type.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
   <div class="hook-row"><div class="hook-step"><span class="s">步驟 3</span><b>AI 分析</b></div><div class="hook-name t">summary.py</div><div class="hook-sig">analyze(inputs) → 分析結構</div></div>
   <div class="hook-row"><div class="hook-step"><span class="s">步驟 4</span><b>取得程式碼審閱報告</b></div><div class="hook-name u">parse_code_review.py</div><div class="hook-sig">parse(inputs) → 總表 + 結論</div></div>
@@ -211,7 +211,7 @@ device/ssd/
       <div class="io-cell">
         <div class="io-k">要回</div>
         <div class="io-v">一個<strong>字串</strong>。<br>
-        抽不到就回 <code>""</code>。</div>
+        擷取不到就回 <code>""</code>。</div>
       </div>
       <div class="io-cell">
         <div class="io-k">default 的規則</div>
@@ -283,7 +283,7 @@ device/ssd/
       </div>
     </div>
     <div class="io-note"><code>fetch_jira</code> 給的是<strong>函式而不是現成內容</strong>，
-    因為「這個 key 有沒有效」是你的政策。入口先抓的話，<code>[WIP]</code> 這種從方括號抽來的東西
+    因為「這個 key 有沒有效」是你的政策。入口先抓的話，<code>[WIP]</code> 這種從方括號擷取來的東西
     每次都會白打一趟 JIRA。判定有效之後再呼叫它。</div>
   </div>
 
@@ -409,7 +409,7 @@ merge_to_md → default/merge_to_md.py</div></div>
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span>JIRA key 怎麼抽的？要換規則怎麼寫？</span></div>
+      <div class="qa-q"><span>JIRA key 怎麼擷取的？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
           <div class="spec-grp">DEFAULT 的做法</div>
@@ -418,7 +418,7 @@ merge_to_md → default/merge_to_md.py</div></div>
           <div class="spec-k">範例</div>
           <div class="spec-v"><code>[PPS-1234] 修正重試上限</code> → <code>PPS-1234</code><br>
             <code>[WIP] [PPS-1234] 修正…</code> → <code>WIP</code>
-            <span class="dim">（不判定有效性，抽到什麼就回什麼）</span></div>
+            <span class="dim">（不判定有效性，擷取到什麼就回什麼）</span></div>
           <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
           <div class="spec-v"><code>device/_template/jira_key.py</code></div>
@@ -428,16 +428,16 @@ merge_to_md → default/merge_to_md.py</div></div>
           <div class="spec-v"><code>mr</code> 六個欄位：<code>title</code>、<code>source_branch</code>、
             <code>target_branch</code>、<code>description</code>、<code>repo</code>、<code>mr_iid</code></div>
           <div class="spec-k">輸出</div>
-          <div class="spec-v">字串。抽不到回 <code>""</code>
+          <div class="spec-v">字串。擷取不到回 <code>""</code>
             <span class="dim">（不要回 <code>None</code>）</span></div>
         </div>
         <p class="spec-note">⚠️ 標題格式與 default 不同的話，<code>mr_type.py</code> 多半要一起寫 ——
-        不然種類會用 default 的規則去抽，位置是錯的。</p>
+        不然種類會用 default 的規則去擷取，位置是錯的。</p>
       </span></div>
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span>種類怎麼抽的？要換規則怎麼寫？</span></div>
+      <div class="qa-q"><span>種類怎麼擷取的？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
           <div class="spec-grp">DEFAULT 的做法</div>
@@ -460,7 +460,7 @@ merge_to_md → default/merge_to_md.py</div></div>
             <span class="dim">入口會去空白、轉小寫，所以回 <code>"Bug"</code> 就對得上 <code>bug/</code>。
             也可以映射：<code>[FW-Update]</code> → 回 <code>"fw_update"</code></span></div>
         </div>
-        <p class="spec-note">抽到不合法的字（<code>緊急</code>、<code>bug fix</code>）視同<strong>沒有種類</strong>，
+        <p class="spec-note">擷取到不合法的字（<code>緊急</code>、<code>bug fix</code>）視同<strong>沒有種類</strong>，
         不是錯誤 —— 那是 MR 作者打的字。回傳非字串才是失敗。</p>
       </span></div>
     </div>

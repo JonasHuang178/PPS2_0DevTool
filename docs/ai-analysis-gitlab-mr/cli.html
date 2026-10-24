@@ -115,7 +115,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
     <div class="io-head">
       <div class="io-n">2<br>/5</div>
       <div>
-        <div class="io-t">抽出 JIRA key 與 MR 種類</div>
+        <div class="io-t">擷取出 JIRA key 與 MR 種類</div>
         <div class="io-s">..._info.py　action: mr_info</div>
       </div>
       <div><span class="fl-tag tag-net">連 GitLab</span></div>
@@ -129,8 +129,8 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
       </div>
       <div class="io-cell">
         <div class="io-k">做什麼</div>
-        <div class="io-v">自己再連一次 GitLab 取 MR（抽 key 讀的是<strong>標題</strong>,
-        而第 1 步的產物只有描述本文）,交給 device 的兩支鉤子抽出 key 與種類。</div>
+        <div class="io-v">自己再連一次 GitLab 取 MR（擷取 key 讀的是<strong>標題</strong>,
+        而第 1 步的產物只有描述本文）,交給 device 的兩支鉤子擷取出 key 與種類。</div>
       </div>
       <div class="io-cell">
         <div class="io-k">吐什麼</div>
@@ -200,7 +200,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
         <span class="muted">或<strong>什麼都不產生</strong></span></div>
       </div>
     </div>
-    <div class="io-note"><code>jira_state</code> 來自第 3 步而不是第 2 步 —— 第 2 步抽出 key,
+    <div class="io-note"><code>jira_state</code> 來自第 3 步而不是第 2 步 —— 第 2 步擷取出 key,
     第 3 步才判定它有不有效。沒 key、key 無效、單子上沒附件,三種都是 <strong>PASS 但不落檔</strong>。</div>
   </div>
 

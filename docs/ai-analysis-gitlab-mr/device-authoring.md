@@ -288,7 +288,7 @@ debug console、崩潰時還會進 `crash.log`。端點印得出來是因為它�
 **常常是正確的結果** —— 一個只改了空白的檔案被略過是合理的。預設打開等於替所有部署在
 大部分的 MR 上都多付一趟 AI 的錢與時間，而第二次問回來的往往一模一樣。
 
-真的遇到模型漏回報的人把它設成 1 或 2。那是明知的取捨：多等一倍的時間，換模型再抽一次
+真的遇到模型漏回報的人把它設成 1 或 2。那是明知的取捨：多等一倍的時間，換模型再擷取一次
 樣本的機會。
 
 > **迴圈在入口腳本，不在 device 的鉤子裡。** 理由與涵蓋範圍由入口蓋章完全相同：判斷
@@ -431,7 +431,7 @@ print(load_hook('summary')[0].build_prompt({
 只認一種的話另一種會變成「缺少必要欄位」，而那訊息指不到真正的原因。
 
 `hunkHeader` 即使已經交代不要加圍籬，解析時仍會**再剝一次** —— 模型對否定指令的服從度
-不高，而一行 ```` ```diff\n@@ …\n``` ```` 抽不出標頭，會白白變成「對不上」。
+不高，而一行 ```` ```diff\n@@ …\n``` ```` 擷取不出標頭，會白白變成「對不上」。
 
 ### 重問
 
@@ -465,7 +465,7 @@ print(load_hook('summary')[0].build_prompt({
 | `device` | 選中這一份的 device 名稱 |
 | `mr_type` | 選中這一份的種類；沒有種類時是空字串 |
 | `jira_key` | 該次採用的 key；沒有就是空字串 |
-| `jira_mode` | `none` / `manual` / `auto` —— 讓你分辨 key 是抽的還是使用者填的 |
+| `jira_mode` | `none` / `manual` / `auto` —— 讓你分辨 key 是擷取的還是使用者填的 |
 
 **AI 連線與等待**（都來自使用者選的那個 AI provider 項目）
 
@@ -497,7 +497,7 @@ print(load_hook('summary')[0].build_prompt({
 因此不會被包裝成「device 的 summary.py 執行失敗」，那會把連線問題講成腳本寫壞了。
 
 **JIRA 是函式而不是現成內容**，因為「key 有沒有效」是 device 的政策，入口不認得。先抓
-的話，`[WIP]`、`[Draft]` 這種從標題方括號抽出來的字串每次都會白打一趟 JIRA 換回 404。
+的話，`[WIP]`、`[Draft]` 這種從標題方括號擷取出來的字串每次都會白打一趟 JIRA 換回 404。
 鉤子判定有效之後再呼叫它。查不到不會讓流程失敗，prompt 少那一段而已。
 
 ## device：讓每條產品線有自己的分析邏輯
@@ -507,8 +507,8 @@ print(load_hook('summary')[0].build_prompt({
 
 | 步驟 | 鉤子 | device 決定 | 因種類而異 |
 |---|---|---|---|
-| 2 | `jira_key.py` | 怎麼從 MR 抽出 JIRA key | 否 |
-| 2 | `mr_type.py` | 怎麼從 MR 抽出**種類** | 否 |
+| 2 | `jira_key.py` | 怎麼從 MR 擷取出 JIRA key | 否 |
+| 2 | `mr_type.py` | 怎麼從 MR 擷取出**種類** | 否 |
 | 4 | `parse_code_review.py` | 怎麼看懂別人的 code review 報告、怎麼判定通過 | 否 |
 | 3 | `summary.py` | 問 AI 什麼、怎麼解析、組出什麼分析內容 | **是** |
 | 5 | `merge_to_md.py` | AI 分析那一段的版面 | **是** |
@@ -584,7 +584,7 @@ PPS_DEVICE = sdd         ->  失敗，訊息列出目前認得哪些
 ```
 device/ssd/
   __init__.py       VERSION、STRICT_TYPE
-  mr_type.py        怎麼從 MR 抽出種類
+  mr_type.py        怎麼從 MR 擷取出種類
   bug/
     summary.py      Bug 專用的 prompt，版面沿用 ssd 或 default 的
   newtestcase/
@@ -597,7 +597,7 @@ device/ssd/
 
 ### 誰決定種類
 
-由該 device 的 `mr_type.py` 從 MR 抽出來，規則各自決定 —— SSD 可能看標題第二個方括號、
+由該 device 的 `mr_type.py` 從 MR 擷取出來，規則各自決定 —— SSD 可能看標題第二個方括號、
 SD 看第三個：
 
 ```
@@ -606,15 +606,15 @@ mod:[PPS-1234][Bug] 修正重試上限
               ^^^^^ ssd/mr_type.py 取這個 -> "Bug" -> 轉小寫 -> bug/
 ```
 
-抽出來的字一律轉小寫比對，所以 `[NewTestCase]` 對應到 `newtestcase/`。鉤子也可以做
+擷取出來的字一律轉小寫比對，所以 `[NewTestCase]` 對應到 `newtestcase/`。鉤子也可以做
 **映射**：標題寫 `[FW-Update]`、回 `"fw_update"`，目錄名維持合法識別字。
 
 它與 `jira_key.py` 在**同一步、同一次 GitLab 取得**裡跑完，不會多一次連線。
 
 > ⚠️ 標題格式與 default 不同的 device，`jira_key.py` 與 `mr_type.py` **通常要一起寫**。
-> 只寫一支的話另一支會沿用 default 的規則，安靜地抽到錯的東西 —— 而且**報告上看不出來**：
-> 抽錯 key 會讓 `jira_state` 變成 `invalid`，「詳細資料」那一節於是整個不出現，被拒絕的
-> 原值只留在 `02_mr_info.json` 與 log 裡；抽錯種類則是直接套上另一份版面，而每一步都回報
+> 只寫一支的話另一支會沿用 default 的規則，安靜地擷取到錯的東西 —— 而且**報告上看不出來**：
+> 擷取錯 key 會讓 `jira_state` 變成 `invalid`，「詳細資料」那一節於是整個不出現，被拒絕的
+> 原值只留在 `02_mr_info.json` 與 log 裡；擷取錯種類則是直接套上另一份版面，而每一步都回報
 > 成功。要查就看那兩個產物或 debug console，不要期待報告會告狀。
 
 ### 解析鏈：種類只在自己的 device 之內
@@ -649,7 +649,7 @@ from ai_analysis_gitlab_mr.device.default.bug import summary as base
 | **device** | **報錯** | 名字來自設定檔，打錯是操作者的責任。靜默改用通用邏輯會產出一份用錯邏輯、每一步卻都回報成功的報告 |
 | **type** | **回退** | 名字來自 MR 標題，是任何能開 MR 的人打的字。為了一個沒照約定的標題讓整份分析做不出來，等於把工具的可用性綁在別人的打字習慣上 |
 
-抽不到、名稱不合法（`[緊急]`、`[bug fix]`）、或這個 device 沒有那個目錄，三者都走回退。
+擷取不到、名稱不合法（`[緊急]`、`[bug fix]`）、或這個 device 沒有那個目錄，三者都走回退。
 
 要改成報錯，在該 device 的 `__init__.py` 宣告：
 
@@ -719,8 +719,8 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 | `contract.plain(value)` | `None` 與非字串收斂成字串。不用的話報告會印出 `None` |
 | `contract.fence_for(code)` | 算程式碼圍籬的長度 |
 | `contract.hunk_of(diff, path, header)` | 依 AI 給的 `@@` 標頭，從 diff 切出那個 hunk |
-| `contract.hunk_header_of(text)` | 從一段文字裡抽出 `@@` 標頭並正規化（嚴格：要求結尾的 `@@`） |
-| `contract.hunk_range_of(text)` | 從一段文字裡抽出 hunk 的行號 `(舊起點, 舊行數, 新起點, 新行數)`（寬鬆：不要求結尾的 `@@`） |
+| `contract.hunk_header_of(text)` | 從一段文字裡擷取出 `@@` 標頭並正規化（嚴格：要求結尾的 `@@`） |
+| `contract.hunk_range_of(text)` | 從一段文字裡擷取出 hunk 的行號 `(舊起點, 舊行數, 新起點, 新行數)`（寬鬆：不要求結尾的 `@@`） |
 | `contract.extract_risk_table(text, heading)` | 擷取某一節裡的第一張表格（`parse_code_review` 鉤子用） |
 | `contract.code_review_parsed(...)` | 組 `parse_code_review` 鉤子的回傳值 |
 | `contract.REVIEW_RESULT_PASS` / `_FAIL` / `_UNKNOWN` | 審閱結論的三個值 |

@@ -20,7 +20,7 @@
 |---|---|---|---|
 | `..._list_merge_requests.py` | `list_merge_requests` | `repo`、`only_open`、`created_after_enabled`、`created_after_days` | 取 Merge Request 清單（不屬於五步流程，是給人挑的） |
 | `..._description.py` | `mr_description` | `repo`、`mr_iid` | **1/5** 取 MR 描述，已扣掉上一輪貼進去的 AI 分析 |
-| `..._info.py` | `mr_info` | `repo`、`mr_iid`、`jira_mode`、`jira_key_manual` | **2/5** 抽出 JIRA key 與 MR 種類 |
+| `..._info.py` | `mr_info` | `repo`、`mr_iid`、`jira_mode`、`jira_key_manual` | **2/5** 擷取出 JIRA key 與 MR 種類 |
 | `..._summary.py` | `ai_summary` | 見下面的「步驟 3 的參數」 | **3/5** AI 分析。唯一要錢、唯一要等分鐘級的一步 |
 | `..._code_review.py` | `fetch_code_review` | `repo`、`mr_iid`、`jira_key`、`jira_state` | **4/5** 自 JIRA 附件取程式碼審閱報告 |
 | `..._merge_to_md.py` | `merge_to_md` | 三個檔案路徑 + `repo`、`mr_iid` | **5/5** 合併為 markdown 報告 |
@@ -40,7 +40,7 @@
 |---|---|
 | `description_path` 或 `description` | 步驟 1 的產物。手上是檔案就用前者，是字串就用後者 |
 | `jira_key`、`mr_type` | 步驟 2 的產物 |
-| `jira_mode` | `auto` 從標題第一個方括號抽 / `manual` 用 `jira_key_manual` / `none` 不用 |
+| `jira_mode` | `auto` 從標題第一個方括號擷取 / `manual` 用 `jira_key_manual` / `none` 不用 |
 | `ai_connection` | 要問哪一個 AI：連線字串 `provider:端點:shareCode`，例如 `openai:https://主機/api/external/v1/chat:CODE`。provider 可省略，省略時報告出處沒有 provider |
 | `ai_api_key` | AI 金鑰 |
 | `ai_timeout`、`ai_retries`、`ai_reask`、`ai_recheck` | 四個等待設定。不給就用腳本自己的預設（120 / 3 / 1 / 0） |
@@ -85,7 +85,7 @@ echo '{"action":"mr_description","config":{},"params":{
 ```
 
 ```bash
-# 2/5 抽出 JIRA key 與種類 -> 02_mr_info.json
+# 2/5 擷取出 JIRA key 與種類 -> 02_mr_info.json
 echo '{"action":"mr_info","config":{},"params":{
   "repo":"'$REPO'","mr_iid":"'$IID'","jira_mode":"auto","jira_key_manual":"",
   "out_path":"'$W'/02_mr_info.json"}}' \
@@ -198,6 +198,6 @@ v1.0 的 `AI_MODE_NAME`、`AI_MODEL` 已移除 —— 模型名稱由步驟 3 �
   在 CI 再判一次就有了第二份規則，而兩份規則會漂移
 - **步驟 5 收的是檔案路徑，不是內容。** 路徑給了就必須存在，所以步驟 4 沒落檔時
   `code_review_json_file_path` **整個鍵不放**（不是放空字串）
-- **`jira_state` 來自步驟 3，不是步驟 2** —— 步驟 2 抽出 key，步驟 3 才判定它有效與否
+- **`jira_state` 來自步驟 3，不是步驟 2** —— 步驟 2 擷取出 key，步驟 3 才判定它有效與否
 - **`-v` 打開 DEBUG 等級**。job log 有大小上限（預設 4 MB），`-v` 加上一支大 MR 有可能
   撞到，而被截掉的是尾端 —— 也就是結果信封所在的位置
