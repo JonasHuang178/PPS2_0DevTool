@@ -382,7 +382,9 @@ footer a { color: var(--accent); }
 .fig .f-file { font: 700 11.5px var(--mono); fill: var(--accent); }
 .fig .f-filet{ font: 700 11.5px var(--mono); fill: var(--ok); }
 .fig .f-q    { font-size: 12px; fill: var(--ink2); }
-/* 沒有鉤子的那一欄（步驟 1） */
+/* 沒有鉤子的那一欄（步驟 1）：執行它的入口腳本，灰色等寬、不加方框 ——
+   有方框的才是你可以覆寫的鉤子 */
+.fig .f-entryt{ font: 500 10.5px var(--mono); fill: var(--ink2); }
 .fig .f-none  { font-size: 12px; fill: var(--ink2); }
 .fig .f-link { stroke: var(--ink2); stroke-dasharray: 3 3; opacity: .55; }
 .fig .f-note { font-size: 12.5px; fill: var(--ink2); }
