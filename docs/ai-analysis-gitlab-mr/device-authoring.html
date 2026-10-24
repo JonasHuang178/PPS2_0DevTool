@@ -24,12 +24,12 @@
   <h2>為什麼需要它</h2>
   <h3>五個步驟，你只換<br>其中四格的內容</h3>
 
-  <p class="lead">每一步都由一支<strong>入口腳本</strong>執行，那五支是固定的，所有產品線共用 ——
-  取資料、憑證、產物格式都在裡面。device 能換掉的只有它們讓出來的那幾格。</p>
+  <p class="lead">流程、取資料、憑證、產物的格式都是固定的，五條產品線共用。device 能換掉的
+  只有流程讓出來的那幾格 —— 下面這五個檔案。</p>
 
   <div class="fig-wrap">
-  <svg class="fig" viewBox="0 0 800 404" role="img"
-       aria-label="三層圖：上層五個步驟，中層各步驟的入口腳本，下層 device 可以覆寫的鉤子檔案">
+  <svg class="fig" viewBox="0 0 800 312" role="img"
+       aria-label="五步流程圖：步驟 1 沒有鉤子，步驟 2 到 5 各掛一或兩支 device 可以覆寫的鉤子檔案">
     <text class="f-cap" x="8" y="13">流程 — 五個步驟都會跑，順序固定</text>
     <rect class="f-pipe" x="8" y="24" width="784" height="70" rx="14"/>
     <rect class="f-fix" x="22"  y="40" width="144" height="38" rx="9"/>
@@ -43,57 +43,37 @@
     <rect class="f-fix" x="630" y="40" width="144" height="38" rx="9"/>
     <text class="f-step"  x="702" y="64" text-anchor="middle">⑤ 合成 markdown</text>
 
-    <text class="f-cap" x="8" y="114">入口腳本 — 固定，所有 device 共用</text>
-    <rect class="f-entry" x="22"  y="122" width="144" height="30" rx="8"/>
-    <text class="f-entryt" x="94"  y="141" text-anchor="middle">..._description.py</text>
-    <rect class="f-entry" x="174" y="122" width="144" height="30" rx="8"/>
-    <text class="f-entryt" x="246" y="141" text-anchor="middle">..._info.py</text>
-    <rect class="f-entry" x="326" y="122" width="144" height="30" rx="8"/>
-    <text class="f-entryt" x="398" y="141" text-anchor="middle">..._summary.py</text>
-    <rect class="f-entry" x="478" y="122" width="144" height="30" rx="8"/>
-    <text class="f-entryt" x="550" y="141" text-anchor="middle">..._code_review.py</text>
-    <rect class="f-entry" x="630" y="122" width="144" height="30" rx="8"/>
-    <text class="f-entryt" x="702" y="141" text-anchor="middle">..._merge_to_md.py</text>
+    <text class="f-cap" x="8" y="114">device 可以換掉的 — 就這五支，而且都是選用的</text>
+    <line class="f-link" x1="246" y1="94" x2="246" y2="124"/>
+    <line class="f-link" x1="398" y1="94" x2="398" y2="124"/>
+    <line class="f-link" x1="550" y1="94" x2="550" y2="124"/>
+    <line class="f-link" x1="702" y1="94" x2="702" y2="124"/>
 
-    <line class="f-link" x1="246" y1="152" x2="246" y2="184"/>
-    <line class="f-link" x1="398" y1="152" x2="398" y2="184"/>
-    <line class="f-link" x1="550" y1="152" x2="550" y2="184"/>
-    <line class="f-link" x1="702" y1="152" x2="702" y2="184"/>
+    <text class="f-none" x="94" y="160" text-anchor="middle">沒有鉤子</text>
 
-    <text class="f-cap" x="8" y="176">device 可以換掉的 — 就這五支，而且都是選用的</text>
+    <rect class="f-dev" x="174" y="124" width="144" height="64" rx="10"/>
+    <text class="f-file" x="188" y="150">jira_key.py</text>
+    <text class="f-q"    x="188" y="172">哪一張單號？</text>
+    <rect class="f-dev" x="174" y="196" width="144" height="64" rx="10"/>
+    <text class="f-file" x="188" y="222">mr_type.py</text>
+    <text class="f-q"    x="188" y="244">哪一種 MR？</text>
 
-    <text class="f-none" x="94" y="218" text-anchor="middle">沒有鉤子</text>
+    <rect class="f-devt" x="326" y="124" width="144" height="64" rx="10"/>
+    <text class="f-filet" x="340" y="150">summary.py</text>
+    <text class="f-q"     x="340" y="172">問 AI 什麼？</text>
 
-    <rect class="f-dev" x="174" y="184" width="144" height="64" rx="10"/>
-    <text class="f-file" x="188" y="210">jira_key.py</text>
-    <text class="f-q"    x="188" y="232">哪一張單號？</text>
-    <rect class="f-dev" x="174" y="256" width="144" height="64" rx="10"/>
-    <text class="f-file" x="188" y="282">mr_type.py</text>
-    <text class="f-q"    x="188" y="304">哪一種 MR？</text>
+    <rect class="f-dev" x="478" y="124" width="144" height="64" rx="10"/>
+    <text class="f-file" x="492" y="146">parse_code_</text>
+    <text class="f-file" x="492" y="161">review.py</text>
+    <text class="f-q"    x="492" y="180">審閱報告怎麼讀？</text>
 
-    <rect class="f-devt" x="326" y="184" width="144" height="64" rx="10"/>
-    <text class="f-filet" x="340" y="210">summary.py</text>
-    <text class="f-q"     x="340" y="232">問 AI 什麼？</text>
+    <rect class="f-devt" x="630" y="124" width="144" height="64" rx="10"/>
+    <text class="f-filet" x="644" y="150">merge_to_md.py</text>
+    <text class="f-q"     x="644" y="172">那一段怎麼排？</text>
 
-    <rect class="f-dev" x="478" y="184" width="144" height="64" rx="10"/>
-    <text class="f-file" x="492" y="206">parse_code_</text>
-    <text class="f-file" x="492" y="221">review.py</text>
-    <text class="f-q"    x="492" y="240">審閱報告怎麼讀？</text>
-
-    <rect class="f-devt" x="630" y="184" width="144" height="64" rx="10"/>
-    <text class="f-filet" x="644" y="210">merge_to_md.py</text>
-    <text class="f-q"     x="644" y="232">那一段怎麼排？</text>
-
-    <text class="f-note" x="8" y="352">只放你要覆寫的那幾支，缺的自動用 <tspan class="b">default</tspan> 的 —— 不必整套複製。</text>
-    <text class="f-note" x="8" y="374"><tspan class="g">綠色兩支</tspan>還能再依種類各給一份；<tspan class="b">藍色三支</tspan>只能一個 device 一份。</text>
-    <text class="f-note" x="8" y="396">步驟 ④ 另外讀一個宣告 CODE_REVIEW_SOURCE_HEADING（總表在哪一節），那不是鉤子。</text>
+    <text class="f-note" x="8" y="300"><tspan class="g">綠色兩支</tspan>還能再依種類各給一份；<tspan class="b">藍色三支</tspan>只能一個 device 一份。</text>
   </svg>
   </div>
-
-  <p class="muted" style="font-size:15px">
-    一個 device = 一個目錄。放進去就是新增一個，<strong>沒有註冊表要改</strong>。
-    用哪一個由環境變數 <code>PPS_DEVICE</code> 決定（Qt 從設定檔注入，CI 由 runner 設）。
-  </p>
 </section>
 
 <!-- ============ 五個鉤子掛在哪 ============ -->
