@@ -104,7 +104,7 @@
 <!-- ============ 三步開始 ============ -->
 <section>
   <h2>開始</h2>
-  <h3>三件事，不到五分鐘</h3>
+  <h3>三件事</h3>
 
   <div class="steps">
     <div class="step">
@@ -144,9 +144,10 @@ device/ssd/
 
   <div class="stuck" style="margin-top:20px">
     <div class="st">
-      <div class="st-q">不要修改 <code>device/default/</code></div>
-      <div class="st-a">它在 repo 裡，而每次建置都會<strong>無條件覆蓋</strong>。
-      你自己新增的目錄因為 repo 裡沒有同名檔案，不會被覆蓋也不會被刪。</div>
+      <div class="st-q">不要改 <code>device/default/</code></div>
+      <div class="st-a">建置會把 repo 的 <code>scripts/</code> 複製到執行檔旁邊，
+      <strong>同名檔一律覆蓋</strong> —— 改在 <code>default/</code> 的東西，下一次建置就沒了。<br>
+      你自己新增的目錄 repo 裡沒有同名檔，不會被覆蓋，也不會被刪。</div>
     </div>
   </div>
 </section>
