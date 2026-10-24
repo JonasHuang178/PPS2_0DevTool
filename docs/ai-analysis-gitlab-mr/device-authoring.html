@@ -29,7 +29,7 @@
 
   <div class="fig-wrap">
   <svg class="fig" viewBox="0 0 800 312" role="img"
-       aria-label="五步流程圖：步驟 1 沒有鉤子，步驟 2 到 5 各掛一或兩支 device 可以覆寫的鉤子檔案">
+       aria-label="五步流程圖：步驟 1 沒有擴充腳本，步驟 2 到 5 各掛一或兩支 device 可以覆寫的擴充腳本檔案">
     <text class="f-cap" x="8" y="13">流程 — 五個步驟都會跑，順序固定</text>
     <rect class="f-pipe" x="8" y="24" width="784" height="70" rx="14"/>
     <rect class="f-fix" x="22"  y="40" width="144" height="38" rx="9"/>
@@ -50,7 +50,7 @@
     <line class="f-link" x1="702" y1="94" x2="702" y2="124"/>
 
     <text class="f-entryt" x="94" y="150" text-anchor="middle">..._description.py</text>
-    <text class="f-none"   x="94" y="172" text-anchor="middle">沒有鉤子</text>
+    <text class="f-none"   x="94" y="172" text-anchor="middle">沒有擴充腳本</text>
 
     <rect class="f-dev" x="174" y="124" width="144" height="64" rx="10"/>
     <text class="f-file" x="188" y="150">jira_key.py</text>
@@ -77,9 +77,9 @@
   </div>
 </section>
 
-<!-- ============ 五個鉤子掛在哪 ============ -->
+<!-- ============ 五支擴充腳本掛在哪 ============ -->
 <section>
-  <h2>五個鉤子</h2>
+  <h2>五支擴充腳本</h2>
   <h3>掛在五步流程的哪幾個位置</h3>
 
   <div class="hooks">
@@ -145,7 +145,7 @@ device/ssd/
   <div class="stuck" style="margin-top:20px">
     <div class="st">
       <div class="st-q">不要改 <code>device/default/</code></div>
-      <div class="st-a">它是<strong>所有 device 的共同後備</strong>：每一支沒有被覆寫的鉤子
+      <div class="st-a">它是<strong>所有 device 的共同後備</strong>：每一支沒有被覆寫的擴充腳本
       都會落到它身上，別條產品線的也一樣。改 <code>default/</code> 等於同時改掉所有人的行為。<br>
       要不一樣的做法，在自己的目錄裡放一支同名檔覆寫它就好。</div>
     </div>
@@ -154,7 +154,7 @@ device/ssd/
 
 <!-- ============ 回退 ============ -->
 <section>
-  <h2>回退是逐鉤子的</h2>
+  <h2>回退是逐支的</h2>
   <h3>不是「整個 device 找不到就用 default」，是一支一支找</h3>
 
   <div class="term"><span class="c">PPS_DEVICE=ssd，這筆 MR 的種類是 bug</span>
@@ -185,9 +185,9 @@ device/ssd/
   </div>
 </section>
 
-<!-- ============ 每支鉤子的契約 ============ -->
+<!-- ============ 每支擴充腳本的契約 ============ -->
 <section>
-  <h2>每一支鉤子</h2>
+  <h2>每一支擴充腳本</h2>
   <h3>收什麼、要回什麼</h3>
   <p class="lead muted">中間怎麼寫完全自由 —— 自己打 HTTP、換一套 prompt 架構、
   完全不問 AI 都可以。契約只有兩端。</p>
@@ -246,7 +246,7 @@ device/ssd/
         這裡回 <code>"fw_update"</code>。</div>
       </div>
     </div>
-    <div class="io-note">回傳<strong>非字串</strong>會直接失敗（那是鉤子寫壞了）；
+    <div class="io-note">回傳<strong>非字串</strong>會直接失敗（那是擴充腳本寫壞了）；
     回傳不合法的字串（<code>緊急</code>、<code>bug fix</code>）視同沒有種類，不報錯。</div>
   </div>
 
@@ -370,7 +370,7 @@ device/ssd/
           <div class="spec-v">在 <code>__init__.py</code> 宣告 <code>VERSION</code>
             <span class="dim">—— 沒有就直接失敗</span></div>
           <div class="spec-k">3</div>
-          <div class="spec-v">只留你要覆寫的鉤子，其餘刪掉
+          <div class="spec-v">只留你要覆寫的擴充腳本，其餘刪掉
             <span class="dim">—— 缺的各自用 <code>default</code> 的</span></div>
           <div class="spec-k">4</div>
           <div class="spec-v">設定檔 <code>PPS_Device</code> 填名字
@@ -384,9 +384,9 @@ device/ssd/
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span>回退機制：沒放的鉤子會用哪一份？</span></div>
+      <div class="qa-q"><span>回退機制：沒放的擴充腳本會用哪一份？</span></div>
       <div class="qa-a"><span>
-        <strong>逐支鉤子各自找</strong>，不是整個 device 一起退。
+        <strong>逐支擴充腳本各自找</strong>，不是整個 device 一起退。
         <div class="spec">
           <div class="spec-grp">解析順序</div>
           <div class="spec-k">兩層</div>
@@ -493,7 +493,7 @@ merge_to_md → default/merge_to_md.py</div></div>
             <span class="dim">結論三選一：<code>PASS</code> / <code>FAIL</code> /
             <code>UNKNOWN</code>。判不出來回 <code>UNKNOWN</code>，不要猜</span></div>
         </div>
-        <p class="spec-note">💡 <strong>只是節名不同的話不必寫鉤子</strong> ——
+        <p class="spec-note">💡 <strong>只是節名不同的話不必寫擴充腳本</strong> ——
         在 <code>__init__.py</code> 宣告 <code>CODE_REVIEW_SOURCE_HEADING</code> 就好。</p>
       </span></div>
     </div>

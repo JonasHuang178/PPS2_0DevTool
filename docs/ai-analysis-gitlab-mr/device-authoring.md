@@ -1,9 +1,9 @@
 # 寫自己的 device
 
 > 怎麼讓一條產品線有自己的分析邏輯與報告版面：兩個產物的格式、AI 客戶端、prompt、
-> 鉤子收到的素材、device 與 type 兩個軸，以及新增一個 device 的步驟。
+> 擴充腳本收到的素材、device 與 type 兩個軸，以及新增一個 device 的步驟。
 >
-> 功能本身的畫面與行為在 [README.md](README.md)。鉤子的**權威**輸入規格是
+> 功能本身的畫面與行為在 [README.md](README.md)。擴充腳本的**權威**輸入規格是
 > [`scripts/ai_analysis_gitlab_mr/device/_template/`](../../scripts/ai_analysis_gitlab_mr/device/_template/)
 > 各檔的 docstring —— 這份文件講的是為什麼，範本講的是確切的鍵名。
 
@@ -54,15 +54,15 @@
 - `jira_state` 是 `ok` / `none` / `invalid` 三選一。`invalid` 時 `jira_key` 留的是
   **被拒絕的原值**（例如標題第一個方括號放的是 `WIP`），但它只留在產物的資料裡 ——
   `invalid` 時「詳細資料」那一節整個不出現，所以**報告上看不到**（出處也不印它，見 [README.md](README.md) 的「報告的版面」一節）
-- `provider` 與 `model` 由**鉤子**填（版本 8 起才有 `provider`），只印在報告出處的 AI 那一行
+- `provider` 與 `model` 由**擴充腳本**填（版本 8 起才有 `provider`），只印在報告出處的 AI 那一行
   （`` **AI** **Provider** `openai` | **Model** `gpt-4o` ``），缺哪一半就省略哪一半。
   取得方式見下面「呼叫 AI」的**必要步驟**
 - `mr_type` 是這一筆的種類，決定步驟 5 用哪一份版面；沒有種類時是空字串。它由**入口
-  腳本蓋章**，device 的鉤子不必填（填了也會被覆蓋）
+  腳本蓋章**，device 的擴充腳本不必填（填了也會被覆蓋）
 - 某個檔案的清單為空時，該檔案整個不出現，編號也只算實際出現的檔案
 - `coverage` 是這次分析涵蓋了多少（見上一節）。四類缺口加上 `skipped`（版本 7 起）各自
-  有精確的 `count` 與一份有長度上限的 `paths`。它同樣由**入口腳本蓋章**，鉤子填了會被覆蓋 —— 而且理由比
-  `mr_type` 更強：這份數字就是用來檢查鉤子回報了多少的
+  有精確的 `count` 與一份有長度上限的 `paths`。它同樣由**入口腳本蓋章**，擴充腳本填了會被覆蓋 —— 而且理由比
+  `mr_type` 更強：這份數字就是用來檢查擴充腳本回報了多少的
 - `hunkHeader` 是**模型原本指的那個位置**，原樣留著（版本 6 起）。它與 `diffCode` 是
   兩回事：`diffCode` 是解析成功後從差異切出來的那一段，解析不出來就是空的；`hunkHeader`
   則不論解析成不成功都在。報告靠它把「指向同一個位置的數筆發現」收成一組 —— 只留
@@ -77,7 +77,7 @@
   `03_summary.json` 單獨重跑步驟 5 看版面，只認最新版會讓那個迴路每次改版就斷一次
 - 建構用 `ai_analysis_gitlab_mr` 的 `finding()` 與 `analysis_body()`，不要自己寫
   dict literal —— 欄位名散在寫入側與讀取側兩邊，改名漏一邊就是安靜地少一段
-- `schema_version` **由入口腳本蓋章**，device 的鉤子只回 `analysis` 的內容。入口收到
+- `schema_version` **由入口腳本蓋章**，device 的擴充腳本只回 `analysis` 的內容。入口收到
   之後會立刻驗證，不符合就在**產生它的那一步**失敗，訊息點名是哪個 device
 
 舊的 `{"summary": "一段文字"}` 仍然收得下，渲染時原樣接上。
@@ -107,7 +107,7 @@
   dict 被 `str()` 起來會變成 `{'a': 1}` 然後原樣印進報告
 - `risk_table` 是**原樣**的表格，不對齊、不排序、不改欄序。欄位名稱因 device 而異，
   任何正規化都可能弄壞某一個 device 的表格
-- `review_result` 是**那份審閱的結論**（版本 2 起），由 `parse_code_review` 鉤子判定：
+- `review_result` 是**那份審閱的結論**（版本 2 起），由 `parse_code_review` 擴充腳本判定：
   `"pass"` / `"fail"` / `""`（判不出來）。另外檢查值域 —— 一個拼錯的 `"PASSED"` 印進
   報告比不印更糟，讀的人會以為那是真的結論
 - **叫 `review_result` 而不是 `result`。** 回應信封最外層已經有 `result`（`PASS`/`FAIL`），
@@ -149,7 +149,7 @@ as_json(text, require=())   strip_fence(text)
 `_build_payload()`、回應取值在 `_extract_reply()`、認證標頭在 `_headers()`。換服務
 改這三支，重試那一段完全不用碰。
 
-鉤子收到的是**連線字串** `inputs["ai_connection"]`：provider、端點與 shareCode 以冒號相接。
+擴充腳本收到的是**連線字串** `inputs["ai_connection"]`：provider、端點與 shareCode 以冒號相接。
 Qt 用設定檔的 `Provider` 與 `Api_URL` 組出它，CI 由 `AI_API_URL` 直接給：
 
 ```
@@ -163,7 +163,7 @@ provider        端點         shareCode
 
 ### 必要步驟：拆連線字串、查模型名稱
 
-**每一個 device 的 AI 分析鉤子都必須做這兩件事**，並把結果寫進分析結構。報告出處的 AI 那
+**每一個 device 的 AI 分析擴充腳本都必須做這兩件事**，並把結果寫進分析結構。報告出處的 AI 那
 一行只讀它們；沒做不會失敗，只是出處少了那一行 —— 一個不會報錯的遺漏，所以範本的程式碼
 裡就有這一段，複製時一起帶上：
 
@@ -291,13 +291,13 @@ debug console、崩潰時還會進 `crash.log`。端點印得出來是因為它�
 真的遇到模型漏回報的人把它設成 1 或 2。那是明知的取捨：多等一倍的時間，換模型再擷取一次
 樣本的機會。
 
-> **迴圈在入口腳本，不在 device 的鉤子裡。** 理由與涵蓋範圍由入口蓋章完全相同：判斷
-> 「回報得夠不夠」要拿鉤子的輸出對照入口手上那份差異，而讓被檢查的一方決定自己要不要
-> 重做，這個機制就等於不存在。放在入口同時讓**每一個 device 都免費得到這個行為**，鉤子
+> **迴圈在入口腳本，不在 device 的擴充腳本裡。** 理由與涵蓋範圍由入口蓋章完全相同：判斷
+> 「回報得夠不夠」要拿擴充腳本的輸出對照入口手上那份差異，而讓被檢查的一方決定自己要不要
+> 重做，這個機制就等於不存在。放在入口同時讓**每一個 device 都免費得到這個行為**，擴充腳本
 > 完全不知道自己被問了第幾次。
 >
-> 已知代價：每一輪都重新呼叫一次鉤子，所以有 JIRA issue 的那幾次會多打一趟 JIRA。要省
-> 掉它得把鉤子拆成「準備」與「問」兩段，而那會改掉所有 device 的介面 —— 對一個預設關閉
+> 已知代價：每一輪都重新呼叫一次擴充腳本，所以有 JIRA issue 的那幾次會多打一趟 JIRA。要省
+> 掉它得把擴充腳本拆成「準備」與「問」兩段，而那會改掉所有 device 的介面 —— 對一個預設關閉
 > 的功能不值得。
 
 **`0` 對兩個次數都是合法值**，那正是「服務很忙時不要再等」的那一個。但逾時不能是 0 —— 那不是
@@ -443,7 +443,7 @@ print(load_hook('summary')[0].build_prompt({
 
 ## 素材怎麼來
 
-第 3 步在呼叫鉤子**之前**把素材備好，鉤子拿到的是現成的內容：
+第 3 步在呼叫擴充腳本**之前**把素材備好，擴充腳本拿到的是現成的內容：
 
 完整的 `inputs`（權威版本是 `device/_template/summary.py` 的 docstring，範本就在手邊，
 不必翻這份文件）：
@@ -489,7 +489,7 @@ print(load_hook('summary')[0].build_prompt({
 | `progress` | `progress(text)`，在那個固定尺寸對話框上顯示一行字 |
 | `log_write` | `log_write(檔名, 內容)`，沒勾選 `Save run log` 時什麼都不做。檔名會自動帶上這一步的前綴（例如 `03_summary_`） |
 
-**送出之前自己報一行 `progress`。** 入口腳本在呼叫鉤子前只報「準備 AI 分析…」—— 它不知道
+**送出之前自己報一行 `progress`。** 入口腳本在呼叫擴充腳本前只報「準備 AI 分析…」—— 它不知道
 你接下來要做什麼，也不知道你什麼時候真的送出去。不報的話，等回覆那幾分鐘畫面上留著的會是
 你做完的上一件事，而盯著它看兩分鐘，合理的結論是程式當掉了。
 
@@ -498,14 +498,14 @@ print(load_hook('summary')[0].build_prompt({
 
 **JIRA 是函式而不是現成內容**，因為「key 有沒有效」是 device 的政策，入口不認得。先抓
 的話，`[WIP]`、`[Draft]` 這種從標題方括號擷取出來的字串每次都會白打一趟 JIRA 換回 404。
-鉤子判定有效之後再呼叫它。查不到不會讓流程失敗，prompt 少那一段而已。
+擴充腳本判定有效之後再呼叫它。查不到不會讓流程失敗，prompt 少那一段而已。
 
 ## device：讓每條產品線有自己的分析邏輯
 
 一個 MR 該怎麼分析，會因為它屬於哪一條產品線而不同 —— SD 與 SSD 要問 AI 的問題不一樣，
 報告要怎麼排也不一樣。所以流程中**四個步驟**的業務運算可以按 device 客製：
 
-| 步驟 | 鉤子 | device 決定 | 因種類而異 |
+| 步驟 | 擴充腳本 | device 決定 | 因種類而異 |
 |---|---|---|---|
 | 2 | `jira_key.py` | 怎麼從 MR 擷取出 JIRA key | 否 |
 | 2 | `mr_type.py` | 怎麼從 MR 擷取出**種類** | 否 |
@@ -521,17 +521,17 @@ print(load_hook('summary')[0].build_prompt({
 |---|---|
 | `CODE_REVIEW_SOURCE_HEADING` | 在附件那份文件裡找哪一節才找得到總表 |
 
-那是一個**宣告**，不是鉤子：讀它本身不會執行任何 device 的程式碼，所以宣告寫壞了可以
+那是一個**宣告**，不是擴充腳本：讀它本身不會執行任何 device 的程式碼，所以宣告寫壞了可以
 在任何網路往來之前就擋下來。它的值由入口讀出來、當 `heading` 傳給 `parse_code_review`
-鉤子 —— 既有 device 的宣告因此不必改，而「要找哪一節」仍然只有一個地方決定。
+擴充腳本 —— 既有 device 的宣告因此不必改，而「要找哪一節」仍然只有一個地方決定。
 
-**步驟 4 的分工是「取得在入口，看懂在鉤子」。** 查議題附件、依前綴挑最新那一份、擋大小
+**步驟 4 的分工是「取得在入口，看懂在擴充腳本」。** 查議題附件、依前綴挑最新那一份、擋大小
 上限、下載、解碼都留在入口：那些要 JIRA 權杖，而權杖不交給 device 的程式碼；附件的挑選
-規則與大小上限也不該每個 device 重寫一次。鉤子拿到的是現成的全文。
+規則與大小上限也不該每個 device 重寫一次。擴充腳本拿到的是現成的全文。
 
 `parse_code_review` 不因種類而異，但它的理由與前兩支**不一樣**，值得分開講：
 
-| 鉤子 | 看得到種類嗎 | 為什麼不依種類解析 |
+| 擴充腳本 | 看得到種類嗎 | 為什麼不依種類解析 |
 |---|---|---|
 | `jira_key`、`mr_type` | **否** | 它們在步驟 2 執行，種類那時候還不存在（`mr_type.py` 正是產生它的那一支） |
 | `parse_code_review` | **是** | 它在步驟 4 執行，看得到種類 —— 但**刻意不用** |
@@ -543,7 +543,7 @@ print(load_hook('summary')[0].build_prompt({
 **需要支援第二種審閱報告格式時，另開一個 device** —— 那正是 device 這一軸存在的意義。
 
 為了讓這個決定不會被下一個人當成疏漏改掉，spec 把它寫成了正面的禁令（`SHALL NOT` 依種類
-解析、`MUST NOT` 收到種類），並以 scenario 鎖住：種類目錄裡放了一份解析鉤子也**不會**被
+解析、`MUST NOT` 收到種類），並以 scenario 鎖住：種類目錄裡放了一份解析擴充腳本也**不會**被
 載入。
 
 「種類」是第二個軸，見下面的 type 一節。
@@ -553,7 +553,7 @@ scripts/ai_analysis_gitlab_mr/device/
   default/          未指定時用這一份，也是所有 device 的後備
   _template/        範本（底線開頭，不是 device）
     _type_template/ 種類目錄的範本
-  ssd/              只放想覆寫的鉤子
+  ssd/              只放想覆寫的擴充腳本
     bug/            一個種類，一樣只放想覆寫的
 ```
 
@@ -570,8 +570,8 @@ PPS_DEVICE = sdd         ->  失敗，訊息列出目前認得哪些
 **未知的 device 是錯誤，不是退回 default。** 指定一個不存在的名字代表打錯字或忘記部署，
 靜默改用通用邏輯會產出一份用錯邏輯、而每一步都回報成功的報告。
 
-**回退是逐鉤子的，不是逐 device。** `device/ssd/` 只放 `merge_to_md.py` 是合法的，
-缺的鉤子自動用 `default` 的 —— 只想改報告版面的 device 不必複製一整支 summary，
+**回退是逐支的，不是逐 device。** `device/ssd/` 只放 `merge_to_md.py` 是合法的，
+缺的擴充腳本自動用 `default` 的 —— 只想改報告版面的 device 不必複製一整支 summary，
 而那份複本會跟著 default 漂移。
 
 認得哪些 device 由**掃目錄**決定，沒有註冊表：放一個目錄進去就是新增一個 device。
@@ -606,7 +606,7 @@ mod:[PPS-1234][Bug] 修正重試上限
               ^^^^^ ssd/mr_type.py 取這個 -> "Bug" -> 轉小寫 -> bug/
 ```
 
-擷取出來的字一律轉小寫比對，所以 `[NewTestCase]` 對應到 `newtestcase/`。鉤子也可以做
+擷取出來的字一律轉小寫比對，所以 `[NewTestCase]` 對應到 `newtestcase/`。擴充腳本也可以做
 **映射**：標題寫 `[FW-Update]`、回 `"fw_update"`，目錄名維持合法識別字。
 
 它與 `jira_key.py` 在**同一步、同一次 GitLab 取得**裡跑完，不會多一次連線。
@@ -625,7 +625,7 @@ mod:[PPS-1234][Bug] 修正重試上限
 
 例如 `PPS_DEVICE=ssd`、種類 `bug`：
 
-| 鉤子 | 找的順序 | 上面那個例子的結果 |
+| 擴充腳本 | 找的順序 | 上面那個例子的結果 |
 |---|---|---|
 | `summary` | `ssd/bug/` → `ssd/` → `default/` | `ssd/bug/summary.py` |
 | `merge_to_md` | `ssd/bug/` → `ssd/` → `default/` | `default/merge_to_md.py` |
@@ -669,7 +669,7 @@ STRICT_TYPE = True
   device ssd 認不得 type：refactor    目前認得的是：bug、newtestcase
   ```
 
-- **只管種類本身認不認得，不要求種類目錄放齊鉤子。** `bug/` 底下只有 `summary.py` 時，
+- **只管種類本身認不認得，不要求種類目錄放齊擴充腳本。** `bug/` 底下只有 `summary.py` 時，
   `merge_to_md` 照常回退，即使 `STRICT_TYPE = True`。否則開一個種類就得放齊四支
 
 ### 種類怎麼傳下去
@@ -687,8 +687,8 @@ STRICT_TYPE = True
 ```
 
 步驟 5 從**產物**讀而不是由 Qt 再轉送一次：Qt 只需要改一行，而且種類被記進產物，可以
-印在報告出處（`Type: bug`），也留給其他消費者。種類由**入口腳本蓋章**，鉤子不填 ——
-與 `schema_version` 同一個理由，讓鉤子填遲早有人複製範本時忘記。
+印在報告出處（`Type: bug`），也留給其他消費者。種類由**入口腳本蓋章**，擴充腳本不填 ——
+與 `schema_version` 同一個理由，讓擴充腳本填遲早有人複製範本時忘記。
 
 ## 新增一個 device
 
@@ -702,7 +702,7 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 小寫英數與底線、不以數字開頭。`ssd_gen4` 可以，`ssd-gen4` 不行。比對時不分大小寫，
 設定檔寫 `SSD` 也找得到 `ssd`。
 
-五個鉤子都是選用的，只放你要覆寫的；要再依種類分開就多開子目錄（見上面的 type 一節）。
+五支擴充腳本都是選用的，只放你要覆寫的；要再依種類分開就多開子目錄（見上面的 type 一節）。
 
 但 `__init__.py` 的 `VERSION` **一定要有** —— 沒宣告會直接失敗。那個版本會印在報告末尾
 （`Device: ssd v1.2`），**改了產出方式就把它往上加**；不加的話，用舊邏輯與新邏輯產生的
@@ -712,7 +712,7 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 範本已經以註解列好，不必翻文件。兩者都是選填，未宣告就落到預設值 —— 所以 `default/`
 刻意兩個都不宣告（在那裡重複一次預設值，日後改預設值就有兩個地方要改）。
 
-寫鉤子時請用這些共用函式，不要自己重寫：
+寫擴充腳本時請用這些共用函式，不要自己重寫：
 
 | | |
 |---|---|
@@ -721,8 +721,8 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 | `contract.hunk_of(diff, path, header)` | 依 AI 給的 `@@` 標頭，從 diff 切出那個 hunk |
 | `contract.hunk_header_of(text)` | 從一段文字裡擷取出 `@@` 標頭並正規化（嚴格：要求結尾的 `@@`） |
 | `contract.hunk_range_of(text)` | 從一段文字裡擷取出 hunk 的行號 `(舊起點, 舊行數, 新起點, 新行數)`（寬鬆：不要求結尾的 `@@`） |
-| `contract.extract_risk_table(text, heading)` | 擷取某一節裡的第一張表格（`parse_code_review` 鉤子用） |
-| `contract.code_review_parsed(...)` | 組 `parse_code_review` 鉤子的回傳值 |
+| `contract.extract_risk_table(text, heading)` | 擷取某一節裡的第一張表格（`parse_code_review` 擴充腳本用） |
+| `contract.code_review_parsed(...)` | 組 `parse_code_review` 擴充腳本的回傳值 |
 | `contract.REVIEW_RESULT_PASS` / `_FAIL` / `_UNKNOWN` | 審閱結論的三個值 |
 | `contract.finding(...)` / `contract.analysis_body(...)` | 組分析結構 |
 | `contract.jira_url(key)` | 組 JIRA 網址 |
@@ -738,12 +738,12 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 `fence_for()` 特別重要：寫死三個反引號的話，內容本身含反引號的 diff（改到 markdown 檔
 就會）會讓程式碼區塊提前結束，而報告仍然「成功」產出。
 
-**`# AI 分析結果` 那一行不歸 device 管。** `merge_to_md` 的鉤子只回傳「那個標題底下的
+**`# AI 分析結果` 那一行不歸 device 管。** `merge_to_md` 的擴充腳本只回傳「那個標題底下的
 內容」，標題本身、原始描述那一段、分隔線與末尾的出處都由入口腳本寫出。原因是那一行
 同時是下一輪切出原始描述的邊界 —— 某個 device 把它寫成別的字，下一輪就找不到邊界，
 整份舊報告被當成原始描述，於是每跑一次疊一段，而每一步都回報成功。
 
-> **不要改 `device/default/`。** 它是所有 device 的共同後備 —— 每一支沒有被覆寫的鉤子
+> **不要改 `device/default/`。** 它是所有 device 的共同後備 —— 每一支沒有被覆寫的擴充腳本
 > 都會落到它身上，別條產品線的也一樣，所以改它等於同時改掉所有人的行為。要客製就
 > **新增自己的目錄**，只放要覆寫的那幾支。
 

@@ -226,7 +226,7 @@ footer a { color: var(--accent); }
   .num { width: 50px; height: 50px; font-size: 22px; }
 }
 
-/* ---------- 掛點圖（步驟 → 鉤子 → 簽章） ----------
+/* ---------- 掛點圖（步驟 → 擴充腳本 → 簽章） ----------
  *
  * 用 grid 而不是在 <pre> 裡用空格對齊：等寬字型對 CJK 走的是後備字型，
  * 字寬不保證是拉丁字元的兩倍，所以用字元數算出來的欄位在別台機器上會跑掉。 */
@@ -308,7 +308,7 @@ footer a { color: var(--accent); }
 
 /* ---------- Q&A 裡的規格表 ----------
  *
- * 每一支鉤子的答案都是同一組欄位，而且明著分成兩組：default 現在怎麼做、
+ * 每一支擴充腳本的答案都是同一組欄位，而且明著分成兩組：default 現在怎麼做、
  * 你要寫什麼。分組做成表頭而不是靠排版暗示，是因為讀者來這裡時多半已經知道
  * 自己要的是哪一半，分組讓他直接跳過另一半。
  *
@@ -360,7 +360,7 @@ footer a { color: var(--accent); }
 
 /* ---------- 流程圖 ----------
  *
- * 用 SVG 而不是一堆 div：五格要與下面的鉤子欄位對齊，grid 做得到，但窄螢幕上
+ * 用 SVG 而不是一堆 div：五格要與下面的擴充腳本欄位對齊，grid 做得到，但窄螢幕上
  * 會各自換行、對齊就散了。SVG 整張等比縮放，手機上只是變小，關係不會變。
  *
  * 顏色一律取 CSS 變數（不寫死色碼），深色模式才跟著換。字級直接寫在類別上，
@@ -382,8 +382,8 @@ footer a { color: var(--accent); }
 .fig .f-file { font: 700 11.5px var(--mono); fill: var(--accent); }
 .fig .f-filet{ font: 700 11.5px var(--mono); fill: var(--ok); }
 .fig .f-q    { font-size: 12px; fill: var(--ink2); }
-/* 沒有鉤子的那一欄（步驟 1）：執行它的入口腳本，灰色等寬、不加方框 ——
-   有方框的才是你可以覆寫的鉤子 */
+/* 沒有擴充腳本的那一欄（步驟 1）：執行它的入口腳本，灰色等寬、不加方框 ——
+   有方框的才是你可以覆寫的擴充腳本 */
 .fig .f-entryt{ font: 500 10.5px var(--mono); fill: var(--ink2); }
 .fig .f-none  { font-size: 12px; fill: var(--ink2); }
 .fig .f-link { stroke: var(--ink2); stroke-dasharray: 3 3; opacity: .55; }

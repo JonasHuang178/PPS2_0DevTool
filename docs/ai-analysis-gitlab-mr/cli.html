@@ -130,7 +130,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
       <div class="io-cell">
         <div class="io-k">做什麼</div>
         <div class="io-v">自己再連一次 GitLab 取 MR（擷取 key 讀的是<strong>標題</strong>,
-        而第 1 步的產物只有描述本文）,交給 device 的兩支鉤子擷取出 key 與種類。</div>
+        而第 1 步的產物只有描述本文）,交給 device 的兩支擴充腳本擷取出 key 與種類。</div>
       </div>
       <div class="io-cell">
         <div class="io-k">吐什麼</div>
@@ -138,7 +138,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
         <span class="muted">內含 <code>jira_key</code>、<code>mr_type</code></span></div>
       </div>
     </div>
-    <div class="io-note">種類會決定第 3、5 步載入哪一份鉤子,所以這一步的輸出要讀出來餵給後面。</div>
+    <div class="io-note">種類會決定第 3、5 步載入哪一份擴充腳本,所以這一步的輸出要讀出來餵給後面。</div>
   </div>
 
   <!-- 3 -->
@@ -161,7 +161,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
       <div class="io-cell">
         <div class="io-k">做什麼</div>
         <div class="io-v">自己去 GitLab 取差異、組 prompt、問 AI、解析回覆。
-        組 prompt 與解析都在 device 的 <code>summary</code> 鉤子裡。</div>
+        組 prompt 與解析都在 device 的 <code>summary</code> 擴充腳本裡。</div>
       </div>
       <div class="io-cell">
         <div class="io-k">吐什麼</div>
@@ -192,7 +192,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
       <div class="io-cell">
         <div class="io-k">做什麼</div>
         <div class="io-v">去那張單子上找檔名前綴相符的 <code>.md</code> 附件,
-        下載、解碼,交給 device 的 <code>parse_code_review</code> 鉤子擷取風險評估表。</div>
+        下載、解碼,交給 device 的 <code>parse_code_review</code> 擴充腳本擷取風險評估表。</div>
       </div>
       <div class="io-cell">
         <div class="io-k">吐什麼</div>
@@ -224,7 +224,7 @@ W=/tmp/pps-work &amp;&amp; mkdir -p "$W"</div>
       <div class="io-cell">
         <div class="io-k">做什麼</div>
         <div class="io-v">純排版,不再問任何人。分析那一段的版面由 device 的
-        <code>merge_to_md</code> 鉤子決定。</div>
+        <code>merge_to_md</code> 擴充腳本決定。</div>
       </div>
       <div class="io-cell">
         <div class="io-k">吐什麼</div>
