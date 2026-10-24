@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
-"""default device 的步驟 2 擴充腳本：從 Merge Request 標題擷取出 JIRA key。
+"""default device 的步驟 2 擴充腳本：**不擷取** JIRA key。
 
-慣例是 key 寫在標題的第一個方括號裡：
+default 刻意不猜 JIRA key 寫在哪裡 —— 標題慣例是各產品線自己的約定，猜錯的症狀是報告上
+印出一個看似有效、其實是從別的方括號撈來的 key，而那要看報告才看得見。所以這裡一律回
+空字串，等於「這筆 MR 沒有 JIRA key」。
 
-    [PPS-1234] 修正重試上限的競態      ->  PPS-1234
+要自動擷取的 device 自己寫一份 `jira_key.py`（規則見 `device/_template/jira_key.py`）。
+在那之前，JIRA 模式選「手動指定」照樣可用 —— 手動的值由入口腳本處理，根本不會呼叫這裡。
 
-**這裡不判定有效性**，擷取到什麼就回什麼。判定在 summary.py —— 擷取規則與判定規則同屬
-一個 device，放在一起才不會各自漂移。所以像 `[WIP] [PPS-1234] ...` 這種標題，這裡會
-回 `WIP`，由 summary.py 判定它不合格。
+回空字串不是錯誤：入口腳本會把 jira_key 記成「(無)」，流程照常往下走。
 """
-
-import re
-
-# 第一個方括號裡的內容。非貪婪，且不跨行 —— 標題本來就是一行。
-_FIRST_BRACKET = re.compile(r"\[([^\]\n]*)\]")
 
 
 def extract(mr):
-    """擷取出標題第一個方括號裡的字串；沒有就回空字串。"""
-    title = mr.get("title") or ""
-    match = _FIRST_BRACKET.search(title)
-    if not match:
-        return ""
-    return match.group(1).strip()
+    """一律回空字串 —— default 不擷取 JIRA key。
+
+    收到的 mr 是整理過的欄位（title / source_branch / target_branch / description /
+    repo / mr_iid），這裡刻意不看。
+    """
+    return ""

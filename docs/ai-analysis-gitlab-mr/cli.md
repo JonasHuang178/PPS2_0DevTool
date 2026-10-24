@@ -40,7 +40,7 @@
 |---|---|
 | `description_path` 或 `description` | 步驟 1 的產物。手上是檔案就用前者，是字串就用後者 |
 | `jira_key`、`mr_type` | 步驟 2 的產物 |
-| `jira_mode` | `auto` 從標題第一個方括號擷取 / `manual` 用 `jira_key_manual` / `none` 不用 |
+| `jira_mode` | `auto` 呼叫該 device 的 `jira_key.py` 擷取（**預設 device 不擷取**，結果一律為空）/ `manual` 用 `jira_key_manual` / `none` 不用 |
 | `ai_connection` | 要問哪一個 AI：連線字串 `provider:端點:shareCode`，例如 `openai:https://主機/api/external/v1/chat:CODE`。provider 可省略，省略時報告出處沒有 provider |
 | `ai_api_key` | AI 金鑰 |
 | `ai_timeout`、`ai_retries`、`ai_reask`、`ai_recheck` | 四個等待設定。不給就用腳本自己的預設（120 / 3 / 1 / 0） |

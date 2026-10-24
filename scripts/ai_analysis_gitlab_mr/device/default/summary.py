@@ -126,10 +126,10 @@ NO_DESCRIPTION = u"（作者沒有填寫描述）"
 
 # 認得的 JIRA key 樣式：大寫專案碼 + 連字號 + 數字。
 #
-# 收得這麼緊是有理由的：擷取那一支拿的是標題第一個方括號，而 [WIP]、[Draft]、[Hotfix]
-# 這類前綴非常常見。放寬成「非空字串就算數」的話，jira_key 會變成 "WIP"，然後被拿去
-# 組 prompt 或查 JIRA —— 得到一個查不到的 issue，或一段引用了錯誤 issue 的分析，而
-# 每一步都回報成功。
+# 收得這麼緊是有理由的：這裡收到的 key 可能來自使用者手動輸入，也可能來自某個 device
+# 自己的擷取規則（default 自己不擷取），而 WIP、Draft、Hotfix 這類字串從兩邊都進得來。
+# 放寬成「非空字串就算數」的話，jira_key 會變成 "WIP"，然後被拿去組 prompt 或查 JIRA
+# —— 得到一個查不到的 issue，或一段引用了錯誤 issue 的分析，而每一步都回報成功。
 #
 # 這是 default 的政策，不是全域規則。key 格式不同的產品線自己寫一份 summary.py 即可。
 _JIRA_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
@@ -362,8 +362,8 @@ def parse_reply(data, diff_text=""):
 def _jira_state(mode, key):
     """判定這次的 JIRA 狀態。回傳 (state, key)。
 
-    key 無效時**原值原樣留著** —— 報告會印出 `JIRA: WIP (invalid)`，讀的人一眼就知道
-    標題的第一個方括號放錯了東西。換成 NONE 的話只剩「失敗了」三個字。
+    key 無效時**原值原樣留著** —— 讀的人一眼就知道進來的是 `WIP` 這種不是 key 的字串，
+    而不只是「沒有」。換成 NONE 的話只剩「失敗了」三個字。
     """
     if mode == "none" or not key:
         return contract.JIRA_STATE_NONE, ""
@@ -472,8 +472,9 @@ def analyze(inputs):
 
     # 確認有效**之後**才去抓 issue 的內容。
     #
-    # 順序有意義：擷取那一支拿的是 MR 標題的第一個方括號，而 [WIP]、[Draft] 非常
-    # 常見。先抓的話每一次都會為了這種前綴打一趟 JIRA，換回一個 404 和一筆警告。
+    # 順序有意義：進來的 key 可能是手動輸入的，也可能是某個 device 擷取出來的，而
+    # WIP、Draft 這類字串從兩邊都進得來。先抓的話每一次都會為了它打一趟 JIRA，換回
+    # 一個 404 和一筆警告。
     #
     # 抓取本身由入口腳本提供（inputs["fetch_jira"]）—— 憑證與錯誤分類留在那邊，
     # 這裡只決定「這個 key 值不值得去查」。

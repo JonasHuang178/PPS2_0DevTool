@@ -27,7 +27,7 @@ review 工具**，而不是這一筆 MR 是 bug 還是 feature。
 merge_to_md。種類以子目錄表示：
 
     device/ssd/
-      mr_type.py        取標題第二個方括號
+      mr_type.py        取標題第二個方括號（default 不擷取，見 default/mr_type.py）
       bug/summary.py    Bug 專用的 prompt，版面沿用 ssd 的
       newtestcase/      這個種類兩支都覆寫
         summary.py

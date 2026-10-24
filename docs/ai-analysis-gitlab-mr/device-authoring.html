@@ -215,7 +215,7 @@ device/ssd/
       </div>
       <div class="io-cell">
         <div class="io-k">default 的規則</div>
-        <div class="io-v">取標題的<strong>第一個方括號</strong>。</div>
+        <div class="io-v"><strong>不擷取</strong>，一律回 <code>""</code>。</div>
       </div>
     </div>
     <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口統一。</div>
@@ -443,11 +443,10 @@ device/ssd/
         <div class="spec">
           <div class="spec-grp">DEFAULT 的做法</div>
           <div class="spec-k">規則</div>
-          <div class="spec-v">標題的<strong>第一個</strong>方括號</div>
-          <div class="spec-k">範例</div>
-          <div class="spec-v"><code>[PPS-1234] 修正重試上限</code> → <code>PPS-1234</code><br>
-            <code>[WIP] [PPS-1234] 修正…</code> → <code>WIP</code>
-            <span class="dim">（不判定有效性，擷取到什麼就回什麼）</span></div>
+          <div class="spec-v"><strong>不擷取</strong>，一律回 <code>""</code></div>
+          <div class="spec-k">後果</div>
+          <div class="spec-v">自動取得模式下 key 永遠是空的
+            <span class="dim">（手動指定不受影響 —— 那條路不呼叫擴充腳本）</span></div>
           <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
           <div class="spec-v"><code>device/_template/jira_key.py</code></div>
@@ -460,8 +459,8 @@ device/ssd/
           <div class="spec-v">字串。擷取不到回 <code>""</code>
             <span class="dim">（不要回 <code>None</code>）</span></div>
         </div>
-        <p class="spec-note">⚠️ 標題格式與 default 不同的話，<code>mr_type.py</code> 多半要一起寫 ——
-        不然種類會用 default 的規則去擷取，位置是錯的。</p>
+        <p class="spec-note">⚠️ <code>mr_type.py</code> 多半要一起寫 —— 不然種類會回退到 default，
+        而 default 也不擷取，於是永遠是空的。</p>
       </span></div>
     </div>
 
@@ -471,16 +470,18 @@ device/ssd/
         <div class="spec">
           <div class="spec-grp">DEFAULT 的做法</div>
           <div class="spec-k">規則</div>
-          <div class="spec-v">標題的<strong>第二個</strong>方括號
-            <span class="dim">（第一個留給 JIRA key）</span></div>
-          <div class="spec-k">範例</div>
-          <div class="spec-v"><code>mod:[PPS-1234][Bug] 修正…</code> → <code>Bug</code> → 對應 <code>bug/</code> 目錄</div>
+          <div class="spec-v"><strong>不擷取</strong>，一律回 <code>""</code></div>
+          <div class="spec-k">後果</div>
+          <div class="spec-v">種類永遠是空的 → 走該 device 的通用版 <code>summary.py</code> 與
+            <code>merge_to_md.py</code>
+            <span class="dim">（宣告了 <code>STRICT_TYPE</code> 的 device 一定要自己寫一份，
+            否則每一筆都會在步驟 2 失敗）</span></div>
           <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
           <div class="spec-v"><code>device/_template/mr_type.py</code></div>
           <div class="spec-k">改哪裡</div>
           <div class="spec-v"><code>extract(mr)</code><br>
-            <span class="dim">只是要換第幾個方括號的話，複製 <code>default/mr_type.py</code> 改
+            <span class="dim">取第幾個方括號這類規則，複製 <code>device/ssd/mr_type.py</code> 改
             <code>_BRACKET_INDEX</code> 一行就好</span></div>
           <div class="spec-k">輸入</div>
           <div class="spec-v">與 <code>jira_key</code> 完全相同的六個欄位</div>

@@ -52,7 +52,7 @@
   （不進 `coverage.missing`），而報告渲染時整個略過，編號也不跳號。這是「明說沒問題」與
   「根本沒提」唯一的區別方式
 - `jira_state` 是 `ok` / `none` / `invalid` 三選一。`invalid` 時 `jira_key` 留的是
-  **被拒絕的原值**（例如標題第一個方括號放的是 `WIP`），但它只留在產物的資料裡 ——
+  **被拒絕的原值**（例如某個 device 取標題的第一個方括號，而那裡放的是 `WIP`），但它只留在產物的資料裡 ——
   `invalid` 時「詳細資料」那一節整個不出現，所以**報告上看不到**（出處也不印它，見 [README.md](README.md) 的「報告的版面」一節）
 - `provider` 與 `model` 由**擴充腳本**填（版本 8 起才有 `provider`），只印在報告出處的 AI 那一行
   （`` **AI** **Provider** `openai` | **Model** `gpt-4o` ``），缺哪一半就省略哪一半。
@@ -515,6 +515,10 @@ print(load_hook('summary')[0].build_prompt({
 
 步驟 1（取得描述）不因 device 而異。
 
+**預設 device 的 `jira_key.py` 與 `mr_type.py` 不擷取**，一律回空字串 —— 標題的寫法是各條
+產品線自己的約定，共用的預設實作猜錯不會報錯，只會安靜地產生錯的資料。要自動擷取就自己寫
+一份；在那之前 JIRA key 仍可用畫面上的手動指定。
+
 步驟 4 另外讀一個 device **宣告**：
 
 | 宣告 | device 決定 |
@@ -602,7 +606,7 @@ SD 看第三個：
 
 ```
 mod:[PPS-1234][Bug] 修正重試上限
-    ^^^^^^^^^^ jira_key.py 取這個
+    ^^^^^^^^^^ ssd/jira_key.py 取這個
               ^^^^^ ssd/mr_type.py 取這個 -> "Bug" -> 轉小寫 -> bug/
 ```
 
@@ -611,11 +615,11 @@ mod:[PPS-1234][Bug] 修正重試上限
 
 它與 `jira_key.py` 在**同一步、同一次 GitLab 取得**裡跑完，不會多一次連線。
 
-> ⚠️ 標題格式與 default 不同的 device，`jira_key.py` 與 `mr_type.py` **通常要一起寫**。
-> 只寫一支的話另一支會沿用 default 的規則，安靜地擷取到錯的東西 —— 而且**報告上看不出來**：
-> 擷取錯 key 會讓 `jira_state` 變成 `invalid`，「詳細資料」那一節於是整個不出現，被拒絕的
-> 原值只留在 `02_mr_info.json` 與 log 裡；擷取錯種類則是直接套上另一份版面，而每一步都回報
-> 成功。要查就看那兩個產物或 debug console，不要期待報告會告狀。
+> ⚠️ `jira_key.py` 與 `mr_type.py` **通常要一起寫**。只寫一支的話另一支會回退到 default，
+> 而 **default 兩支都不擷取** —— 那一項於是一律是空的：JIRA key 為空時「詳細資料」那一節
+> 整個不出現、步驟 4 的程式碼審閱也整段略過；種類為空時套用的是該 device 的通用版面。
+> 每一步仍然回報成功，要看 `02_mr_info.json` 或 debug console 才知道它是空的，不要期待
+> 報告會告狀。
 
 ### 解析鏈：種類只在自己的 device 之內
 
