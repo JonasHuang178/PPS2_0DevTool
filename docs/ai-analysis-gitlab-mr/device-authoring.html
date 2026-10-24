@@ -444,21 +444,49 @@ device/ssd/
           <div class="spec-grp">DEFAULT 的做法</div>
           <div class="spec-k">規則</div>
           <div class="spec-v"><strong>不擷取</strong>，一律回 <code>""</code></div>
-          <div class="spec-k">後果</div>
-          <div class="spec-v">自動取得模式下 key 永遠是空的
-            <span class="dim">（手動指定不受影響 —— 那條路不呼叫擴充腳本）</span></div>
+        </div>
+
+        <p style="margin:18px 0 0">repo 裡附了一個 <code>ssd</code> 當例子，它的規則是
+        <strong>標題第一個方括號</strong>。同一批標題，兩邊各擷取出：</p>
+
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th>MR 標題</th>
+                <th>default</th>
+                <th class="near">ssd —— 第一個方括號</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>[PPS-1234] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="win">"PPS-1234"</td></tr>
+            <tr><td>mod:[PPS-1234][Bug] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="win">"PPS-1234"</td></tr>
+            <tr><td>[WIP] [PPS-1234] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td>"WIP" <span class="na">← 不判有效性</span></td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <div class="spec">
           <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
-          <div class="spec-v"><code>device/_template/jira_key.py</code></div>
+          <div class="spec-v"><code>device/_template/jira_key.py</code>
+            <span class="dim">（想照 ssd 的規則改，複製 <code>device/ssd/jira_key.py</code> 更快）</span></div>
           <div class="spec-k">改哪裡</div>
-          <div class="spec-v"><code>extract(mr)</code></div>
+          <div class="spec-v"><code>extract(mr)</code> 一支函式</div>
           <div class="spec-k">輸入</div>
           <div class="spec-v"><code>mr</code> 六個欄位：<code>title</code>、<code>source_branch</code>、
-            <code>target_branch</code>、<code>description</code>、<code>repo</code>、<code>mr_iid</code></div>
+            <code>target_branch</code>、<code>description</code>、<code>repo</code>、<code>mr_iid</code>
+            <span class="dim">—— 規則不一定要看標題，從來源分支撈
+            <code>feature/PPS-1234-retry</code> 也可以</span></div>
           <div class="spec-k">輸出</div>
           <div class="spec-v">字串。擷取不到回 <code>""</code>
             <span class="dim">（不要回 <code>None</code>）</span></div>
         </div>
+
         <p class="spec-note">⚠️ <code>mr_type.py</code> 多半要一起寫 —— 不然種類會回退到 default，
         而 default 也不擷取，於是永遠是空的。</p>
       </span></div>
@@ -471,27 +499,60 @@ device/ssd/
           <div class="spec-grp">DEFAULT 的做法</div>
           <div class="spec-k">規則</div>
           <div class="spec-v"><strong>不擷取</strong>，一律回 <code>""</code></div>
-          <div class="spec-k">後果</div>
-          <div class="spec-v">種類永遠是空的 → 走該 device 的通用版 <code>summary.py</code> 與
-            <code>merge_to_md.py</code>
-            <span class="dim">（宣告了 <code>STRICT_TYPE</code> 的 device 一定要自己寫一份，
-            否則每一筆都會在步驟 2 失敗）</span></div>
+        </div>
+
+        <p style="margin:18px 0 0"><code>ssd</code> 的規則是<strong>標題第二個方括號</strong>
+        —— 第一個留給 JIRA key：</p>
+
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th>MR 標題</th>
+                <th>default</th>
+                <th class="near">ssd —— 第二個方括號</th>
+                <th>於是用哪一份</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>mod:[PPS-1234][Bug] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="win">"Bug"</td>
+                <td>ssd/<strong>bug</strong>/</td></tr>
+            <tr><td>[PPS-1234][NewTestCase] 新增開卡案例</td>
+                <td class="empty">""</td>
+                <td class="win">"NewTestCase"</td>
+                <td>ssd/<strong>newtestcase</strong>/ <span class="na">轉小寫</span></td></tr>
+            <tr><td>[PPS-1234] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="empty">""</td>
+                <td>ssd/ 通用版</td></tr>
+            <tr><td>[PPS-1234][緊急] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td>"緊急" <span class="na">← 不合法</span></td>
+                <td>ssd/ 通用版</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <p class="spec-note">最後一列：擷取到不合法的字（<code>緊急</code>、<code>bug fix</code>）
+        <strong>視同沒有種類</strong>，不是錯誤 —— 那是 MR 作者打的字，不是部署的問題。
+        回傳非字串才是失敗。</p>
+
+        <div class="spec">
           <div class="spec-grp">要寫自己的</div>
           <div class="spec-k">範本</div>
-          <div class="spec-v"><code>device/_template/mr_type.py</code></div>
+          <div class="spec-v"><code>device/_template/mr_type.py</code>
+            <span class="dim">（只是換成取第幾個方括號的話，複製
+            <code>device/ssd/mr_type.py</code> 改 <code>_BRACKET_INDEX</code> 一行就好）</span></div>
           <div class="spec-k">改哪裡</div>
-          <div class="spec-v"><code>extract(mr)</code><br>
-            <span class="dim">取第幾個方括號這類規則，複製 <code>device/ssd/mr_type.py</code> 改
-            <code>_BRACKET_INDEX</code> 一行就好</span></div>
+          <div class="spec-v"><code>extract(mr)</code> 一支函式</div>
           <div class="spec-k">輸入</div>
           <div class="spec-v">與 <code>jira_key</code> 完全相同的六個欄位</div>
           <div class="spec-k">輸出</div>
           <div class="spec-v">字串。沒有就回 <code>""</code><br>
-            <span class="dim">入口會去空白、轉小寫，所以回 <code>"Bug"</code> 就對得上 <code>bug/</code>。
-            也可以映射：<code>[FW-Update]</code> → 回 <code>"fw_update"</code></span></div>
+            <span class="dim">入口會去空白、轉小寫，所以回 <code>"Bug"</code> 就對得上
+            <code>bug/</code>。也可以<strong>映射</strong>：標題寫
+            <code>[FW-Update]</code>、這裡回 <code>"fw_update"</code>，因為目錄名不能有連字號</span></div>
         </div>
-        <p class="spec-note">擷取到不合法的字（<code>緊急</code>、<code>bug fix</code>）視同<strong>沒有種類</strong>，
-        不是錯誤 —— 那是 MR 作者打的字。回傳非字串才是失敗。</p>
       </span></div>
     </div>
 

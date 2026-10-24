@@ -385,6 +385,7 @@ footer a { color: var(--accent); }
 .mx .win { background: var(--ok-bg); color: var(--ok); font-weight: 700; }
 .mx .dead { text-decoration: line-through; opacity: .5; }
 .mx .na { font: 400 12px inherit; opacity: .55; }
+.mx .empty { opacity: .5; }
 .mx-dir {
   font: 500 11px var(--mono); color: var(--ink2);
   letter-spacing: .04em; margin: 0 0 -8px;
