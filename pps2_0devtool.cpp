@@ -392,7 +392,7 @@ bool PPS2_0DevTool::startFlowStep(const FlowStep &step, QString *failureMessage)
             ? functionConfig.value("Program").toString(QString("python"))
             : step.program;
 
-    // 信封四個欄位。tool 身分不在這裡 —— 走 TOOLNAME / TOOLVERSION 環境變數。
+    // 請求 JSON 四個欄位。tool 身分不在這裡 —— 走 TOOLNAME / TOOLVERSION 環境變數。
     QJsonObject envelope;
     envelope.insert("source_path", getUI_sourcePathLineEditText());
     envelope.insert("config",      functionConfig);

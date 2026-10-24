@@ -7,7 +7,7 @@ PPS 2.0 開發輔助工具。框架、腳本執行管線與兩個功能 tab 均�
 | **Single Building** | 從來源樹挑 `.cpp` 寫進暫存設定檔 | 4 支 |
 | **AI Analysis GitLab MR** | 取 Merge Request、送 AI 分析、產出 markdown 報告 | 6 支，外加 device 機制 |
 
-兩個功能走同一條管線（信封協定、處理中對話框、來源路徑掛勾），新增第三個功能
+兩個功能走同一條管線（請求／回應協定、處理中對話框、來源路徑掛勾），新增第三個功能
 不必動外殼 —— 做法見 [`docs/contributing.md`](docs/contributing.md)。兩個功能也都能
 脫離 Qt 在命令列或 CI 上跑，各自的 `cli.md` 有指令。
 
@@ -44,7 +44,7 @@ PPS 2.0 開發輔助工具。框架、腳本執行管線與兩個功能 tab 均�
 ```
                         ┌──────────── 別人 / CI ────────────┐
                         ↓                                   ↓
-Qt ──信封(stdin)──→ 入口腳本 ──→ script_utils ──→ 外部世界（GitLab / Jira / 檔案）
+Qt ──請求 JSON(stdin)──→ 入口腳本 ──→ script_utils ──→ 外部世界（GitLab / Jira / 檔案）
    ←─結果(stdout)──   （很薄）      （業務邏輯）
    ←─進度(stderr)──
 ```
@@ -120,7 +120,7 @@ PPS2_0DevTool/
 ├── scripts/
 │   ├── AUTHORING.md          腳本撰寫手冊 ← 寫腳本之前先讀這份
 │   ├── _function_template.py 功能腳本範本 ← 複製這個開始寫新腳本
-│   ├── script_io.py          信封處理
+│   ├── script_io.py          請求與回應的處理
 │   │
 │   ├── single_building/      入口腳本依「功能」分組
 │   │   ├── __init__.py       功能專屬：設定檔名、挑選的副檔名
@@ -234,7 +234,7 @@ qmake PPS2_0DevTool.pro && make
 裝在哪個直譯器裡是重點 —— Qt 是用設定檔 `Function/<功能>/Program` 指定的直譯器去
 啟動腳本的。裝錯地方的症狀是命令列跑得好好的、從工具裡跑卻失敗。沒裝時不會在匯入
 階段爆掉，`gitlab_utils` 會延到真正呼叫時才拋出一則說得清楚的錯誤（若在匯入階段拋，
-結果信封根本來不及產生，Qt 端只會顯示「腳本沒有回傳結果」）。
+結果 JSON 根本來不及產生，Qt 端只會顯示「腳本沒有回傳結果」）。
 
 圖示不在這個清單裡 —— 它內嵌在執行檔內，不需要也不會去讀外部圖檔。
 
@@ -260,7 +260,7 @@ qmake PPS2_0DevTool.pro && make
 | 文件 | 給誰 | 裡面有什麼 |
 |---|---|---|
 | [`docs/user-guide.md`](docs/user-guide.md) | 用這個工具的人 | 設定檔每一個鍵的意思、設定檔與 git 的關係、怎麼打開診斷輸出 |
-| [`docs/contributing.md`](docs/contributing.md) | 要動這個專案的人 | 外殼提供哪些服務、多步驟流程怎麼寫、信封格式、命令列用法、跨平台、圖示資產怎麼重新產生 |
+| [`docs/contributing.md`](docs/contributing.md) | 要動這個專案的人 | 外殼提供哪些服務、多步驟流程怎麼寫、請求／回應格式、命令列用法、跨平台、圖示資產怎麼重新產生 |
 | [`scripts/AUTHORING.md`](scripts/AUTHORING.md) | 要寫腳本的人 | 腳本的**硬性規則**。寫任何腳本之前先讀這一份 |
 
 ### 規格
@@ -282,7 +282,7 @@ qmake PPS2_0DevTool.pro && make
 |---|---|
 | `app-shell` | 設定檔讀取與查詢、來源路徑掛勾（各功能私有）、Debug console、共用 UI 服務、視窗與啟動行為、應用程式圖示 |
 | `script-execution` | `runFunctionScript` 與 `runFunctionFlow` 契約、通道分離、成敗判定、取消狀態機、處理中對話框、行程環境、流程編排與業務運算的分工邊界 |
-| `script-envelope` | Request/Response 信封、`script_io` API、參數與設定宣告、logger、exit code、跨平台、腳本目錄結構 |
+| `script-envelope` | Request/Response 格式、`script_io` API、參數與設定宣告、logger、exit code、跨平台、腳本目錄結構 |
 | `single-building` | Single Building 功能：兩個清單的挑選與過濾、四支腳本的觸發與串接、暫存設定檔、失敗與取消的處理 |
 | `ai-analysis-gitlab-mr` | AI Analysis GitLab MR 功能：畫面與查詢、五步流程、GitLab 與 JIRA 連線、AI 呼叫與重試、device 機制、報告版面、執行紀錄 |
 
@@ -302,7 +302,7 @@ qmake PPS2_0DevTool.pro && make
 | 處理中對話框立刻彈出、短腳本會閃一下 | `QProgressDialog` 預設延遲 4 秒，那 4 秒內主視窗沒被鎖住 |
 | 取消時不呼叫 callback | 這是「取消後畫面不動」的物理保證，不必依賴每個功能作者都寫對取消分支 |
 | `Debug_Mode` 關閉時不收集腳本的 stderr | 明確接受的取捨；代價寫在 `design.md` 的 Risks 段落 |
-| 信封不帶工具身分欄位 | 同一份資料兩條通道，遲早會不一致而沒人發現 |
+| 請求 JSON 不帶工具身分欄位 | 同一份資料兩條通道，遲早會不一致而沒人發現 |
 
 ### 開發流程
 

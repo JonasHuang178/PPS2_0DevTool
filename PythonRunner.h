@@ -26,7 +26,7 @@ public:
     struct PythonRunnerResult
     {
         bool        success;     // hasJson 且 result 等於 PASS（不分大小寫）
-        bool        hasJson;     // 有沒有收到結果信封
+        bool        hasJson;     // 有沒有收到結果 JSON
         QString     result;      // "PASS" / "FAIL"
         QString     message;     // 一行，可直接顯示
         QString     detail;      // 多行

@@ -88,7 +88,7 @@ def load_data(json_string, default=_NO_DEFAULT):
     ## 錯誤訊息
 
     格式錯誤時訊息帶 json 給的行列位置，但**不附上內容片段** —— 這個字串常常是
-    API 回應或設定，裡面可能有權杖，而錯誤訊息會被入口腳本放進結果信封、寫進
+    API 回應或設定，裡面可能有權杖，而錯誤訊息會被入口腳本放進結果 JSON、寫進
     CI 日誌。位置足以定位問題，內容不值得那個風險。
     """
     give_default = default is not _NO_DEFAULT

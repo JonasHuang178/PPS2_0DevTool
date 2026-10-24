@@ -30,7 +30,7 @@ issue、pipeline…），以資料結構回傳，不做 UI、不讀設定檔、�
 匯入失敗時不在 import 階段爆掉（那個 try/except 在 http_utils），而是延到真正
 呼叫時由 http_utils.require_requests() 拋出 GitLabError。理由：入口腳本的
 `from script_utils import gitlab_utils` 發生在 `script_io.run()` 之前，那個階段
-拋例外的話不會有結果信封，Qt 端只會顯示「腳本沒有回傳結果 (exit code 1)」——
+拋例外的話不會有結果 JSON，Qt 端只會顯示「腳本沒有回傳結果 (exit code 1)」——
 使用者完全看不出是少裝了套件。延到呼叫時，錯誤就會走 script_io 的統一處理變成
 一則說得清楚的 FAIL。
 
@@ -194,7 +194,7 @@ def _parse_error_message(response):
 
     GitLab 有時回 {"message": ...}、有時回 {"error": ...}，而 message 可能是
     字串也可能是物件。挖不出來時退回狀態碼本身，不要回傳整段 HTML —— 那會
-    把一整頁錯誤頁塞進結果信封的 message（規格要求 message 是單行）。
+    把一整頁錯誤頁塞進結果 JSON 的 message（規格要求 message 是單行）。
     """
     try:
         body = response.json()
@@ -410,7 +410,7 @@ def get_all_mr(server_url, token, project_id, created_after, status=("opened",),
 
     回傳 GitLab 原樣的 MR 物件清單，不挑欄位 —— 挑哪些欄位是呼叫端的決定。
     共用模組先砍的話，下一個呼叫端就得回來改這裡。一筆 MR 約 2～4 KB，入口腳本
-    放進結果信封之前請自行挑選需要的欄位。
+    放進結果 JSON 之前請自行挑選需要的欄位。
     """
     states = _normalize_states(status)
 
@@ -747,7 +747,7 @@ def get_mr_plain_diff(server_url, token, project_id, mr_iid, max_bytes=None,
     伺服器上失敗。
 
     max_bytes 限制回傳大小，None 表示不限。改了幾十個檔案的 MR，diff 輕易就是
-    數百 KB 到數 MB，而它要經 stdout 進結果信封再交給 Qt。截斷時會在結尾附一行
+    數百 KB 到數 MB，而它要經 stdout 進結果 JSON 再交給 Qt。截斷時會在結尾附一行
     說明 —— 靜默截斷的話呼叫端會把半截 diff 當成完整的。
 
     **只要文字就用這一支。** 想知道少了哪幾個檔案的，用 get_mr_diff_detail ——

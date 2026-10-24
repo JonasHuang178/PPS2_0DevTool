@@ -20,8 +20,8 @@
    不到。Qt 會注入指向 scripts/ 的 PYTHONPATH，但別把那當成前提：命令列與
    CI 直接執行時沒有那個環境，而那是本專案明確支援的用法。
 
-2. 業務邏輯寫在 script_utils/ 裡，這支腳本只做轉接（收信封 → 呼叫
-   script_utils → 回信封）。「給別人用」的正確介面是 script_utils，
+2. 業務邏輯寫在 script_utils/ 裡，這支腳本只做轉接（收請求 → 呼叫
+   script_utils → 回結果）。「給別人用」的正確介面是 script_utils，
    不是腳本。
 
    script_utils/ 依**技術領域**分組（system_utils、gitlab_utils…），不依
@@ -73,11 +73,11 @@ SCRIPT_VERSION = "2.0"
 # --- 改這三個常數 -----------------------------------------------------------
 #
 # TEMPLATE_VERSION 與上面的 SCRIPT_VERSION **是兩個不同的東西，不要搞混**：
-# 它是**信封模板**的版本（請求與回應長什麼樣），全專案共用一個值，只有信封格式
+# 它是**請求／回應格式**的版本（請求與回應長什麼樣），全專案共用一個值，只有請求／回應格式
 # 本身改了才動。改你的功能不要動它。
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "example_action"
-DESCRIPTION      = "範本腳本：示範信封的收送方式"
+DESCRIPTION      = "範本腳本：示範請求與回應的收送方式"
 
 
 def main():
@@ -87,7 +87,7 @@ def main():
         template_version=TEMPLATE_VERSION,
 
         # 這支腳本需要哪些設定鍵。Qt 會從 PPS2_0DevTool.json 的
-        # Function/<功能名> 區塊挖出來放進信封的 config。
+        # Function/<功能名> 區塊挖出來放進請求 JSON 的 config。
         # required=True 的缺漏會在進入業務邏輯之前就被擋下來。
         config=[
             script_io.cfg("Example_Server_URL", required=False,

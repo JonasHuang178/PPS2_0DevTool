@@ -9,7 +9,7 @@
 |---|---|
 | 這份文件 | 規則與禁令 |
 | `scripts/_function_template.py` | 骨架，所有新腳本從它複製 |
-| `scripts/script_io.py` | 信封處理層的實際 API |
+| `scripts/script_io.py` | 請求／回應處理層的實際 API |
 | `scripts/script_utils/logger.py` | 診斷輸出的唯一入口 |
 | 要改寫的舊腳本（如果是轉換） | 來源 |
 
@@ -20,7 +20,7 @@
 每一支腳本都同時服務三種呼叫端：
 
 ```
-   Qt 工具          信封走 stdin，結果從 stdout 整段解析，進度走 stderr
+   Qt 工具          請求走 stdin，結果從 stdout 整段解析，進度走 stderr
    命令列使用者     --dump-config 產生模板，填好之後 --request run.json
    CI/CD 的 shell   環境變數帶憑證，檔案在步驟之間傳遞，看 exit code
 ```
@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
 診斷一律用 `logger`，它已經接到 stderr 了。
 
-### 3.2 信封契約
+### 3.2 請求／回應契約
 
 **Request**（呼叫端送進來）：
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
 }
 ```
 
-`config` 是呼叫端決定的不透明物件，腳本不解析它的階層。信封裡**沒有工具身分欄位** ——
+`config` 是呼叫端決定的不透明物件，腳本不解析它的階層。請求 JSON 裡**沒有工具身分欄位** ——
 需要知道呼叫方是誰就讀 `TOOLNAME` / `TOOLVERSION` 環境變數（見第 4 章），而且要能在
 它們不存在時正常運作。
 
@@ -224,7 +224,7 @@ script_io.progress("解析 log (37/128)")
 scripts/
   AUTHORING.md                   這份文件
   _function_template.py          範本，留在這一層，不屬於任何功能
-  script_io.py                   信封處理層
+  script_io.py                   請求／回應處理層
   script_utils/                  共用模組，依技術領域分組
     logger.py
     system_utils.py
@@ -449,7 +449,7 @@ script_utils/
     **prompt 不進這個模組** —— 組 prompt 是 device 的 summary.py 的事
 ```
 
-這次要的東西已經有了，所以這支腳本只做轉接：收信封 → 呼叫它 → 整理 → 回信封。
+這次要的東西已經有了，所以這支腳本只做轉接：收請求 → 呼叫它 → 整理 → 回結果。
 
 注意 `get_all_mr()` 回的是 **GitLab 原樣的物件**（一筆約 2～4 KB、四十幾個欄位）。
 共用模組不挑欄位 —— 挑哪些是呼叫端的決定，先砍的話下一個呼叫端就得回來改共用模組。
@@ -512,11 +512,11 @@ ACTION           = "summarise_merge_requests"
 DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
 ```
 
-`TEMPLATE_VERSION` 是**信封模板的版本** —— 請求與回應長什麼樣，**全專案共用一個值**，
-只有信封格式本身改了才動。它不是你這支腳本的版本號，也不是「這支腳本依據哪一版範本寫的」。
+`TEMPLATE_VERSION` 是**請求／回應格式的版本** —— 請求與回應長什麼樣，**全專案共用一個值**，
+只有請求／回應格式本身改了才動。它不是你這支腳本的版本號，也不是「這支腳本依據哪一版範本寫的」。
 
 ⚠️ **不要把它拿來當某個功能的版號。** 那樣它就會隨那個功能一直往上跳而其他功能停著不動，
-兩個本該代表同一份信封格式的數字於是分岔 —— 而它還會被 `--dump-config` 印成
+兩個本該代表同一份請求／回應格式的數字於是分岔 —— 而它還會被 `--dump-config` 印成
 `_template_version` 給呼叫端看。功能自己的版號是**另一個宣告**：`SCRIPT_VERSION`，
 放在 `scripts/<功能>/__init__.py`，該功能每次修改就往上加
 （規則見 `docs/contributing.md` 的「腳本的版號」）。
@@ -665,7 +665,7 @@ def main():
         script_io.reply_fail("GitLab 查詢失敗：%s" % exc,
                              code="GITLAB_REQUEST_FAILED")
 
-    # 挑欄位是入口腳本的職責：共用模組回的是 GitLab 原樣的物件，整包塞進信封
+    # 挑欄位是入口腳本的職責：共用模組回的是 GitLab 原樣的物件，整包塞進回應
     # 的話一百筆就有幾百 KB 要經 stdout 送回 Qt，而這裡只用得到作者。
     truncated = len(raw) >= mr_report.MERGE_REQUEST_LIMIT
     items = [{"author": (one.get("author") or {}).get("name") or ""}
@@ -887,7 +887,7 @@ def resolve_key(mode, manual, detected):
 { "Result": "Pass", "Content": "一大段文字……" }
 ```
 
-對照到信封格式：
+對照到請求／回應格式：
 
 | 舊 | 新 | 注意 |
 |---|---|---|

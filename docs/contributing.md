@@ -1,7 +1,7 @@
 # 加一個功能、寫一支腳本
 
 > 給要動這個專案的人：改完程式之後文件要跟著改哪裡、外殼提供哪些服務、
-> 多步驟流程怎麼寫、信封長什麼樣、命令列怎麼跑、跨平台要注意什麼、
+> 多步驟流程怎麼寫、請求與回應長什麼樣、命令列怎麼跑、跨平台要注意什麼、
 > 以及圖示資產怎麼重新產生。
 >
 > 腳本的**硬性規則**在 [`scripts/AUTHORING.md`](../scripts/AUTHORING.md)（992 行，
@@ -271,7 +271,7 @@ def main():
     )
 
     # 挑欄位是入口腳本的事：共用模組回傳 GitLab 原樣的物件（一筆約 2～4 KB），
-    # 整包塞進信封的話 100 筆就有幾百 KB 要經 stdout 送回 Qt。
+    # 整包塞進回應的話 100 筆就有幾百 KB 要經 stdout 送回 Qt。
     rows = [{"iid": m["iid"], "title": m["title"], "web_url": m["web_url"]}
             for m in mrs]
 
@@ -312,11 +312,11 @@ SCRIPT_VERSION = "2.0"
 
 | | 回答什麼 | 範圍 | 什麼時候動 |
 |---|---|---|---|
-| `TEMPLATE_VERSION` | 請求與回應的信封長什麼樣 | **全專案**，所有功能同一個值 | 信封格式本身改了 |
+| `TEMPLATE_VERSION` | 請求與回應長什麼樣 | **全專案**，所有功能同一個值 | 請求／回應格式本身改了 |
 | `SCRIPT_VERSION` | 這個功能的腳本是哪一版 | 單一功能 | 該功能每次修改 |
 
 > ⚠️ **兩者不要共用一個宣告。** 把 `TEMPLATE_VERSION` 拿來當某個功能的版號，它就會隨那個
-> 功能一直往上跳而其他功能停著不動 —— 兩個本該代表同一份信封格式的數字於是分岔，而它還會
+> 功能一直往上跳而其他功能停著不動 —— 兩個本該代表同一份請求／回應格式的數字於是分岔，而它還會
 > 被 `--dump-config` 印出去給呼叫端看。
 
 **有擴充層的功能要多一個版號。** 例如 AI Analysis 的 device 機制：那一層由各產品線自己寫、
@@ -361,7 +361,7 @@ SCRIPT_VERSION = "2.0"
 
 | API | 用途 |
 |---|---|
-| `parse_request(action, description, config, params, template_version)` | 收信封 + 驗證必填 |
+| `parse_request(action, description, config, params, template_version)` | 收請求 + 驗證必填 |
 | `cfg(name, required, help)` | 宣告一個設定鍵 |
 | `arg(name, type, default, required, help)` | 宣告一個參數 |
 | `progress(stage)` | 往 stderr 印進度並 flush |
@@ -374,7 +374,7 @@ SCRIPT_VERSION = "2.0"
 
 ---
 
-## 信封格式
+## 請求／回應格式
 
 ### Request（Qt 經由 stdin 送入）
 
@@ -387,7 +387,7 @@ SCRIPT_VERSION = "2.0"
 }
 ```
 
-信封**不含工具身分**。需要知道呼叫方是誰的腳本自行讀取環境變數
+請求 JSON **不含工具身分**。需要知道呼叫方是誰的腳本自行讀取環境變數
 （命令列直接執行時不存在，要能在缺少時正常運作）：
 
 ```python
@@ -426,7 +426,7 @@ tool_name = os.environ.get("TOOLNAME", "")
 ```
 
 **結果一律放在 `data` 裡**，不寫檔。腳本之間要接力，由 Qt 把前一支的 `data`
-放進下一支的 `params`；信封走 stdin，沒有長度限制。
+放進下一支的 `params`；請求走 stdin，沒有長度限制。
 
 ### 通道分離
 
@@ -473,7 +473,7 @@ exit code 給 CI 用，JSON 給 GUI 與使用者用，兩者都要正確。
 腳本不只給 Qt 用。兩種投遞方式：
 
 ```bash
-# 1) 信封走 stdin（Qt 走這條）
+# 1) 請求走 stdin（Qt 走這條）
 echo '{"action":"get_gitlab_mr","params":{"repo":"group/project"}}' \
   | python get_gitlab_mr.py --request-stdin
 
@@ -514,7 +514,7 @@ python get_gitlab_mr.py ... -v      # 打開 DEBUG 等級的診斷輸出
 }
 ```
 
-因為 Qt 送的和人填的是同一個信封，失敗時可以把當次的信封存下來，
+因為 Qt 送的和人填的是同一份請求 JSON，失敗時可以把當次的請求 JSON 存下來，
 直接拿到命令列上原樣重現。
 
 

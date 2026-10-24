@@ -1,19 +1,19 @@
 # 不開 Qt 跑這個功能
 
-> 這個功能的七支腳本都能直接在命令列執行。Qt 那一側只是替使用者填信封、
+> 這個功能的七支腳本都能直接在命令列執行。Qt 那一側只是替使用者填請求 JSON、
 > 按順序按下執行。
 >
 > **CI 就是命令列，只是由 pipeline 按下執行。** 指令是同一組，所以這兩件事在這裡
 > 是同一份文件。
 >
-> 信封的三種投遞方式、`--dump-config`、`--help` 這些**不限於這個功能**的用法，
+> 請求的三種投遞方式、`--dump-config`、`--help` 這些**不限於這個功能**的用法，
 > 見 [`scripts/AUTHORING.md`](../../scripts/AUTHORING.md) 第 3.6 與第 10 章。
 > 功能本身的畫面與行為見 [README.md](README.md)。
 
 ## 七支腳本的介面
 
 七支都**不需要 `config`**。憑證一律走環境變數（見下一節），其餘要給的都在 `params` ——
-走 stdin 的信封而不是命令列旗標，是因為命令列沒有長度限制可言，而且**權杖會出現在工作
+走 stdin 的請求 JSON 而不是命令列旗標，是因為命令列沒有長度限制可言，而且**權杖會出現在工作
 管理員的行程清單裡**。
 
 | 腳本 | `action` | 要給什麼 | 做什麼 |
@@ -30,7 +30,7 @@
 
 | `params` | 意思 |
 |---|---|
-| `out_path` | 產物寫到哪裡。**不給就不落檔**，結果只出現在 stdout 的回應信封裡 |
+| `out_path` | 產物寫到哪裡。**不給就不落檔**，結果只出現在 stdout 的回應 JSON 裡 |
 | `log_dir` | 執行紀錄寫到哪裡。不給就一個檔都不寫。這一步的逐行紀錄落在它底下，檔名與產物同名（`03_summary.json` → `03_summary.log`）；腳本另外把**遮過憑證的 `params`** 以 `{"params": {...}}` 的形狀寫進 `<log_dir>/requests/<action>.json` —— 補回金鑰後可直接 `--request` 重跑那一步 |
 
 **步驟 3 的參數**比較多，因為 AI 的連線字串與金鑰走 `params` 而不是環境變數。實務上的後果是它們
@@ -145,7 +145,7 @@ cat "$W/05_report.md"
 
 ## 不必記上面那些
 
-`--dump-config` 會印出該腳本的信封模板，連每個鍵的說明一起：
+`--dump-config` 會印出該腳本的請求模板，連每個鍵的說明一起：
 
 ```bash
 python3 ai_analysis_gitlab_mr/ai_analysis_gitlab_mr_summary.py --dump-config
@@ -169,7 +169,7 @@ shell 腳本，前一行失敗就不會執行下一行，所以「失敗即停�
 
 | | Qt 工具 | CI |
 |---|---|---|
-| 投遞 | 信封走 stdin | 每一步寫一份 `req<N>.json`，`--request` 餵進去 |
+| 投遞 | 請求走 stdin | 每一步寫一份 `req<N>.json`，`--request` 餵進去 |
 | 設定來源 | 設定檔的 `Service` 區塊，由 Qt 注入成環境變數 | CI/CD Variables，runner 自行設定 |
 | 編排 | `runFunctionFlow()` | `script:` 的行序 |
 | 進度與診斷 | Debug console | job log（stderr 與 stdout 都進去） |
@@ -200,4 +200,4 @@ v1.0 的 `AI_MODE_NAME`、`AI_MODEL` 已移除 —— 模型名稱由步驟 3 �
   `code_review_json_file_path` **整個鍵不放**（不是放空字串）
 - **`jira_state` 來自步驟 3，不是步驟 2** —— 步驟 2 擷取出 key，步驟 3 才判定它有效與否
 - **`-v` 打開 DEBUG 等級**。job log 有大小上限（預設 4 MB），`-v` 加上一支大 MR 有可能
-  撞到，而被截掉的是尾端 —— 也就是結果信封所在的位置
+  撞到，而被截掉的是尾端 —— 也就是結果 JSON 所在的位置

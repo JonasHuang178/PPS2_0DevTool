@@ -45,7 +45,7 @@ class HttpError(Exception):
 
     共用模組不結束行程也不自己印訊息，一律以例外拋出，由入口腳本決定怎麼回報。
 
-    `code` 是給結果信封的 `error.code` 用的。各服務以 CODE_PREFIX 決定字首，
+    `code` 是給結果 JSON 的 `error.code` 用的。各服務以 CODE_PREFIX 決定字首，
     因此 GitLab 的 401 是 GITLAB_401、Jira 的是 JIRA_401 —— 入口腳本可以直接
     依服務分流，不必再自己拼字串。
     """
@@ -68,7 +68,7 @@ def require_requests(error_class=HttpError):
     """確認 requests 裝了。沒裝時拋出呼叫端指定的例外型別。
 
     延到呼叫時才檢查，不在 import 階段爆掉：入口腳本的匯入發生在
-    script_io.run() 之前，在那裡拋例外不會有結果信封，Qt 端只會顯示「腳本沒有
+    script_io.run() 之前，在那裡拋例外不會有結果 JSON，Qt 端只會顯示「腳本沒有
     回傳結果 (exit code 1)」，完全看不出是少裝套件。
     """
     if requests is None:

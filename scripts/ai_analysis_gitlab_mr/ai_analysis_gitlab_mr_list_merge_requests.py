@@ -38,7 +38,7 @@ def _row(raw):
     """把 GitLab 原樣的 MR 物件收斂成畫面需要的六個欄位。
 
     共用模組回傳的是 GitLab 原樣的資料（一筆約 2～4 KB、四十幾個欄位），挑欄位
-    是入口腳本的職責 —— 整包塞進結果信封的話，一百筆就有幾百 KB 要經 stdout
+    是入口腳本的職責 —— 整包塞進結果 JSON 的話，一百筆就有幾百 KB 要經 stdout
     送回 Qt，而畫面只用得到這幾個。
 
     author 攤平成字串：Qt 端讀的是 data.merge_requests[].author，巢狀物件會讓

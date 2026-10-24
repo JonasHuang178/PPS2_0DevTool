@@ -92,7 +92,7 @@ int naturalCompare(const QString &a, const QString &b)
     return QString::compare(a, b, Qt::CaseSensitive);
 }
 
-// 腳本失敗時給使用者看的原因。腳本連結果信封都沒回傳時 message 會是空的，
+// 腳本失敗時給使用者看的原因。腳本連結果 JSON 都沒回傳時 message 會是空的，
 // 那種情況下顯示空字串等於什麼都沒說。
 QString failureReason(const PythonRunner::PythonRunnerResult &result)
 {

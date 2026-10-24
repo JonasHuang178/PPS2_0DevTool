@@ -69,7 +69,7 @@ public:
     // 非同步：立即回傳是否成功啟動，結果經由 onDone 送達。
     // 取消時 onDone 不會被呼叫 —— 這是「取消後畫面完全不動」的物理保證。
     //
-    // tool 身分不放進信封，改由環境變數 TOOLNAME / TOOLVERSION 傳遞。
+    // tool 身分不放進請求 JSON，改由環境變數 TOOLNAME / TOOLVERSION 傳遞。
     // source_path 與 config 由外殼自動填入，功能不需傳。
     //
     // 內部實作為「只有一步的流程」，因此對話框、耗時、取消三者與多步流程

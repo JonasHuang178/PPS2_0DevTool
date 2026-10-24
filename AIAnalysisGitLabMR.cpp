@@ -142,7 +142,7 @@ const char *const kLinkColor = "#0B57D0";
 const char *const kNotFetchedText   = "按下重新整理以取得 Merge Requests";
 const char *const kEmptyResultText  = "沒有符合條件的 Merge Request";
 
-// 腳本失敗時給使用者看的原因。腳本連結果信封都沒回傳時 message 會是空的，
+// 腳本失敗時給使用者看的原因。腳本連結果 JSON 都沒回傳時 message 會是空的，
 // 那種情況下顯示空字串等於什麼都沒說。
 QString failureReason(const PythonRunner::PythonRunnerResult &result)
 {

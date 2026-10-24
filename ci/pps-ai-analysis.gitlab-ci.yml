@@ -5,8 +5,8 @@
 # 一個 stage、一個 job、五步照順序跑。任一步 exit 非 0 就整個 job 失敗並停下來
 # （GitLab 的 script 是一份 shell 腳本，前一行失敗就不會執行下一行）。
 #
-# 投遞方式：每一步寫一份請求信封 JSON，用 --request 餵給腳本。
-#   stdout = 結果信封（PASS/FAIL），直接留在 job log
+# 投遞方式：每一步寫一份請求 JSON，用 --request 餵給腳本。
+#   stdout = 結果 JSON（PASS/FAIL），直接留在 job log
 #   stderr = 診斷與進度，也留在 log
 #   exit 0 = PASS   exit 1 = FAIL   exit 2 = 用法錯誤
 #
@@ -16,7 +16,7 @@
 #
 # -v 打開 DEBUG 等級（預設只到 INFO）。想少一點雜訊就把它拿掉。
 # ⚠️ job log 有大小上限（預設 4 MB，Admin → CI/CD → output_limit）。-v 加上一支大
-#    MR 有可能撞到，撞到的話尾端會被截掉 —— 那正是結果信封所在的位置。
+#    MR 有可能撞到，撞到的話尾端會被截掉 —— 那正是結果 JSON 所在的位置。
 #
 # 步驟之間不靠 stdout 傳值，靠 out_path 寫出來的檔案 —— jira_key 與 mr_type 在
 # 02_mr_info.json，jira_state 在 03_summary.json。
@@ -44,8 +44,8 @@ ai-analysis:
     S: "$CI_PROJECT_DIR/scripts/ai_analysis_gitlab_mr"   # 腳本所在目錄
     W: "$CI_PROJECT_DIR/pps-work"                        # 五步的產物
     D: "$CI_PROJECT_DIR/pps-work/logs"                   # 執行紀錄，空字串=不寫
-    # 送進腳本的信封。**刻意不在 pps-work/ 之下** —— 那是 artifact 的收集路徑，而步驟 3
-    # 的信封含有 AI 金鑰與 shareCode。讓真憑證從頭就不進該路徑，比寫進去再刪掉可靠：
+    # 送進腳本的請求 JSON。**刻意不在 pps-work/ 之下** —— 那是 artifact 的收集路徑，而步驟 3
+    # 的請求 JSON 含有 AI 金鑰與 shareCode。讓真憑證從頭就不進該路徑，比寫進去再刪掉可靠：
     # 刪除要靠每一條失敗路徑都執行到，而改名時最容易漏掉的就是那幾行刪除。
     #
     # artifact 裡留下的是腳本自己寫出的**遮罩版**（pps-work/logs/requests/）。

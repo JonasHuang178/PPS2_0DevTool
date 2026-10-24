@@ -33,7 +33,7 @@ def main():
         description=DESCRIPTION,
         template_version=TEMPLATE_VERSION,
 
-        # 這支腳本不需要任何自訂設定鍵：來源路徑走信封的 source_path，
+        # 這支腳本不需要任何自訂設定鍵：來源路徑走請求 JSON 的 source_path，
         # 暫存設定檔的位置由 single_building 套件決定。
         config=[],
 

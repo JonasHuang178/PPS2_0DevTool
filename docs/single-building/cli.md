@@ -1,12 +1,12 @@
 # 不開 Qt 跑這個功能
 
-> 這個功能的四支腳本都能直接在命令列執行。Qt 那一側只是替使用者填信封、
+> 這個功能的四支腳本都能直接在命令列執行。Qt 那一側只是替使用者填請求 JSON、
 > 按下執行。
 >
 > **CI 就是命令列，只是由 pipeline 按下執行。** 指令是同一組，所以這兩件事在這裡
 > 是同一份文件。
 >
-> 信封的三種投遞方式、`--dump-config`、`--help` 這些**不限於這個功能**的用法，
+> 請求的三種投遞方式、`--dump-config`、`--help` 這些**不限於這個功能**的用法，
 > 見 [`scripts/AUTHORING.md`](../../scripts/AUTHORING.md) 第 3.6 與第 10 章。
 > 功能本身的畫面與行為見 [README.md](README.md)。
 
@@ -90,7 +90,7 @@ echo '{"action":"recovery_setting","source_path":"","config":{},"params":{}}' \
 
 ## 不必記上面那些
 
-`--dump-config` 會印出該腳本的信封模板，連每個鍵的說明一起：
+`--dump-config` 會印出該腳本的請求模板，連每個鍵的說明一起：
 
 ```bash
 python3 single_building/single_building_modify_setting.py --dump-config

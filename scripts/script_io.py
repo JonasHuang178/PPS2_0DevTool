@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""信封處理：收請求、回結果。
+"""請求與回應的處理：收請求、回結果。
 
 這個模組是 Qt 這條呼叫管線專用的東西，刻意放在 script_utils/ 外面 ——
 別人拿 script_utils 去當函式庫用時不該碰到它。
@@ -173,14 +173,14 @@ def _build_template(action, params, config_keys, template_version):
 def _format_declarations(params, config_keys):
     lines = []
     if config_keys:
-        lines.append("設定鍵（信封的 config，或 --dump-config 產生的模板）:")
+        lines.append("設定鍵（請求 JSON 的 config，或 --dump-config 產生的模板）:")
         for key in config_keys:
             flag = " (必填)" if key.required else ""
             lines.append("  %-28s %s%s" % (key.name, key.help or "", flag))
     if params:
         if lines:
             lines.append("")
-        lines.append("參數（信封的 params）:")
+        lines.append("參數（請求 JSON 的 params）:")
         for param in params:
             flag = " (必填)" if param.required else ""
             default = "" if param.required or param.default is None \
@@ -190,7 +190,7 @@ def _format_declarations(params, config_keys):
     return "\n".join(lines)
 
 
-# --- 收信封 -----------------------------------------------------------------
+# --- 收請求 -----------------------------------------------------------------
 
 def _mask_value(value, mask):
     """依宣告遮掉一個值。遮罩函式自己壞掉時退回整個遮掉，不讓紀錄壞掉整支腳本。"""
@@ -222,19 +222,19 @@ def mask_params(params, param_defs):
 def write_request_log(log_dir, action, params, param_defs):
     """把**實際收到的參數**遮罩後寫進 <log_dir>/requests/<action>.json。
 
-    寫出的形狀是 `{"params": {...}}` —— 一個可以直接 --request 投遞回去的信封。
+    寫出的形狀是 `{"params": {...}}` —— 一個可以直接 --request 投遞回去的請求 JSON。
 
     `log_dir` 為空就什麼都不做 —— 與其他紀錄同一個開關，所以不會出現「開關為真但路徑
     為空」這種矛盾狀態。
 
-    **只記 params，不記信封的其餘欄位。** 這份紀錄要回答的是「這一步被餵了什麼參數」，而
+    **只記 params，不記請求 JSON 的其餘欄位。** 這份紀錄要回答的是「這一步被餵了什麼參數」，而
     `source_path`、`action`、`config` 都不是參數：action 已經是檔名，config 是呼叫端
     那一整個功能區塊、這些腳本一律宣告 `config=[]` 根本不讀它，寫進來只會把真正要看的
     那幾個鍵淹掉。而且遮罩規則只宣告在參數上，少記一個不受遮罩管的區塊，也就少一條
     憑證外流的路。
 
     **但是放在 `params` 這個鍵之下，而不是裸的一個物件。** 多這一層使整份檔案本身就是
-    一個合法的請求信封，可以直接 `--request` 投遞回同一支腳本（action 由腳本自己的預設
+    一個合法的請求 JSON，可以直接 `--request` 投遞回同一支腳本（action 由腳本自己的預設
     補上，config 這些腳本不讀）—— 一個**只差補回被遮掉的值**就能重跑的檔案，比一份
     只能讀的參數清單有用得多，而代價只是一層括號。
 
@@ -276,11 +276,11 @@ def write_request_log(log_dir, action, params, param_defs):
 
 def parse_request(action, description="", config=None, params=None,
                   template_version="", log_dir_param=DEFAULT_LOG_DIR_PARAM):
-    """收信封並驗證，回傳含四個鍵的 dict：
+    """收請求並驗證，回傳含四個鍵的 dict：
 
         source_path / config / action / params
 
-    信封裡沒有工具身分 —— 需要知道呼叫方是誰的腳本自行讀取
+    請求 JSON 裡沒有工具身分 —— 需要知道呼叫方是誰的腳本自行讀取
     os.environ.get("TOOLNAME") 與 os.environ.get("TOOLVERSION")，
     這兩個變數在命令列直接執行時不存在，腳本要能在缺少時正常運作。
 
@@ -299,9 +299,9 @@ def parse_request(action, description="", config=None, params=None,
     )
     # 只有框架旗標，沒有功能自訂參數的旗標。
     parser.add_argument("--request-stdin", action="store_true",
-                        help="從 stdin 讀取請求信封（Qt 走這條）")
+                        help="從 stdin 讀取請求 JSON（Qt 走這條）")
     parser.add_argument("--request", metavar="FILE",
-                        help="從 JSON 檔案讀取請求信封")
+                        help="從 JSON 檔案讀取請求 JSON")
     parser.add_argument("--dump-config", action="store_true",
                         help="傾印一份可填寫的請求模板到 stdout")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -341,19 +341,19 @@ def parse_request(action, description="", config=None, params=None,
     try:
         envelope = json.loads(raw) if raw.strip() else {}
     except ValueError as exc:
-        raise ValueError("請求信封不是合法的 JSON（來源 %s）：%s" % (source, exc))
+        raise ValueError("請求 JSON 不是合法的 JSON（來源 %s）：%s" % (source, exc))
 
     if not isinstance(envelope, dict):
-        raise ValueError("請求信封必須是 JSON 物件（來源 %s）" % source)
+        raise ValueError("請求 JSON 必須是 JSON 物件（來源 %s）" % source)
 
-    logger.debug("收到請求信封，來源 %s", source)
+    logger.debug("收到請求 JSON，來源 %s", source)
 
     incoming_config = envelope.get("config") or {}
     incoming_params = envelope.get("params") or {}
     if not isinstance(incoming_config, dict):
-        raise ValueError("信封的 config 必須是物件")
+        raise ValueError("請求 JSON 的 config 必須是物件")
     if not isinstance(incoming_params, dict):
-        raise ValueError("信封的 params 必須是物件")
+        raise ValueError("請求 JSON 的 params 必須是物件")
 
     # --- 必填檢查與預設值回填 ---
     missing = []
@@ -418,7 +418,7 @@ def progress(stage):
     sys.stderr.flush()
 
 
-# --- 回信封 -----------------------------------------------------------------
+# --- 回結果 -----------------------------------------------------------------
 
 def _emit(envelope, exit_code):
     sys.stdout.write(json.dumps(envelope, ensure_ascii=False))
@@ -428,7 +428,7 @@ def _emit(envelope, exit_code):
 
 
 def reply(message="", detail="", data=None):
-    """成功。印出結果信封並以 exit code 0 結束。"""
+    """成功。印出結果 JSON 並以 exit code 0 結束。"""
     envelope = {"result": "PASS", "message": message or "執行完成"}
     if detail:
         envelope["detail"] = detail
@@ -438,7 +438,7 @@ def reply(message="", detail="", data=None):
 
 
 def reply_fail(message, detail="", code=""):
-    """業務邏輯失敗。印出結果信封並以 exit code 1 結束。"""
+    """業務邏輯失敗。印出結果 JSON 並以 exit code 1 結束。"""
     envelope = {"result": "FAIL", "message": message or "執行失敗"}
     if detail:
         envelope["detail"] = detail
