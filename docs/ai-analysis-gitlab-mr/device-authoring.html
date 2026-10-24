@@ -532,23 +532,6 @@ device/ssd/
           </tbody>
         </table>
         </div>
-
-        <div class="spec">
-          <div class="spec-grp">要寫自己的</div>
-          <div class="spec-k">範本</div>
-          <div class="spec-v"><code>device/_template/mr_type.py</code>
-            <span class="dim">（只是換成取第幾個方括號的話，複製
-            <code>device/ssd/mr_type.py</code> 改 <code>_BRACKET_INDEX</code> 一行就好）</span></div>
-          <div class="spec-k">改哪裡</div>
-          <div class="spec-v"><code>extract(mr)</code> 一支函式</div>
-          <div class="spec-k">輸入</div>
-          <div class="spec-v">與 <code>jira_key</code> 完全相同的六個欄位</div>
-          <div class="spec-k">輸出</div>
-          <div class="spec-v">字串。沒有就回 <code>""</code><br>
-            <span class="dim">入口會去空白、轉小寫，所以回 <code>"Bug"</code> 就對得上
-            <code>bug/</code>。也可以<strong>映射</strong>：標題寫
-            <code>[FW-Update]</code>、這裡回 <code>"fw_update"</code>，因為目錄名不能有連字號</span></div>
-        </div>
       </span></div>
     </div>
 
