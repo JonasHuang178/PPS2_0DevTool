@@ -358,6 +358,39 @@ footer a { color: var(--accent); }
   .spec-v { padding-top: 4px; }
 }
 
+/* ---------- 步驟 × 位置的對照表 ----------
+ *
+ * 回退那一題用它：直軸是五個步驟，橫軸是由近到遠的三個位置，綠底那一格就是
+ * 這一次用到的那一份。查找順序＝欄位順序，所以順序不必再用文字講一次。
+ *
+ * 用真的 <table> 而不是 grid：這是二維資料，欄位與列都有標頭，讀螢幕閱讀器的人
+ * 需要那層關係。代價是手機上四欄擠不下，所以外面包一層橫向捲動，與 .fig 同一個作法。 */
+.mx-wrap { overflow-x: auto; margin: 16px 0 4px; }
+.mx { border-collapse: collapse; width: 100%; font-size: 13px; }
+.mx th, .mx td {
+  border: 1px solid var(--line); padding: 9px 12px;
+  text-align: left; vertical-align: top;
+}
+.mx thead th {
+  background: var(--bg); color: var(--ink2);
+  font: 700 11.5px var(--mono); white-space: nowrap;
+}
+.mx thead th.near { color: var(--accent); }
+.mx tbody th {
+  background: var(--bg); color: var(--ink);
+  font-size: 13px; font-weight: 700; white-space: nowrap;
+}
+.mx tbody th .n { color: var(--ink2); font-weight: 500; margin-right: 4px; }
+.mx td { font: 500 12.5px var(--mono); color: var(--ink2); }
+.mx .win { background: var(--ok-bg); color: var(--ok); font-weight: 700; }
+.mx .dead { text-decoration: line-through; opacity: .5; }
+.mx .na { font: 400 12px inherit; opacity: .55; }
+.mx-dir {
+  font: 500 11px var(--mono); color: var(--ink2);
+  letter-spacing: .04em; margin: 0 0 -8px;
+}
+@media (max-width: 680px) { .mx { min-width: 600px; } }
+
 /* ---------- 流程圖 ----------
  *
  * 用 SVG 而不是一堆 div：五格要與下面的擴充腳本欄位對齊，grid 做得到，但窄螢幕上

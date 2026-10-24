@@ -384,27 +384,56 @@ device/ssd/
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span>回退機制：沒放的擴充腳本會用哪一份？</span></div>
+      <div class="qa-q"><span>沒放的擴充腳本會用哪一份？</span></div>
       <div class="qa-a"><span>
-        <strong>逐支擴充腳本各自找</strong>，不是整個 device 一起退。
-        <div class="spec">
-          <div class="spec-grp">解析順序</div>
-          <div class="spec-k">兩層</div>
-          <div class="spec-v"><code>jira_key</code>、<code>mr_type</code>、<code>parse_code_review</code><br>
-            <span class="dim"><code>&lt;你的&gt;/</code> → <code>default/</code></span></div>
-          <div class="spec-k">三層</div>
-          <div class="spec-v"><code>summary</code>、<code>merge_to_md</code><br>
-            <span class="dim"><code>&lt;你的&gt;/&lt;種類&gt;/</code> → <code>&lt;你的&gt;/</code> → <code>default/</code></span></div>
-          <div class="spec-grp">例子：device 放了 summary.py，另有 bug/merge_to_md.py（種類為 bug 時）</div>
-          <div class="spec-k">有種類</div>
-          <div class="spec-v"><div class="spec-pre">summary     → 你的/summary.py
-merge_to_md → 你的/bug/merge_to_md.py</div></div>
-          <div class="spec-k">無種類</div>
-          <div class="spec-v"><div class="spec-pre">summary     → 你的/summary.py
-merge_to_md → default/merge_to_md.py</div></div>
+        規則只有一條：<strong>同一支擴充腳本有好幾份時，離你近的那份贏。</strong>
+        假設 <code>PPS_DEVICE=ssd</code>，這一筆 MR 的標題是
+        <code>[PPS-1234][Bug] 修正重試上限</code>，<strong>擷取出來的種類是
+        <code>bug</code></strong>：
+
+        <p class="mx-dir">近 ←——————————————————————→ 遠</p>
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th>步驟</th>
+                <th class="near">device/ssd/bug/</th>
+                <th class="near">device/ssd/</th>
+                <th>device/default/</th></tr>
+          </thead>
+          <tbody>
+            <tr><th><span class="n">②</span>jira_key</th>
+                <td class="na">不看種類</td>
+                <td>—</td>
+                <td class="win">jira_key.py</td></tr>
+            <tr><th><span class="n">②</span>mr_type</th>
+                <td class="na">不看種類</td>
+                <td>—</td>
+                <td class="win">mr_type.py</td></tr>
+            <tr><th><span class="n">③</span>summary</th>
+                <td>—</td>
+                <td class="win">summary.py</td>
+                <td class="dead">summary.py</td></tr>
+            <tr><th><span class="n">④</span>parse_code_review</th>
+                <td class="na">不看種類</td>
+                <td>—</td>
+                <td class="win">parse_code_review.py</td></tr>
+            <tr><th><span class="n">⑤</span>merge_to_md</th>
+                <td class="win">merge_to_md.py</td>
+                <td>—</td>
+                <td class="dead">merge_to_md.py</td></tr>
+          </tbody>
+        </table>
         </div>
-        <p class="spec-note">最後一行是重點：<code>merge_to_md</code> 退了<strong>兩層</strong>，
-        因為你的 device 那一層沒放這一支。每一支、每一層都各自判斷。</p>
+
+        <p class="spec-note">每一列<strong>由左往右找，第一個有檔案的就用</strong>，
+        後面的不再看。五列各走各的 —— 覆寫一支不會把其他四支一起帶走。</p>
+        <p class="spec-note">左邊那一欄只有 ③ ⑤ 用得到。<code>jira_key</code>、
+        <code>mr_type</code> 跑在種類被決定<strong>之前</strong>（<code>bug</code>
+        正是 <code>mr_type</code> 判出來的），<code>parse_code_review</code>
+        則是刻意不分種類 —— 審閱報告的格式是 device 的屬性。</p>
+        <p class="spec-note">⚠️ 表上<strong>沒有 <code>default/bug/</code> 這一欄</strong>，
+        也永遠不會有 —— 種類名稱是各 device 自己的字彙，你的 <code>bug</code>
+        與別條產品線的 <code>bug</code> 不保證是同一件事。</p>
       </span></div>
     </div>
 

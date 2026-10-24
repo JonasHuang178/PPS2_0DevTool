@@ -623,12 +623,22 @@ mod:[PPS-1234][Bug] 修正重試上限
   <device>/<type>/   ->   <device>/   ->   default/
 ```
 
-例如 `PPS_DEVICE=ssd`、種類 `bug`：
+規則只有一條：**同一支擴充腳本有好幾份時，離你近的那份贏。** 例如 `PPS_DEVICE=ssd`、
+這一筆的種類擷取出來是 `bug`，而 `ssd/` 裡只放了 `summary.py` 與 `bug/merge_to_md.py`：
 
-| 擴充腳本 | 找的順序 | 上面那個例子的結果 |
-|---|---|---|
-| `summary` | `ssd/bug/` → `ssd/` → `default/` | `ssd/bug/summary.py` |
-| `merge_to_md` | `ssd/bug/` → `ssd/` → `default/` | `default/merge_to_md.py` |
+欄位由左到右就是找的順序，**第一個有檔案的就用**，後面的不再看：
+
+| 步驟 | `ssd/bug/` | `ssd/` | `default/` |
+|---|---|---|---|
+| ② `jira_key` | 不看種類 | — | **✔ jira_key.py** |
+| ② `mr_type` | 不看種類 | — | **✔ mr_type.py** |
+| ③ `summary` | — | **✔ summary.py** | ~~summary.py~~ |
+| ④ `parse_code_review` | 不看種類 | — | **✔ parse_code_review.py** |
+| ⑤ `merge_to_md` | **✔ merge_to_md.py** | — | ~~merge_to_md.py~~ |
+
+五列各走各的 —— 覆寫一支不會把其他四支一起帶走。左邊那一欄只有 ③ ⑤ 用得到：
+`jira_key` 與 `mr_type` 跑在種類被決定**之前**（`bug` 正是 `mr_type` 判出來的），
+`parse_code_review` 則是刻意不分種類。
 
 **不會去找 `default/bug/`。** 各 device 的種類字彙是各自演化的 —— SD 的 `tool` 與
 SSD 的 `tool` 不保證是同一件事，跨過去取用就是套上另一條產品線的邏輯，而每一步都回報
