@@ -263,6 +263,43 @@ device/ssd/
     <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口腳本統一。</div>
   </div>
 
+  <p class="lead muted" style="margin:18px 0 10px">範本只有一行
+  <code>raise NotImplementedError</code> —— 把它換成你的規則就好。<br>
+  以「標題第一個方括號」為例：</p>
+
+  <div class="term"><span class="c"># device/&lt;你的裝置名&gt;/jira_key.py</span>
+import re
+
+<span class="c"># 第一個方括號裡的內容。非貪婪，且不跨行 —— 標題本來就是一行。</span>
+_FIRST_BRACKET = re.compile(r"\[([^\]\n]*)\]")
+
+def extract(mr):
+    title = mr.get("title") or ""        <span class="c"># 欄位可能是 None，先收斂成 ""</span>
+    match = _FIRST_BRACKET.search(title)
+    if not match:
+        return ""                        <span class="c"># 擷取不到 —— 回空字串，不是 None</span>
+    return match.group(1).strip()</div>
+
+  <div class="spec" style="margin-top:16px">
+    <div class="spec-grp">這幾行各自在擋什麼</div>
+    <div class="spec-k"><code>or ""</code></div>
+    <div class="spec-v">GitLab 的欄位可能是 <code>None</code>
+      <span class="dim">—— 直接餵給 <code>search()</code> 會丟 <code>TypeError</code></span></div>
+    <div class="spec-k"><code>回 ""</code></div>
+    <div class="spec-v">沒有方括號的標題很常見，<strong>那不是錯誤</strong>
+      <span class="dim">—— 回 <code>""</code> 就是「這一筆沒有 key」，入口腳本自己會轉成對外的表示法</span></div>
+    <div class="spec-k"><code>.strip()</code></div>
+    <div class="spec-v"><code>[ PPS-1234 ]</code> 這種寫法會帶空白進來
+      <span class="dim">—— 不去掉的話，組出來的 JIRA 網址會壞掉</span></div>
+  </div>
+
+  <div class="io-note" style="border:1px solid var(--line);border-radius:14px;margin-top:16px">
+    ⚠️ <code>[WIP] [PPS-1234] 修正重試上限</code> 這種標題，這一支會<strong>老實回
+    <code>WIP</code></strong>。<br>
+    <strong>有效性不在這裡判</strong> —— 判定在步驟 3 的 <code>summary.py</code>，
+    擷取規則與判定規則同屬一個 device，放在一起才不會各自漂移。
+  </div>
+
   <div class="io">
     <div class="io-head">
       <div class="io-n">2</div>
