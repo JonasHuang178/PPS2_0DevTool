@@ -622,6 +622,50 @@ device/ssd/
         </div>
         <p class="spec-note">💡 <strong>只是節名不同的話不必寫擴充腳本</strong> ——
         在 <code>__init__.py</code> 宣告 <code>CODE_REVIEW_SOURCE_HEADING</code> 就好。</p>
+
+        <p style="margin:22px 0 10px"><strong>總表的形狀不一樣，才要寫自己的那一支。</strong><br>
+        放這裡，<strong>不要放進種類資料夾</strong> —— 這一支不分種類：</p>
+
+        <div class="term">device/<span class="y">ssd/</span>
+└── <span class="g">parse_code_review.py</span>   <span class="c">從 _template/ 複製一份來改</span></div>
+
+        <div class="spec" style="margin-top:18px">
+          <div class="spec-grp">只要做三件事</div>
+          <div class="spec-k">收</div>
+          <div class="spec-v"><code>parse(inputs)</code>，<code>inputs["text"]</code>
+            是報告<strong>全文</strong>
+            <span class="dim">—— 查附件、挑最新那一份、下載、解碼都已經做完了，
+            那些要 JIRA 權杖，不交給 device 的程式碼</span></div>
+          <div class="spec-k">切</div>
+          <div class="spec-v"><code>contract.extract_risk_table(text, heading)</code>
+            把那一節的第一張表切出來
+            <span class="dim">—— 自己的切法也可以，<code>heading</code> 就是你宣告的
+            <code>CODE_REVIEW_SOURCE_HEADING</code></span></div>
+          <div class="spec-k">判</div>
+          <div class="spec-v">算出 <code>PASS</code> / <code>FAIL</code>，回
+            <code>contract.code_review_parsed(risk_table, review_result)</code>
+            <span class="dim">—— <code>risk_table</code> 原樣放，不要自帶
+            <code>##</code> 標題，那一行由步驟 5 寫</span></div>
+        </div>
+
+        <div class="stuck" style="margin-top:18px">
+          <div class="st">
+            <div class="st-q">判不出來就 <code>raise contract.RiskTableError</code>，<strong>不要猜</strong></div>
+            <div class="st-a">流程<strong>不會中斷</strong> —— 這一步跑在 AI 分析之後，
+            讓它失敗會把一份已經付費的分析整份丟掉。<br>
+            報告上只出現一行 <code>⚠️</code>，而且會點名是哪個 device 的哪一支。<br>
+            代價是那時候<strong>表格也不會進報告</strong>：有結論與沒結論不混在一起。</div>
+          </div>
+          <div class="st">
+            <div class="st-q">沒把握的欄位<strong>寧可報錯</strong></div>
+            <div class="st-a">猜錯的方向是把一份有風險的審閱判成通過，而報告上看不出來。<br>
+            錯誤訊息把實際讀到的表頭與那一格的內容印出來，使用者一看就知道是哪一欄錯了。</div>
+          </div>
+        </div>
+
+        <p class="spec-note">完整的輸入輸出與可用工具在
+        <code>device/_template/parse_code_review.py</code> 的 docstring ——
+        那裡是權威來源。<br>想看一份寫好的，讀 <code>device/ssd/parse_code_review.py</code>。</p>
       </span></div>
     </div>
 
