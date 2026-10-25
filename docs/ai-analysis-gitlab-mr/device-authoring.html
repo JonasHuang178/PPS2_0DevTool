@@ -261,37 +261,38 @@ device/ssd/
       </div>
     </div>
     <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
-      範本只有一行 <code>raise NotImplementedError</code> —— 換成你的規則就好。<br>
+      <code>device/_template/jira_key.py</code> 只有一行
+      <code>raise NotImplementedError</code> —— 換成你的規則就好。<br>
       以「標題第一個方括號」為例：
     </div>
-  <div class="term" style="border:0;border-top:1px solid var(--line);border-radius:0;padding:18px 22px"><span class="c"># device/&lt;你的裝置名&gt;/jira_key.py</span>
-<span class="c">"""從 MR 標題的第一個方括號擷取 JIRA key。
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/jira_key.py</span><span class="lang">python</span></div>
+    <div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""從 MR 標題的第一個方括號擷取 JIRA key。
 
 這裡不判有效性 —— [WIP] [PPS-1234] ... 會老實回 "WIP"，由步驟 3 的
 summary.py 判定它不合格。擷取規則與判定規則同屬一個 device，放在一起
 才不會各自漂移。
 """</span>
 
-import re
+<span class="kw">import</span> re
 
 <span class="c"># 第一個方括號裡的內容。非貪婪，且不跨行 —— 標題本來就是一行。</span>
-_FIRST_BRACKET = re.compile(r"\[([^\]\n]*)\]")
+_FIRST_BRACKET = re.compile(<span class="str">r"\[([^\]\n]*)\]"</span>)
 
 
-def extract(mr):
+<span class="kw">def</span> <span class="fn">extract</span>(mr):
     <span class="c"># 欄位可能是 None，直接餵給 search() 會丟 TypeError。</span>
-    title = mr.get("title") or ""
+    title = mr.get(<span class="str">"title"</span>) <span class="kw">or</span> <span class="str">""</span>
 
     match = _FIRST_BRACKET.search(title)
-    if not match:
+    <span class="kw">if not</span> match:
         <span class="c"># 沒有方括號的標題很常見，那不是錯誤：回 "" 就是
         # 「這一筆沒有 key」。不要回 None，也不要自己回 "NONE" ——
         # 對外的表示法由入口腳本統一。</span>
-        return ""
+        <span class="kw">return</span> <span class="str">""</span>
 
     <span class="c"># [ PPS-1234 ] 這種寫法會帶空白進來，不去掉的話
     # 組出來的 JIRA 網址會壞掉。</span>
-    return match.group(1).strip()</div>
+    <span class="kw">return</span> match.group(1).strip()</div>
     <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口腳本統一。</div>
   </div>
 

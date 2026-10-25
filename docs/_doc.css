@@ -429,3 +429,14 @@ footer a { color: var(--accent); }
      由外層橫向捲動 —— 與 .spec-pre 同一個作法。 */
   .fig { min-width: 660px; }
 }
+
+/* ---------- 程式碼範例 ---------- */
+.code-h {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 11px 22px; border-top: 1px solid var(--line);
+  background: var(--bg2); font: 500 12.5px var(--mono); color: var(--ink2);
+}
+.code-h .lang { opacity: .6; letter-spacing: .05em; }
+.term .kw  { color: var(--accent); }
+.term .str { color: var(--ok); }
+.term .fn  { color: var(--warn); }
