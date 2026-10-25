@@ -572,14 +572,18 @@ device/ssd/
             <tr><td>[PPS-1234] 修正重試上限</td>
                 <td class="empty">""</td>
                 <td class="empty">""</td>
-                <td>ssd/ 通用版</td></tr>
+                <td>ssd/ <span class="na">不分種類那一份</span></td></tr>
             <tr><td>[PPS-1234][緊急] 修正重試上限</td>
                 <td class="empty">""</td>
                 <td>"緊急" <span class="na">← 不合法</span></td>
-                <td>ssd/ 通用版</td></tr>
+                <td>ssd/ <span class="na">不分種類那一份</span></td></tr>
           </tbody>
         </table>
         </div>
+
+        <p class="spec-note">擷取不到、或擷取到的字不是合法識別字時，
+        <strong>不會去找 <code>ssd/&lt;種類&gt;/</code></strong> —— 直接用 <code>ssd/</code>
+        這一層放的那幾支，那裡也沒有才退到 <code>default/</code>。</p>
       </span></div>
     </div>
 
