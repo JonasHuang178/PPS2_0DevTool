@@ -493,7 +493,7 @@ device/ssd/
     </div>
 
     <div class="qa-item">
-      <div class="qa-q"><span>種類怎麼擷取的？要換規則怎麼寫？</span></div>
+      <div class="qa-q"><span>MR 種類怎麼擷取的？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
           <div class="spec-grp">DEFAULT 的做法</div>
@@ -547,21 +547,18 @@ device/ssd/
           <div class="spec-v"><div class="spec-pre">| 類別   | 風險等級 | 數量 |
 | 記憶體 | 高       | 0    |   加總 0 → pass
 | 執行緒 | 中       | 2    |   加總 2 → fail</div>
-            <span class="dim"><code>-</code>、<code>無</code>、<code>n/a</code> 都當 0；
-            <code>3 件</code>、<code>~5</code> 會報錯而不猜</span></div>
-          <div class="spec-grp">要寫自己的</div>
-          <div class="spec-k">範本</div>
-          <div class="spec-v"><code>device/_template/parse_code_review.py</code></div>
-          <div class="spec-k">改哪裡</div>
-          <div class="spec-v"><code>parse(inputs)</code></div>
-          <div class="spec-k">輸入</div>
-          <div class="spec-v"><code>text</code> 報告全文、<code>heading</code> 要找的節名、
-            <code>jira_key</code>、<code>log_write</code><br>
-            <span class="dim">查附件、下載、解碼都在入口做完了，你拿到的是現成全文</span></div>
-          <div class="spec-k">輸出</div>
-          <div class="spec-v"><code>contract.code_review_parsed(risk_table, review_result)</code><br>
-            <span class="dim">結論三選一：<code>PASS</code> / <code>FAIL</code> /
-            <code>UNKNOWN</code>。判不出來回 <code>UNKNOWN</code>，不要猜</span></div>
+            </div>
+          <div class="spec-k">當 0</div>
+          <div class="spec-v">純數字當數量；<code>-</code>、<code>—</code>、<code>無</code>、
+            <code>N/A</code>、<code>none</code>、空白一律當 <strong>0</strong>
+            <span class="dim">—— 報告常用這幾種寫法表示「這一列沒有項目」，不收的話一張正常的表
+            會因為一個破折號就判不出結論。整張表只有表頭、一列資料都沒有，同樣是 0，也就是
+            pass。</span></div>
+          <div class="spec-k">報錯</div>
+          <div class="spec-v"><code>3 件</code>、<code>~5</code>、<code>&gt;10</code>
+            這種帶了字的寫法<strong>一律報錯，不猜</strong>
+            <span class="dim">—— 猜錯的方向是把一份有風險的審閱判成通過，而報告上看不出來。
+            某一列的欄數與表頭對不起來時同樣報錯，不拿最後一格將就。</span></div>
         </div>
         <p class="spec-note">💡 <strong>只是節名不同的話不必寫擴充腳本</strong> ——
         在 <code>__init__.py</code> 宣告 <code>CODE_REVIEW_SOURCE_HEADING</code> 就好。</p>
