@@ -266,7 +266,33 @@ device/ssd/
       以「標題第一個方括號」為例：
     </div>
     <div class="code-h"><span>device/&lt;你的裝置名&gt;/jira_key.py</span><span class="lang">python</span></div>
-    <div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""從 MR 標題的第一個方括號擷取 JIRA key。
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""從 MR 標題的第一個方括號擷取 JIRA key。
 
 這裡不判有效性 —— [WIP] [PPS-1234] ... 會老實回 "WIP"，由步驟 3 的
 summary.py 判定它不合格。擷取規則與判定規則同屬一個 device，放在一起
@@ -292,7 +318,7 @@ _FIRST_BRACKET = re.compile(<span class="str">r"\[([^\]\n]*)\]"</span>)
 
     <span class="c"># [ PPS-1234 ] 這種寫法會帶空白進來，不去掉的話
     # 組出來的 JIRA 網址會壞掉。</span>
-    <span class="kw">return</span> match.group(1).strip()</div>
+    <span class="kw">return</span> match.group(1).strip()</div></div>
     <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口腳本統一。</div>
   </div>
 

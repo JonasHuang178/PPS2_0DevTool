@@ -440,3 +440,11 @@ footer a { color: var(--accent); }
 .term .kw  { color: var(--accent); }
 .term .str { color: var(--ok); }
 .term .fn  { color: var(--warn); }
+.code-wrap { display: flex; align-items: stretch; }
+.code-ln {
+  flex: none; padding: 18px 14px 18px 22px; text-align: right;
+  font: 500 13.5px/1.9 var(--mono); color: var(--ink2); opacity: .4;
+  white-space: pre; user-select: none;
+  background: var(--bg2); border-right: 1px solid var(--line);
+}
+.code-wrap .term { flex: 1; min-width: 0; padding-left: 18px; }
