@@ -261,13 +261,11 @@ device/ssd/
       </div>
     </div>
     <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口腳本統一。</div>
-  </div>
-
-  <p class="lead muted" style="margin:18px 0 10px">範本只有一行
-  <code>raise NotImplementedError</code> —— 把它換成你的規則就好。<br>
-  以「標題第一個方括號」為例：</p>
-
-  <div class="term"><span class="c"># device/&lt;你的裝置名&gt;/jira_key.py</span>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      範本只有一行 <code>raise NotImplementedError</code> —— 換成你的規則就好。<br>
+      以「標題第一個方括號」為例：
+    </div>
+  <div class="term" style="border:0;border-top:1px solid var(--line);border-radius:0;padding:18px 22px"><span class="c"># device/&lt;你的裝置名&gt;/jira_key.py</span>
 <span class="c">"""從 MR 標題的第一個方括號擷取 JIRA key。
 
 這裡不判有效性 —— [WIP] [PPS-1234] ... 會老實回 "WIP"，由步驟 3 的
@@ -295,6 +293,7 @@ def extract(mr):
     <span class="c"># [ PPS-1234 ] 這種寫法會帶空白進來，不去掉的話
     # 組出來的 JIRA 網址會壞掉。</span>
     return match.group(1).strip()</div>
+  </div>
 
   <div class="io">
     <div class="io-head">
