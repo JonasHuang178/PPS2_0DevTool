@@ -218,7 +218,7 @@ device/ssd/
         <div class="io-v"><strong>不擷取</strong>，一律回 <code>""</code>。</div>
       </div>
     </div>
-    <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口統一。</div>
+    <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口腳本統一。</div>
   </div>
 
   <div class="io">
@@ -238,7 +238,7 @@ device/ssd/
       <div class="io-cell">
         <div class="io-k">要回</div>
         <div class="io-v">一個<strong>字串</strong>。<br>沒有就回 <code>""</code>。<br>
-        入口會去空白、轉小寫。</div>
+        入口腳本會去空白、轉小寫。</div>
       </div>
       <div class="io-cell">
         <div class="io-k">可以做映射</div>
@@ -271,7 +271,7 @@ device/ssd/
       <div class="io-cell">
         <div class="io-k">要回</div>
         <div class="io-v"><code>contract.analysis_body(...)</code> 的結果。<br>
-        <span class="muted">入口會驗證它的形狀。</span></div>
+        <span class="muted">入口腳本會驗證它的形狀。</span></div>
       </div>
       <div class="io-cell">
         <div class="io-k">能用的工具</div>
@@ -283,7 +283,7 @@ device/ssd/
       </div>
     </div>
     <div class="io-note"><code>fetch_jira</code> 給的是<strong>函式而不是現成內容</strong>，
-    因為「這個 key 有沒有效」是你的政策。<br>入口先抓的話，<code>[WIP]</code> 這種從方括號擷取來的東西
+    因為「這個 key 有沒有效」是你的政策。<br>入口腳本先抓的話，<code>[WIP]</code> 這種從方括號擷取來的東西
     每次都會白打一趟 JIRA。<br>判定有效之後再呼叫它。</div>
   </div>
 
