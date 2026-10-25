@@ -35,7 +35,7 @@
     <rect class="f-fix" x="22"  y="40" width="144" height="38" rx="9"/>
     <text class="f-stepf" x="94"  y="64" text-anchor="middle">① 取得描述</text>
     <rect class="f-fix" x="174" y="40" width="144" height="38" rx="9"/>
-    <text class="f-step"  x="246" y="64" text-anchor="middle">② 單號與種類</text>
+    <text class="f-step"  x="246" y="64" text-anchor="middle">② 單號與 MR 種類</text>
     <rect class="f-fix" x="326" y="40" width="144" height="38" rx="9"/>
     <text class="f-step"  x="398" y="64" text-anchor="middle">③ AI 分析</text>
     <rect class="f-fix" x="478" y="40" width="144" height="38" rx="9"/>
@@ -84,7 +84,7 @@
 
   <div class="hooks">
   <div class="hook-row"><div class="hook-step"><span class="s">步驟 1</span><b>取得 MR 描述</b></div><div class="hook-none">不因 device 而異</div><div></div></div>
-  <div class="hook-row"><div class="hook-step"><span class="s">步驟 2</span><b>擷取 JIRA key 與種類</b></div><div class="hook-name u">jira_key.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 2</span><b>擷取 JIRA key 與 MR 種類</b></div><div class="hook-name u">jira_key.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
   <div class="hook-row"><div class="hook-step">&nbsp;</div><div class="hook-name u">mr_type.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
   <div class="hook-row"><div class="hook-step"><span class="s">步驟 3</span><b>AI 分析</b></div><div class="hook-name t">summary.py</div><div class="hook-sig">analyze(inputs) → 分析結構</div></div>
   <div class="hook-row"><div class="hook-step"><span class="s">步驟 4</span><b>取得程式碼審閱報告</b></div><div class="hook-name u">parse_code_review.py</div><div class="hook-sig">parse(inputs) → 總表 + 結論</div></div>

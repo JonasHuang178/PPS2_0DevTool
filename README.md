@@ -140,7 +140,7 @@ PPS2_0DevTool/
 │   │   ├── ai_analysis_gitlab_mr_merge_to_md.py   5/5 合併為 markdown
 │   │   └── device/           各產品線自己的分析邏輯
 │   │                         （見 docs/ai-analysis-gitlab-mr/device-authoring.md）
-│   │       ├── __init__.py   解析 PPS_DEVICE 與種類、掃目錄、逐支回退
+│   │       ├── __init__.py   解析 PPS_DEVICE 與 MR 種類、掃目錄、逐支回退
 │   │       ├── default/      未指定時用這一份，也是所有 device 的後備
 │   │       │   └── <type>/   選用：某個種類專屬的 summary / merge_to_md
 │   │       └── _template/    範本（底線開頭，不是 device）

@@ -578,7 +578,7 @@ PPS_DEVICE = sdd         ->  失敗，訊息列出目前認得哪些
 
 認得哪些 device 由**掃目錄**決定，沒有註冊表：放一個目錄進去就是新增一個 device。
 
-## type：同一個 device 底下再分種類
+## type：同一個 device 底下再分 MR 種類
 
 一筆修 bug 的 MR 與一筆新增測試案例的 MR，要問 AI 的問題不一樣，報告也不該長得一樣。
 所以 `summary.py` 與 `merge_to_md.py` 可以再依**種類**分開 —— 以子目錄表示：
@@ -597,7 +597,7 @@ device/ssd/
 **種類不需要 `__init__.py`**（namespace package），放一個目錄進去字面上就是新增一個
 種類。認得哪些種類同樣由掃目錄決定，沒有註冊表。
 
-### 誰決定種類
+### 誰決定 MR 種類
 
 由該 device 的 `mr_type.py` 從 MR 擷取出來，規則各自決定 —— SSD 可能看標題第二個方括號、
 SD 看第三個：

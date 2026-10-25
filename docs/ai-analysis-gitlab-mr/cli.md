@@ -85,7 +85,7 @@ echo '{"action":"mr_description","config":{},"params":{
 ```
 
 ```bash
-# 2/5 擷取出 JIRA key 與種類 -> 02_mr_info.json
+# 2/5 擷取出 JIRA key 與 MR 種類 -> 02_mr_info.json
 echo '{"action":"mr_info","config":{},"params":{
   "repo":"'$REPO'","mr_iid":"'$IID'","jira_mode":"auto","jira_key_manual":"",
   "out_path":"'$W'/02_mr_info.json"}}' \
