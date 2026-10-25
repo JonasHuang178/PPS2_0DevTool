@@ -581,9 +581,17 @@ device/ssd/
         </table>
         </div>
 
-        <p class="spec-note">擷取不到、或擷取到的字不是合法識別字時，
-        <strong>不會去找 <code>ssd/&lt;種類&gt;/</code></strong> —— 直接用 <code>ssd/</code>
-        這一層放的那幾支，那裡也沒有才退到 <code>default/</code>。</p>
+        <p style="margin:18px 0 10px">「不分種類那一份」是指<strong>直接放在
+        <code>ssd/</code> 底下</strong>、沒進種類資料夾的那幾支：</p>
+
+        <div class="term">device/ssd/
+├── <span class="g">summary.py</span>            <span class="c">不分種類那一份，什麼種類都用它</span>
+└── <span class="y">bug/</span>
+    └── <span class="g">merge_to_md.py</span>    <span class="c">只有 bug 這種 MR 用</span></div>
+
+        <p class="spec-note">所以種類擷取不到時，<strong>整個跳過 <code>ssd/&lt;種類&gt;/</code>
+        那一層</strong>，直接用 <code>ssd/</code>；<code>ssd/</code> 也沒放才退到
+        <code>default/</code>。</p>
       </span></div>
     </div>
 
@@ -619,11 +627,6 @@ device/ssd/
 
   </div>
 </section>
-
-<div class="closing">
-  複製範本 → 宣告 <code>VERSION</code> → 只留你要覆寫的那幾支。<br>
-  確切的鍵名不必背，<strong>範本每個檔案的 docstring 就是權威來源</strong>。
-</div>
 
 <footer>
   同一個資料夾裡：<br>
