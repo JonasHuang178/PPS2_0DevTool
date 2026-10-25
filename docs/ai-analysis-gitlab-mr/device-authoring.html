@@ -517,24 +517,6 @@ device/ssd/
           </tbody>
         </table>
         </div>
-
-        <div class="spec">
-          <div class="spec-grp">要寫自己的</div>
-          <div class="spec-k">範本</div>
-          <div class="spec-v"><code>device/_template/jira_key.py</code>
-            <span class="dim">（想照 ssd 的規則改，複製 <code>device/ssd/jira_key.py</code> 更快）</span></div>
-          <div class="spec-k">改哪裡</div>
-          <div class="spec-v"><code>extract(mr)</code> 一支函式</div>
-          <div class="spec-k">輸入</div>
-          <div class="spec-v"><code>mr</code> 六個欄位：<br><code>title</code>、<code>source_branch</code>、
-            <code>target_branch</code>、<code>description</code>、<code>repo</code>、<code>mr_iid</code>
-            <span class="dim">—— 規則不一定要看標題，從來源分支撈
-            <code>feature/PPS-1234-retry</code> 也可以</span></div>
-          <div class="spec-k">輸出</div>
-          <div class="spec-v">字串。<br>擷取不到回 <code>""</code>
-            <span class="dim">（不要回 <code>None</code>）</span></div>
-        </div>
-
         <p class="spec-note">⚠️ <code>mr_type.py</code> 多半要一起寫 —— 不然種類會回退到 default，
         而 default 也不擷取，於是永遠是空的。</p>
       </span></div>
@@ -592,24 +574,6 @@ device/ssd/
         <p class="spec-note">所以種類擷取不到時，<strong>整個跳過 <code>ssd/&lt;種類&gt;/</code>
         那一層</strong>，直接用 <code>ssd/</code>；<code>ssd/</code> 也沒放才退到
         <code>default/</code>。</p>
-
-        <div class="spec" style="margin-top:22px">
-          <div class="spec-grp">要寫自己的</div>
-          <div class="spec-k">範本</div>
-          <div class="spec-v"><code>device/_template/mr_type.py</code>
-            <span class="dim">（想照 ssd 的規則改，複製 <code>device/ssd/mr_type.py</code> 更快）</span></div>
-          <div class="spec-k">改哪裡</div>
-          <div class="spec-v"><code>extract(mr)</code> 一支函式
-            <span class="dim">—— 與 <code>jira_key.py</code> 收到的欄位完全相同</span></div>
-          <div class="spec-k">輸出</div>
-          <div class="spec-v">字串。<br>沒有種類回 <code>""</code>
-            <span class="dim">—— 入口會去頭尾空白、轉小寫，所以回
-            <code>"NewTestCase"</code> 就對到 <code>newtestcase/</code></span></div>
-          <div class="spec-k">可以映射</div>
-          <div class="spec-v">標題寫 <code>[FW-Update]</code>、這裡回 <code>"fw_update"</code> 都行
-            <span class="dim">—— 目錄名必須是合法識別字，標題長什麼樣是你們自己的約定</span></div>
-        </div>
-
         <p class="spec-note">⚠️ 不合法的字串（<code>緊急</code>、<code>bug fix</code>）
         <strong>視同沒有種類，不會報錯</strong> —— 那是 MR 作者打的字，不是部署問題。<br>
         要讓它變成錯誤的話，在 <code>__init__.py</code> 宣告 <code>STRICT_TYPE = True</code>。</p>
