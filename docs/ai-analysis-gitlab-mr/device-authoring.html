@@ -347,6 +347,75 @@ _FIRST_BRACKET = re.compile(<span class="str">r"\[([^\]\n]*)\]"</span>)
         這裡回 <code>"fw_update"</code>。</div>
       </div>
     </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/mr_type.py</code> 收到的欄位與 <code>jira_key</code> 完全相同。<br>以「標題第二個方括號」為例（第一個留給 JIRA key）：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/mr_type.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""擷取出 Merge Request 的種類。種類決定步驟 3 與步驟 5 用哪一份腳本。</span>
+<span class="c"></span>
+<span class="c">規則是標題的第二個方括號 —— 第一個留給 JIRA key：</span>
+<span class="c"></span>
+<span class="c">    mod:[PPS-1234][Bug] 修正重試上限</span>
+<span class="c">        ^^^^^^^^^^ 第一個：JIRA key</span>
+<span class="c">                  ^^^^^ 第二個：種類  -&gt;  "Bug"</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> re
+
+<span class="c"># 標題裡所有的方括號內容，依出現順序。</span>
+<span class="c"># 用 [^][]* 而不是 .*? ：巢狀或未閉合的括號不該被當成一組，</span>
+<span class="c"># 而標題是人手打的，[a[b]c] 這種東西出現得比想像中多。</span>
+_BRACKET_RE = re.compile(<span class="str">r"\[([^\[\]]*)\]"</span>)
+
+<span class="c"># 取第幾個方括號（0 起算）。獨立成常數，因為這是這份規則唯一</span>
+<span class="c"># 的可變之處 —— 取第三個的 device 只要改這一行。</span>
+_BRACKET_INDEX = 1
+
+
+<span class="kw">def</span> <span class="fn">extract</span>(mr):
+    title = mr.get(<span class="str">"title"</span>) <span class="kw">or</span> <span class="str">""</span>
+    found = _BRACKET_RE.findall(title)
+
+    <span class="c"># 方括號不夠多。那不是錯誤：回 "" 就是「這一筆沒有種類」，</span>
+    <span class="c"># 後果是走該 device 的通用版（不分種類那一份）。</span>
+    <span class="kw">if</span> len(found) &lt;= _BRACKET_INDEX:
+        <span class="kw">return</span> <span class="str">""</span>
+
+    <span class="c"># 不必自己去空白或轉小寫，入口腳本會正規化。</span>
+    <span class="c"># 回 "NewTestCase" 就對到 newtestcase/ 目錄。</span>
+    <span class="kw">return</span> found[_BRACKET_INDEX]</div></div>
     <div class="io-note">回傳<strong>非字串</strong>會直接失敗（那是擴充腳本寫壞了）；
     回傳不合法的字串（<code>緊急</code>、<code>bug fix</code>）視同沒有種類，不報錯。</div>
   </div>
@@ -383,6 +452,119 @@ _FIRST_BRACKET = re.compile(<span class="str">r"\[([^\]\n]*)\]"</span>)
         <code>contract.ai_credentials()</code></div>
       </div>
     </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/summary.py</code> 的骨架已經把<strong>必要步驟</strong>寫進去了。<br>想看能跑的完整版，讀 <code>device/default/summary.py</code>：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/summary.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""AI 分析。四支裡最自由的一支 —— 問什麼、怎麼解析、組出什麼都你決定。</span>
+<span class="c"></span>
+<span class="c">_prompt() 與 _parse() 是你自己的；能跑的完整版見 default/summary.py。</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> ai_analysis_gitlab_mr as contract
+<span class="kw">from</span> script_utils <span class="kw">import</span> ai_utils
+
+
+<span class="kw">def</span> <span class="fn">analyze</span>(inputs):
+    <span class="c"># 必要步驟：拆連線字串、查模型名稱。沒做不會失敗，</span>
+    <span class="c"># 只是報告出處少了 Provider 與 Model 那一行 —— 不會報錯的遺漏。</span>
+    connection, api_key = contract.ai_credentials(inputs)
+    provider, url, share_code = ai_utils.split_connection(connection)
+    model = ai_utils.lookup_model(url, share_code, api_key,
+                                  verify_ssl=contract.ai_verify_ssl())
+
+    <span class="c"># 送出之前自己報一行。入口腳本只報到「準備 AI 分析」，</span>
+    <span class="c"># 不報的話等回覆的那幾分鐘，畫面停在你已經做完的上一件事。</span>
+    inputs[<span class="str">"progress"</span>](<span class="str">u"詢問 AI（可能需要數分鐘）…"</span>)
+
+    <span class="c"># 逾時、重試、重問一律用 inputs 帶來的值，不要寫死數字 ——</span>
+    <span class="c"># 那是使用者為這個 provider 填的設定，寫死了他改了也沒有效果。</span>
+    overview, found = ai_utils.ask(
+        url, _prompt(inputs), share_code=share_code, api_key=api_key,
+        parse=<span class="kw">lambda</span> text: _parse(ai_utils.as_json(text)),
+        timeout=inputs[<span class="str">"ai_timeout"</span>], retries=inputs[<span class="str">"ai_retries"</span>],
+        reask=inputs[<span class="str">"ai_reask"</span>], verify_ssl=contract.ai_verify_ssl())
+
+    <span class="c"># 一定要回 analysis_body() 的結果，不要自己組 dict。</span>
+    <span class="c"># schema_version、mr_type、coverage 都由入口腳本蓋章，這裡填了會被覆蓋。</span>
+    <span class="kw">return</span> contract.analysis_body(
+        overview=overview,
+        provider=provider,
+        model=model,
+        <span class="c"># 有效性由你判定：JIRA_STATE_OK / _NONE / _INVALID。</span>
+        <span class="c"># INVALID 時 jira_key 放被拒絕的原值，報告才印得出是哪裡放錯。</span>
+        jira_key=inputs[<span class="str">"jira_key"</span>],
+        jira_state=contract.JIRA_STATE_OK,
+        mr_diff={
+            path: [
+                contract.finding(
+                    title=one[<span class="str">"title"</span>],
+                    reason=one[<span class="str">"reason"</span>],
+                    <span class="c"># 程式碼從 inputs["mr_diff"] 切出來，不要用 AI 複述回來</span>
+                    <span class="c"># 的那一份 —— 複述來的可能與 MR 上的不一致，而沒有任何</span>
+                    <span class="c"># 一步會發現。切不到就留空字串，不要回退成用原文。</span>
+                    diff_code=contract.hunk_of(
+                        inputs[<span class="str">"mr_diff"</span>], path, one[<span class="str">"hunkHeader"</span>]),
+                )
+                <span class="kw">for</span> one <span class="kw">in</span> items
+            ]
+            <span class="kw">for</span> path, items <span class="kw">in</span> found.items()
+        },
+    )</div></div>
     <div class="io-note"><code>fetch_jira</code> 給的是<strong>函式而不是現成內容</strong>，
     因為「這個 key 有沒有效」是你的政策。<br>入口腳本先抓的話，<code>[WIP]</code> 這種從方括號擷取來的東西
     每次都會白打一趟 JIRA。<br>判定有效之後再呼叫它。</div>
@@ -415,6 +597,81 @@ _FIRST_BRACKET = re.compile(<span class="str">r"\[([^\]\n]*)\]"</span>)
         <div class="io-v">總表最後一欄是數量，<br>全部加總為 0 就判定通過。</div>
       </div>
     </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/parse_code_review.py</code> 只幫你切好表格，判定留給你。<br>以「最後一欄是數量，加總為 0 判定通過」為例：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/parse_code_review.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""看懂別人的 code review 報告，並判定這份審閱的結論。</span>
+<span class="c"></span>
+<span class="c">查議題附件、挑最新那一份、擋大小上限、下載、解碼都在入口腳本 ——</span>
+<span class="c">那些要 JIRA 權杖，而權杖不交給 device 的程式碼。你拿到的是現成全文。</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> ai_analysis_gitlab_mr as contract
+
+
+<span class="kw">def</span> <span class="fn">parse</span>(inputs):
+    <span class="c"># heading 是你在 __init__.py 宣告的 CODE_REVIEW_SOURCE_HEADING，</span>
+    <span class="c"># 沒宣告就是契約的預設值。自己的切法也可以。</span>
+    table = contract.extract_risk_table(inputs[<span class="str">"text"</span>], inputs[<span class="str">"heading"</span>])
+
+    total = 0
+    <span class="kw">for</span> index, row <span class="kw">in</span> enumerate(_rows(table), 1):
+        count = _count_of(row[-1])
+
+        <span class="kw">if</span> count <span class="kw">is</span> <span class="kw">None</span>:
+            <span class="c"># 表格不是這個形狀 —— raise，報告上留一行 ⚠️ 說明原因。</span>
+            <span class="c"># 讀得懂但就是判不出結論的話回 REVIEW_RESULT_UNKNOWN，</span>
+            <span class="c"># 結論那一行就不印。兩種都不要猜：印一個錯的 PASS 比不印更糟。</span>
+            <span class="kw">raise</span> contract.RiskTableError(
+                <span class="str">u"總表最後一欄的第 %d 列是 %r，不是數量"</span> % (index, row[-1]),
+                <span class="str">u"這一份規則把最後一欄當數量，全部列加總為 0 判定通過。"</span>,
+                <span class="str">u"CODE_REVIEW_COUNT_NOT_A_NUMBER"</span>)
+
+        total += count
+
+    <span class="c"># 一列資料都沒有也是 0，也就是 pass —— 那張表的意思就是「沒有項目」。</span>
+    verdict = (contract.REVIEW_RESULT_PASS <span class="kw">if</span> total == 0
+               <span class="kw">else</span> contract.REVIEW_RESULT_FAIL)
+
+    <span class="c"># risk_table 原樣放，不要自帶 ## 標題 —— 那一行由步驟 5 寫出，</span>
+    <span class="c"># 它才知道自己在第幾層。</span>
+    <span class="kw">return</span> contract.code_review_parsed(risk_table=table, review_result=verdict)</div></div>
     <div class="io-note">查附件、挑最新那份、擋大小上限、下載、解碼<strong>都不在這裡</strong> ——
     那些要 JIRA 權杖，而權杖不交給 device 的程式碼。<br>你拿到的是現成全文。<br>
     判不出結論就回 <code>UNKNOWN</code>，<strong>不要猜</strong>。</div>
@@ -447,6 +704,91 @@ _FIRST_BRACKET = re.compile(<span class="str">r"\[([^\]\n]*)\]"</span>)
         code review 那段、末尾出處。</div>
       </div>
     </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/merge_to_md.py</code> 只回了總覽一段。<br>補上發現清單與 JIRA 那一行，大致長這樣：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/merge_to_md.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""AI 分析那一段的版面。</span>
+<span class="c"></span>
+<span class="c">你只負責「# AI 分析結果」底下那一段。標題那一行、原始描述、</span>
+<span class="c">程式碼審閱那一段與末尾的出處都由入口腳本寫出，你改不到也不必管。</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> ai_analysis_gitlab_mr as contract
+
+
+<span class="kw">def</span> <span class="fn">render</span>(inputs):
+    analysis = inputs[<span class="str">"analysis"</span>]
+    blocks = []
+
+    <span class="c"># plain() 把 None 與非字串收斂成字串，不用的話報告會印出 "None"。</span>
+    <span class="c"># as_list() 把一整段總覽排成逐行清單 —— 它尊重來源已有的結構，</span>
+    <span class="c"># 切不動就原樣回傳，所以可以無條件套用。</span>
+    overview = contract.plain(analysis.get(<span class="str">"overview"</span>))
+    <span class="kw">if</span> overview:
+        blocks.append(<span class="str">u"## Summary\n\n"</span> + contract.as_list(overview))
+
+    <span class="kw">for</span> path, items <span class="kw">in</span> (analysis.get(<span class="str">"mrDiff"</span>) <span class="kw">or</span> {}).items():
+        blocks.append(<span class="str">u"### `%s`"</span> % path)
+        <span class="kw">for</span> one <span class="kw">in</span> items:
+            code = contract.plain(one.get(<span class="str">"diffCode"</span>))
+            <span class="kw">if</span> <span class="kw">not</span> code:
+                <span class="kw">continue</span>
+            <span class="c"># 圍籬長度用算的。寫死三個反引號的話，內容本身含有反引號的</span>
+            <span class="c"># diff（改到 markdown 檔就會）會讓程式碼區塊提前結束，後面</span>
+            <span class="c"># 變成一般文字 —— 而報告仍然「成功」產出。</span>
+            fence = contract.fence_for(code)
+            blocks.append(<span class="str">u"%s diff\n%s\n%s"</span> % (fence, code, fence))
+
+    <span class="c"># 你這一份一旦存在就完全接管這一段 —— default 的「## 詳細資料」</span>
+    <span class="c"># 不會自動出現在你的報告裡。要指向那張單子就自己加這三行。</span>
+    <span class="c"># 狀態不要自己重判，也不要自己呼叫 contract.jira_url()：</span>
+    <span class="c"># 兩者都由步驟 3 填好帶過來，重算就多一個會跟產物不一致的來源。</span>
+    <span class="kw">if</span> analysis.get(<span class="str">"jira_state"</span>) == contract.JIRA_STATE_OK:
+        blocks.append(<span class="str">u"## 詳細資料\n\n- [%s](%s)"</span>
+                      % (analysis[<span class="str">"jira_key"</span>], analysis[<span class="str">"jira_url"</span>]))
+
+    <span class="kw">return</span> <span class="str">u"\n\n"</span>.join(blocks)</div></div>
     <div class="io-note"><code># AI 分析結果</code> 那一行<strong>不歸你管</strong>，因為它同時是下一輪
     切出原始描述的邊界。<br>某個 device 把它寫成別的字，下一輪就找不到邊界 ——
     整份舊報告被當成原始描述，每跑一次疊一段，而每一步都回報成功。</div>
