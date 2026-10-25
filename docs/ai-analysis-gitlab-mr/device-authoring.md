@@ -7,6 +7,54 @@
 > [`scripts/ai_analysis_gitlab_mr/device/_template/`](../../scripts/ai_analysis_gitlab_mr/device/_template/)
 > 各檔的 docstring —— 這份文件講的是為什麼，範本講的是確切的鍵名。
 
+## 入口腳本與擴充腳本
+
+兩種腳本，差別只在放哪個資料夾。
+
+```
+scripts/ai_analysis_gitlab_mr/
+│
+├── ai_analysis_gitlab_mr_description.py   入口腳本 ①
+├── ai_analysis_gitlab_mr_info.py          入口腳本 ②
+├── ai_analysis_gitlab_mr_summary.py       入口腳本 ③
+├── ai_analysis_gitlab_mr_code_review.py   入口腳本 ④
+├── ai_analysis_gitlab_mr_merge_to_md.py   入口腳本 ⑤
+│
+└── device/
+    ├── _template/   範本，複製它
+    ├── default/     共同後備，不要改
+    └── <你的名字>/  你的 device，例如 ssd
+        ├── __init__.py
+        ├── jira_key.py           擴充腳本 ②
+        ├── mr_type.py            擴充腳本 ②
+        ├── summary.py            擴充腳本 ③
+        ├── parse_code_review.py  擴充腳本 ④
+        ├── merge_to_md.py        擴充腳本 ⑤
+        │
+        └── bug/                  某一種 MR 專用（選用）
+            ├── summary.py        這種 MR 才用這一份
+            └── merge_to_md.py    只有 ③ ⑤ 可以這樣分
+```
+
+- **上面五支是入口腳本** —— 會自己跑的那一種。一步一支，Qt 按下去就是叫它們。五條產品線
+  共用，路徑寫死在 C++，不因 device 而異，**你不會動到它們**
+- **device 底下那五支是擴充腳本** —— 不會自己跑。入口腳本跑到一半 `import` 進來、呼叫
+  一次、拿走回傳值。**你要寫的就是這五支**，而且只寫要改的，其餘刪掉（各自回退，見下面
+  「回退是逐支的」）
+
+一次呼叫就是三件事：
+
+1. **入口腳本把東西準備好** —— 連 GitLab、連 JIRA、帶權杖、下載附件、切 diff。
+   憑證與網路都不交給 device 的程式碼
+2. **叫擴充腳本一次，問一個問題** —— 哪一張單號？哪一種 MR？問 AI 什麼？審閱報告怎麼讀？
+   那一段怎麼排？擴充腳本只回答，不負責去拿資料
+3. **入口腳本收下回傳值，做完剩下的** —— 檢查形狀、蓋上 `schema_version` 與 `mr_type`、
+   落檔。形狀不對就在產生它的那一步失敗，訊息點名是哪個 device
+
+> **方向只有一邊。** 入口腳本叫擴充腳本，擴充腳本不會回頭叫入口腳本，也不知道自己被哪一支
+> 叫、上一步做過什麼 —— 它收到什麼就看什麼。這是「哪幾格因 device 而異」能被清楚劃出來的
+> 前提：擴充腳本只要能從收到的素材算出回傳值，換一個 device 就不會牽動流程本身。
+
 ## `03_summary.json` 的格式
 
 步驟 3 的產物是結構，不是排好版的文字；渲染由步驟 5 負責。
