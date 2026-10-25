@@ -79,10 +79,8 @@
 
 <!-- ============ 入口腳本與擴充腳本 ============ -->
 <section>
-  <h2>入口腳本與擴充腳本</h2>
-  <h3>先看檔案放在哪</h3>
-
-  <p class="lead">兩種腳本，差別只在<strong>放哪個資料夾</strong>。</p>
+  <h2>檔案結構</h2>
+  <h3>入口腳本與擴充腳本</h3>
 
   <div class="term">scripts/ai_analysis_gitlab_mr/
 │
@@ -93,9 +91,9 @@
 ├── <span class="b">ai_analysis_gitlab_mr_merge_to_md.py</span>   <span class="c">入口腳本 ⑤</span>
 │
 └── device/
-    ├── _template/   <span class="c">範本，複製它</span>
-    ├── default/     <span class="c">共同後備，不要改</span>
-    └── <span class="y">&lt;你的名字&gt;/</span>   <span class="c">你的 device，例如 ssd</span>
+    ├── _template/     <span class="c">範本，複製它</span>
+    ├── default/       <span class="c">共同後備，不要改</span>
+    └── <span class="y">&lt;你的裝置名&gt;/</span>   <span class="c">你的 device，例如 ssd</span>
         ├── __init__.py
         ├── <span class="g">jira_key.py</span>           <span class="c">擴充腳本 ②</span>
         ├── <span class="g">mr_type.py</span>            <span class="c">擴充腳本 ②</span>
@@ -109,50 +107,16 @@
 
   <div class="stuck" style="margin-top:22px">
     <div class="st">
-      <div class="st-q"><span class="b">上面五支</span>是<strong>入口腳本</strong> —— 會自己跑的那一種</div>
-      <div class="st-a">一步一支，Qt 按下去就是叫它們。<br>
-      五條產品線共用，<strong>你不會動到它們</strong>。</div>
+      <div class="st-q">入口腳本 —— 流程本身，<strong>五條產品線共用</strong></div>
+      <div class="st-a">一步一支，固定五步照跑。<br>
+      <strong>你不會動到它們</strong>，也不需要為了新增一條產品線改它們。</div>
     </div>
     <div class="st">
-      <div class="st-q"><span class="g">device 底下那五支</span>是<strong>擴充腳本</strong> —— 不會自己跑</div>
-      <div class="st-a">入口腳本跑到一半，<code>import</code> 進來、呼叫一次、拿走回傳值。<br>
-      <strong>你要寫的就是這五支</strong>（只寫要改的，其餘刪掉）。</div>
+      <div class="st-q">擴充腳本 —— 流程讓出來的格子，<strong>每條產品線自己客製</strong></div>
+      <div class="st-a">放進自己的裝置資料夾，<strong>想改哪一支就放哪一支</strong>。<br>
+      沒放的那幾支自動沿用 <code>default</code>，不必整套重寫。</div>
     </div>
   </div>
-
-  <p class="lead" style="margin-top:26px">一次呼叫，就是這三件事。</p>
-
-  <div class="flow">
-    <div class="fl">
-      <div class="fl-n">1</div>
-      <div>
-        <div class="fl-t">入口腳本把東西準備好</div>
-        <div class="fl-d">連 GitLab、連 JIRA、帶權杖、下載附件、切 diff。<br>
-        <strong>憑證與網路都不交給你的程式碼。</strong></div>
-      </div>
-    </div>
-    <div class="fl">
-      <div class="fl-n">2</div>
-      <div>
-        <div class="fl-t">叫你的擴充腳本一次，問一個問題</div>
-        <div class="fl-d">哪一張單號？哪一種 MR？問 AI 什麼？審閱報告怎麼讀？那一段怎麼排？<br>
-        <strong>你只回答，不負責去拿資料。</strong></div>
-      </div>
-    </div>
-    <div class="fl">
-      <div class="fl-n">3</div>
-      <div>
-        <div class="fl-t">入口腳本收下回傳值，做完剩下的</div>
-        <div class="fl-d">檢查形狀、補上 <code>schema_version</code> 與 <code>mr_type</code>、落檔。<br>
-        <strong>回傳值形狀不對就當場失敗，訊息點名是哪個 device。</strong></div>
-      </div>
-    </div>
-  </div>
-
-  <p class="muted" style="font-size:15px;margin-top:16px">
-    方向<strong>只有一邊</strong>：入口腳本叫擴充腳本，擴充腳本不會回頭叫入口腳本，<br>
-    也不知道自己被哪一支叫、上一步做過什麼。它收到什麼就看什麼。
-  </p>
 </section>
 
 <!-- ============ 五支擴充腳本掛在哪 ============ -->
