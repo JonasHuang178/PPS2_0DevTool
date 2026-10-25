@@ -428,12 +428,19 @@ device/ssd/
     <div class="qa-item">
       <div class="qa-q"><span>沒放的擴充腳本會用哪一份？</span></div>
       <div class="qa-a"><span>
-        規則只有一條：<br><strong>同一支擴充腳本有好幾份時，離你近的那份贏。</strong><br>
         假設 <code>PPS_DEVICE=ssd</code>，這一筆 MR 的標題是
         <code>[PPS-1234][Bug] 修正重試上限</code>，<strong>擷取出來的種類是
-        <code>bug</code></strong>：<br>
+        <code>bug</code></strong>。<br>
+        而 <code>ssd</code> 的資料夾裡<strong>只放了兩支</strong>：
 
-        <p class="mx-dir">近 ←——————————————————————→ 遠</p>
+        <div class="term">device/
+├── default/                  <span class="c">五支都在，誰都可以退到這裡</span>
+└── <span class="y">ssd/</span>
+    ├── <span class="g">summary.py</span>            <span class="c">③ 覆寫了</span>
+    └── <span class="y">bug/</span>
+        └── <span class="g">merge_to_md.py</span>    <span class="c">⑤ 只有 bug 這種 MR 用</span></div>
+
+        <p style="margin:14px 0 10px">那這一筆 MR 的五支，各自會用到哪一份：</p>
         <div class="mx-wrap">
         <table class="mx">
           <thead>
@@ -467,15 +474,14 @@ device/ssd/
         </table>
         </div>
 
-        <p class="spec-note">每一列<strong>由左往右找，第一個有檔案的就用</strong>，
-        後面的不再看。<br>五列各走各的 —— 覆寫一支不會把其他四支一起帶走。</p>
-        <p class="spec-note">左邊那一欄只有 ③ ⑤ 用得到。<br><code>jira_key</code>、
-        <code>mr_type</code> 跑在種類被決定<strong>之前</strong>（<code>bug</code>
-        正是 <code>mr_type</code> 判出來的），<code>parse_code_review</code>
-        則是刻意不分種類 —— 審閱報告的格式是 device 的屬性。</p>
-        <p class="spec-note">⚠️ 表上<strong>沒有 <code>default/bug/</code> 這一欄</strong>，
-        也永遠不會有 —— 種類名稱是各 device 自己的字彙，你的 <code>bug</code>
-        與別條產品線的 <code>bug</code> 不保證是同一件事。</p>
+        <p class="spec-note">一列一支，<strong>由左往右找，第一個有檔案的就用</strong>。<br>
+        五支各找各的 —— 覆寫一支，不會影響其他四支。</p>
+        <p class="spec-note"><strong>最左邊那一欄只有 ③ ⑤ 用得到。</strong><br>
+        ② 的兩支跑在種類出來<strong>之前</strong>（<code>bug</code> 就是它們判出來的），
+        ④ 則是刻意不分種類。</p>
+        <p class="spec-note">⚠️ <strong>沒有 <code>default/bug/</code> 這一欄</strong>，
+        也不會有。<br>種類名稱是各 device 自己的字彙，你的 <code>bug</code>
+        不保證等於別人的 <code>bug</code>。</p>
       </span></div>
     </div>
 
