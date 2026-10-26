@@ -690,6 +690,38 @@ _BRACKET_INDEX = 1
     <span class="c"># risk_table 原樣放，不要自帶 ## 標題 —— 那一行由步驟 5 寫出，</span>
     <span class="c"># 它才知道自己在第幾層。</span>
     <span class="kw">return</span> contract.code_review_parsed(risk_table=table, review_result=verdict)</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      回傳值會變成步驟 4 的產物：
+    </div>
+    <div class="code-h"><span>04_code_review.json</span><span class="lang">json</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12</div><div class="term" style="border:0;border-radius:0;padding:18px 22px">{
+  <span class="b">"schema_version"</span>: 1,
+  <span class="b">"code_review"</span>: {
+    <span class="b">"filename"</span>: <span class="str">"CodeReview_20260910_092900.md"</span>,
+    <span class="b">"created"</span>: <span class="str">"2026-09-10T09:29:00.000+0800"</span>,
+    <span class="b">"author"</span>: <span class="str">"Jonas"</span>,
+    <span class="b">"url"</span>: <span class="str">"https://jira.example.com/secure/attachment/12345/CodeReview_20260910.md"</span>,
+    <span class="b">"risk_table"</span>: <span class="str">"| 類別 | 風險等級 | 數量 |\n|---|---|---|\n| 記憶體 | 高 | 0 |"</span>,
+    <span class="b">"review_result"</span>: <span class="str">"pass"</span>,
+    <span class="b">"error"</span>: <span class="str">""</span>
+  }
+}</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>filename</code>、<code>created</code>、<code>author</code>、<code>url</code>
+      由<strong>入口腳本</strong>填 —— 附件的資訊只有它拿得到。<br>
+      你只回 <code>risk_table</code> 與 <code>review_result</code> 兩個。
+    </div>
     <div class="io-note">查附件、挑最新那份、擋大小上限、下載、解碼<strong>都不在這裡</strong> ——
     那些要 JIRA 權杖，而權杖不交給 device 的程式碼。<br>你拿到的是現成全文。<br>
     判不出結論就回 <code>UNKNOWN</code>，<strong>不要猜</strong>。</div>
@@ -807,6 +839,44 @@ _BRACKET_INDEX = 1
                       % (analysis[<span class="str">"jira_key"</span>], analysis[<span class="str">"jira_url"</span>]))
 
     <span class="kw">return</span> <span class="str">u"\n\n"</span>.join(blocks)</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      回傳的字串會被放進報告的 <code># AI 分析結果</code> 底下：
+    </div>
+    <div class="code-h"><span>報告裡的這一段</span><span class="lang">markdown</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="b">## Summary</span>
+
+- 把重試上限從 3 調高到 10。
+
+<span class="b">### `cpp/test.cpp`</span>
+
+<span class="c">```diff</span>
+<span class="b">@@ -12,7 +12,7 @@</span>
+<span class="y">-    retry = 3</span>
+<span class="g">+    retry = 10</span>
+<span class="c">```</span>
+
+<span class="b">## 詳細資料</span>
+
+- [PPS-1234](https://jira.example.com/browse/PPS-1234)</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      上面那段程式碼就是排出這些的。<br>
+      <code># AI 分析結果</code> 那一行、前面的原始描述、後面的涵蓋範圍與
+      code review 都<strong>不在你的回傳值裡</strong> —— 入口腳本自己會寫。
+    </div>
     <div class="io-note"><code># AI 分析結果</code> 那一行<strong>不歸你管</strong>，因為它同時是下一輪
     切出原始描述的邊界。<br>某個 device 把它寫成別的字，下一輪就找不到邊界 ——
     整份舊報告被當成原始描述，每跑一次疊一段，而每一步都回報成功。</div>
