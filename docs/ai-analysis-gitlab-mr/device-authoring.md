@@ -966,6 +966,27 @@ def render(inputs):
 
     return u"\n\n".join(blocks)
 ```
+
+排出來的就是報告裡的這一段：
+
+````markdown
+## Summary
+
+- 把重試上限從 3 調高到 10。
+
+### `cpp/test.cpp`
+
+```diff
+@@ -12,7 +12,7 @@
+-    retry = 3
++    retry = 10
+```
+
+## 詳細資料
+
+- [PPS-1234](https://jira.example.com/browse/PPS-1234)
+````
+
 ## 新增一個 device
 
 複製範本，改成你的 device 名稱：
