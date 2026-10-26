@@ -583,6 +583,8 @@ _BRACKET_INDEX = 1
       <code>schema_version</code>、<code>mr_type</code>、<code>coverage</code>
       這三個<strong>不必填</strong> —— 由入口腳本蓋章，填了也會被覆蓋。
     </div>
+    <div class="io-note"><code>fetch_jira</code> 是<strong>函式</strong>，不是現成的內容 —— 要用才呼叫。<br>
+    先確定 key 是有效的再叫它：像 <code>[WIP]</code> 這種擷取錯的字，叫下去就是白跑一趟 JIRA。</div>
   </div>
 
   <div class="io">
