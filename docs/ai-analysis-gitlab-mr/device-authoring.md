@@ -748,6 +748,224 @@ STRICT_TYPE = True
 印在報告出處（`Type: bug`），也留給其他消費者。種類由**入口腳本蓋章**，擴充腳本不填 ——
 與 `schema_version` 同一個理由，讓擴充腳本填遲早有人複製範本時忘記。
 
+## 五支擴充腳本的樣子
+
+下面五份各是一支能用的範例，**說明寫在註解裡**。確切的鍵名與回傳契約仍以
+`device/_template/` 各檔的 docstring 為準 —— 那裡是權威來源，這裡是拿來起頭的。
+
+### `jira_key.py` —— 擷取 JIRA key
+
+`extract(mr)` 一支函式，回一個字串。以「標題第一個方括號」為例：
+
+```python
+"""從 MR 標題的第一個方括號擷取 JIRA key。
+
+這裡不判有效性 —— [WIP] [PPS-1234] ... 會老實回 "WIP"，由步驟 3 的
+summary.py 判定它不合格。擷取規則與判定規則同屬一個 device，放在一起
+才不會各自漂移。
+"""
+
+import re
+
+# 第一個方括號裡的內容。非貪婪，且不跨行 —— 標題本來就是一行。
+_FIRST_BRACKET = re.compile(r"\[([^\]\n]*)\]")
+
+
+def extract(mr):
+    # 欄位可能是 None，直接餵給 search() 會丟 TypeError。
+    title = mr.get("title") or ""
+
+    match = _FIRST_BRACKET.search(title)
+    if not match:
+        # 沒有方括號的標題很常見，那不是錯誤：回 "" 就是
+        # 「這一筆沒有 key」。不要回 None，也不要自己回 "NONE" ——
+        # 對外的表示法由入口腳本統一。
+        return ""
+
+    # [ PPS-1234 ] 這種寫法會帶空白進來，不去掉的話
+    # 組出來的 JIRA 網址會壞掉。
+    return match.group(1).strip()
+```
+
+### `mr_type.py` —— 擷取 MR 種類
+
+收到的欄位與 `jira_key` 完全相同。以「標題第二個方括號」為例 —— 第一個留給
+JIRA key：
+
+```python
+"""擷取出 Merge Request 的種類。種類決定步驟 3 與步驟 5 用哪一份腳本。
+
+規則是標題的第二個方括號 —— 第一個留給 JIRA key：
+
+    mod:[PPS-1234][Bug] 修正重試上限
+        ^^^^^^^^^^ 第一個：JIRA key
+                  ^^^^^ 第二個：種類  ->  "Bug"
+"""
+
+import re
+
+# 標題裡所有的方括號內容，依出現順序。
+# 用 [^][]* 而不是 .*? ：巢狀或未閉合的括號不該被當成一組，
+# 而標題是人手打的，[a[b]c] 這種東西出現得比想像中多。
+_BRACKET_RE = re.compile(r"\[([^\[\]]*)\]")
+
+# 取第幾個方括號（0 起算）。獨立成常數，因為這是這份規則唯一
+# 的可變之處 —— 取第三個的 device 只要改這一行。
+_BRACKET_INDEX = 1
+
+
+def extract(mr):
+    title = mr.get("title") or ""
+    found = _BRACKET_RE.findall(title)
+
+    # 方括號不夠多。那不是錯誤：回 "" 就是「這一筆沒有種類」，
+    # 後果是走該 device 的通用版（不分種類那一份）。
+    if len(found) <= _BRACKET_INDEX:
+        return ""
+
+    # 不必自己去空白或轉小寫，入口腳本會正規化。
+    # 回 "NewTestCase" 就對到 newtestcase/ 目錄。
+    return found[_BRACKET_INDEX]
+```
+
+### `summary.py` —— AI 分析
+
+五支裡最自由的一支，中間怎麼問 AI 完全由你決定；下面只畫出**收什麼、回什麼**。
+能跑的完整版見 `device/default/summary.py`，回傳值的格式見上面
+「`03_summary.json` 的格式」：
+
+```python
+"""AI 分析。問 AI 什麼、怎麼解析回應、組出什麼，都你決定。
+
+怎麼呼叫 AI 見 script_utils.ai_utils；能跑的完整版見 default/summary.py。
+"""
+
+import ai_analysis_gitlab_mr as contract
+
+
+def analyze(inputs):
+    # 收到什麼 —— 全是現成的文字，不必自己連線：
+    #
+    #     inputs["description"]   MR 的原始描述
+    #     inputs["mr_diff"]       差異純文字
+    #     inputs["fetch_jira"]    fetch_jira(key) -> dict 或 None
+    #     inputs["jira_key"]      該次採用的 key
+    #     inputs["progress"]      progress(text)，在對話框顯示一行字
+    #
+    # （AI 端點、金鑰、逾時、重試、重問也在 inputs 裡，交給 ai_utils.ask）
+
+    # 要回什麼 —— 一定是 analysis_body() 的結果，不要自己組 dict。
+    return contract.analysis_body(
+        overview=u"把重試上限從 3 調高到 10。",
+        provider=u"openai",
+        model=u"gpt-4o",
+        jira_key=inputs["jira_key"],
+        jira_state=contract.JIRA_STATE_OK,
+        jira_url=contract.jira_url(inputs["jira_key"]),
+        mr_diff={
+            u"cpp/test.cpp": [
+                contract.finding(
+                    title=u"重試上限調高",
+                    reason=u"原本 3 次在忙碌時不夠。",
+                    hunk_header=u"@@ -12,7 +12,7 @@",
+                ),
+            ],
+        },
+    )
+```
+
+### `parse_code_review.py` —— 看懂 code review 報告
+
+以 `default` 的規則為例：最後一欄是數量，全部列加總為 0 判定通過。回傳值的格式
+見上面「`04_code_review.json` 的格式」：
+
+```python
+"""看懂別人的 code review 報告，並判定這份審閱的結論。
+
+查議題附件、挑最新那一份、擋大小上限、下載、解碼都在入口腳本 ——
+那些要 JIRA 權杖，而權杖不交給 device 的程式碼。你拿到的是現成全文。
+"""
+
+import ai_analysis_gitlab_mr as contract
+
+
+def parse(inputs):
+    # heading 是你在 __init__.py 宣告的 CODE_REVIEW_SOURCE_HEADING，
+    # 沒宣告就是契約的預設值。自己的切法也可以。
+    table = contract.extract_risk_table(inputs["text"], inputs["heading"])
+
+    total = 0
+    for index, row in enumerate(_rows(table), 1):
+        count = _count_of(row[-1])
+
+        if count is None:
+            # 表格不是這個形狀 —— raise，報告上留一行 ⚠️ 說明原因。
+            # 讀得懂但就是判不出結論的話回 REVIEW_RESULT_UNKNOWN，
+            # 結論那一行就不印。兩種都不要猜：印一個錯的 PASS 比不印更糟。
+            raise contract.RiskTableError(
+                u"總表最後一欄的第 %d 列是 %r，不是數量" % (index, row[-1]),
+                u"這一份規則把最後一欄當數量，全部列加總為 0 判定通過。",
+                u"CODE_REVIEW_COUNT_NOT_A_NUMBER")
+
+        total += count
+
+    # 一列資料都沒有也是 0，也就是 pass —— 那張表的意思就是「沒有項目」。
+    verdict = (contract.REVIEW_RESULT_PASS if total == 0
+               else contract.REVIEW_RESULT_FAIL)
+
+    # risk_table 原樣放，不要自帶 ## 標題 —— 那一行由步驟 5 寫出，
+    # 它才知道自己在第幾層。
+    return contract.code_review_parsed(risk_table=table, review_result=verdict)
+```
+
+### `merge_to_md.py` —— AI 分析那一段的版面
+
+回傳的字串會被放進報告的 `# AI 分析結果` 底下。標題那一行與前後各段都由入口
+腳本寫出：
+
+```python
+"""AI 分析那一段的版面。
+
+你只負責「# AI 分析結果」底下那一段。標題那一行、原始描述、
+程式碼審閱那一段與末尾的出處都由入口腳本寫出，你改不到也不必管。
+"""
+
+import ai_analysis_gitlab_mr as contract
+
+
+def render(inputs):
+    analysis = inputs["analysis"]
+    blocks = []
+
+    # plain() 把 None 與非字串收斂成字串，不用的話報告會印出 "None"。
+    # as_list() 把一整段總覽排成逐行清單 —— 它尊重來源已有的結構，
+    # 切不動就原樣回傳，所以可以無條件套用。
+    overview = contract.plain(analysis.get("overview"))
+    if overview:
+        blocks.append(u"## Summary\n\n" + contract.as_list(overview))
+
+    for path, items in (analysis.get("mrDiff") or {}).items():
+        blocks.append(u"### `%s`" % path)
+        for one in items:
+            code = contract.plain(one.get("diffCode"))
+            if not code:
+                continue
+            # 圍籬長度用算的。寫死三個反引號的話，內容本身含有反引號的
+            # diff（改到 markdown 檔就會）會讓程式碼區塊提前結束，後面
+            # 變成一般文字 —— 而報告仍然「成功」產出。
+            fence = contract.fence_for(code)
+            blocks.append(u"%s diff\n%s\n%s" % (fence, code, fence))
+
+    # 你這一份一旦存在就完全接管這一段 —— default 的「## 詳細資料」
+    # 不會自動出現在你的報告裡。要指向那張單子就自己加這三行。
+    # 狀態不要自己重判，也不要自己呼叫 contract.jira_url()：
+    # 兩者都由步驟 3 填好帶過來，重算就多一個會跟產物不一致的來源。
+    if analysis.get("jira_state") == contract.JIRA_STATE_OK:
+        blocks.append(u"## 詳細資料\n\n- [%s](%s)"
+                      % (analysis["jira_key"], analysis["jira_url"]))
+
+    return u"\n\n".join(blocks)
+```
 ## 新增一個 device
 
 複製範本，改成你的 device 名稱：
