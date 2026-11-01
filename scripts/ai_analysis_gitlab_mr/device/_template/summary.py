@@ -18,6 +18,10 @@ device 的通用版，種類目錄裡沒有時會落到它。入口腳本負責�
 import ai_analysis_gitlab_mr as contract
 from script_utils import ai_utils
 
+# 這一份有沒有把差異送給 AI 看。完全不放差異的 prompt 改成 False；說明見 analyze() 的
+# docstring 裡 coverage 那一段。不宣告的預設值也是 True，所以這一行不影響行為。
+ANALYZES_CODE = True
+
 
 def analyze(inputs):
     """產生這次分析的內容。
@@ -86,15 +90,15 @@ def analyze(inputs):
     coverage 尤其不要填：它正是用來說明「這支擴充腳本回報了多少個檔案」的，報告會把
     「差異裡有、你沒回報」的那些列出來。想讓那個數字好看，唯一的辦法是真的多回報。
 
-    **例外：這一份根本不讓 AI 看程式碼的話，在模組層級宣告** `ANALYZES_CODE = False`
-    （不是回傳值，見 `device/sd/new_test_case/summary.py`）。那一段問的是「送進分析的
-    檔案回報了多少」，而你一個檔案都沒送進去 —— 不宣告的話每一個檔案都會落進「AI 沒有
-    回報」，於是每一份報告都掛著一段讀起來像缺陷的警告，而涵蓋層的重查也會為了補不回來
-    的東西把次數用完。宣告之後報告整段不出現、重查不執行。
+    **例外：這一份根本不把差異送給 AI 看的話，把模組層級的** `ANALYZES_CODE` **改成**
+    `False`（那是一個宣告，不是回傳值，見 `device/sd/new_test_case/summary.py`）。那一段
+    問的是「送進分析的檔案回報了多少」，而你一個檔案都沒送進去 —— 維持 `True` 的話每一
+    個檔案都會落進「AI 沒有回報」，於是每一份報告都掛著一段讀起來像缺陷的警告，而涵蓋層
+    的重查也會為了補不回來的東西把次數用完。改成 `False` 之後報告整段不出現、重查不執行。
 
-    ⚠️ 哪一天把差異加回 prompt，**那一行要跟著拿掉** —— 留著的話真正的漏報就再也不會
-    出現在報告上了。完整說明見 docs/ai-analysis-gitlab-mr/device-authoring.md 的
-    「`summary.py`」一節。
+    ⚠️ 反過來也要記得：哪一天把差異加回 prompt，**那一行要改回** `True` —— 留著 `False`
+    的話真正的漏報就再也不會出現在報告上了。完整說明見
+    docs/ai-analysis-gitlab-mr/device-authoring.md 的「`summary.py`」一節。
 
     JIRA 的有效性由**你**判定：
 

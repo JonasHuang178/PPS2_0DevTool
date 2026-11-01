@@ -911,8 +911,12 @@ ANALYZES_CODE = False
 ⚠️ 哪一天把 `{diff}` 加回那一份的 prompt，**這一行要跟著拿掉** —— 留著的話，真正的漏報就
 再也不會出現在報告上了。
 
-未宣告即 `True`，所以既有的擴充腳本不受影響。寫成 `"False"`（字串）會**失敗**而不是被當成
-假：那在 Python 裡是真，而寫成那樣的人想的是假。
+未宣告即 `True`，所以既有的擴充腳本不受影響。兩份範本（`_template/summary.py` 與
+`_template/_type_template/summary.py`）都已經帶著這一行、寫成 `True` —— 複製過來只要改
+一個字，不必先想起有這個宣告。
+
+寫成 `"False"`（字串）會**失敗**而不是被當成假：那在 Python 裡是真，而寫成那樣的人想的
+是假。
 
 ### `parse_code_review.py` —— 看懂 code review 報告
 
