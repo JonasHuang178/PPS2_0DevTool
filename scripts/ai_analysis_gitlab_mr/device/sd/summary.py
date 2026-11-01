@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """sd device 的步驟 3 擴充腳本：AI 分析。
 
-**這一份只服務 sd**，以及它底下沒有自己 summary.py 的種類
-（`pattern_issue/` 就是刻意空著回退到這裡的）。`new_test_case/` 有自己的一份，
+**這一份只服務 sd**，以及它底下沒有自己 summary.py 的種類（目前沒有種類是這樣，但新增
+一個只覆寫 merge_to_md.py 的種類時就會落到這裡）。`new_test_case/` 有自己的一份，
 而且是**明著 import 這一支**來共用 JIRA key 的政策與接線。
 
 這一支要改的地方集中在**最上面那幾個字串常數**：ROLE_PROMPT、PROMPT_TEMPLATE、

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """sd device 的步驟 5 擴充腳本：AI 分析那一段的版面。
 
-**這一份只服務 sd**，以及它底下沒有自己 merge_to_md.py 的種類（`pattern_issue/` 就是
-刻意空著回退到這裡的）。`new_test_case/` 有自己的一份，而且是**明著 import 這一支**
-來共用 finding 的排版與 diff 的收合。
+**這一份只服務 sd**，以及它底下沒有自己 merge_to_md.py 的種類（目前沒有種類是這樣，
+但新增一個只覆寫 summary.py 的種類時就會落到這裡）。`new_test_case/` 有自己的一份，
+而且是**明著 import 這一支**來共用 finding 的排版與 diff 的收合。
 
 **只負責「AI 分析標題底下那一段」。** 標題那一行、原始描述那一段、分隔線與末尾的出處
 都由入口腳本寫出。那一行標題不歸這裡管，是因為它同時是下一輪切出原始描述的邊界。
