@@ -38,7 +38,7 @@ ADF（Atlassian Document Format）的巢狀 JSON，v2 則是單純的字串。�
 
 需要 **requests**（見 requirements.txt）。匯入失敗時不在 import 階段爆掉，而是
 延到真正呼叫時由 http_utils.require_requests() 拋出 JiraError —— 入口腳本的匯入
-發生在 script_io.run() 之前，在那裡拋例外不會有結果信封，Qt 端只會顯示「腳本
+發生在 script_io.run() 之前，在那裡拋例外不會有結果 JSON，Qt 端只會顯示「腳本
 沒有回傳結果 (exit code 1)」，完全看不出是少裝了套件。
 """
 
@@ -117,7 +117,7 @@ def _parse_error_message(response):
         {"errorMessages": [], "errors": {"summary": "Summary is required"}}
 
     兩個都挖，挖不出來時回空字串讓呼叫端只給狀態碼 —— 不要把整頁 HTML 錯誤頁
-    塞進結果信封（規格要求 message 是單行）。
+    塞進結果 JSON（規格要求 message 是單行）。
     """
     try:
         body = response.json()

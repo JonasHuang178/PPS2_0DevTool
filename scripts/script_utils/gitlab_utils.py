@@ -30,7 +30,7 @@ issue、pipeline…），以資料結構回傳，不做 UI、不讀設定檔、�
 匯入失敗時不在 import 階段爆掉（那個 try/except 在 http_utils），而是延到真正
 呼叫時由 http_utils.require_requests() 拋出 GitLabError。理由：入口腳本的
 `from script_utils import gitlab_utils` 發生在 `script_io.run()` 之前，那個階段
-拋例外的話不會有結果信封，Qt 端只會顯示「腳本沒有回傳結果 (exit code 1)」——
+拋例外的話不會有結果 JSON，Qt 端只會顯示「腳本沒有回傳結果 (exit code 1)」——
 使用者完全看不出是少裝了套件。延到呼叫時，錯誤就會走 script_io 的統一處理變成
 一則說得清楚的 FAIL。
 
@@ -43,7 +43,6 @@ issue、pipeline…），以資料結構回傳，不做 UI、不讀設定檔、�
 
 import base64
 import datetime
-import time
 
 from script_utils import http_utils
 from script_utils import logger
@@ -59,6 +58,7 @@ __all__ = [
     "get_all_mr",
     "get_mr_info",
     "get_mr_plain_diff",
+    "get_mr_diff_detail",
 ]
 
 
@@ -67,6 +67,13 @@ DEFAULT_TIMEOUT = http_utils.DEFAULT_TIMEOUT
 
 # GitLab 每頁上限 100。取小了只是讓同樣的資料多跑幾趟。
 _PER_PAGE = 100
+
+# merge request 的 /diffs 端點每頁上限。
+#
+# **不能用 _PER_PAGE 的 100。** 已知多個 GitLab 版本在這個端點收到大於 30 的 per_page
+# 時直接回 500（gitlab-org/gitlab#427168、#428187）。那個失敗不會退回 /changes ——
+# 退回只在 404 時發生 —— 所以它會變成一個指不出原因的「GitLab 查詢失敗」。
+_DIFFS_PER_PAGE = 30
 
 # 分頁的硬上限，防止伺服器回傳異常的 next page 時無限迴圈。
 _MAX_PAGES = 1000
@@ -187,7 +194,7 @@ def _parse_error_message(response):
 
     GitLab 有時回 {"message": ...}、有時回 {"error": ...}，而 message 可能是
     字串也可能是物件。挖不出來時退回狀態碼本身，不要回傳整段 HTML —— 那會
-    把一整頁錯誤頁塞進結果信封的 message（規格要求 message 是單行）。
+    把一整頁錯誤頁塞進結果 JSON 的 message（規格要求 message 是單行）。
     """
     try:
         body = response.json()
@@ -398,9 +405,12 @@ def get_all_mr(server_url, token, project_id, created_after, status=("opened",),
     排序 —— 不排的話輸出會是「所有 opened、接著所有 merged」，那個次序對呼叫端
     沒有意義，而且同一批資料每次跑的順序還可能不同。
 
+    max_items 會往下傳給翻頁層，取夠就停止翻頁 —— 不是先抓完再切。專案的歷史
+    MR 動輒數千筆，兩者的差別是幾趟請求與幾 MB 的傳輸。
+
     回傳 GitLab 原樣的 MR 物件清單，不挑欄位 —— 挑哪些欄位是呼叫端的決定。
     共用模組先砍的話，下一個呼叫端就得回來改這裡。一筆 MR 約 2～4 KB，入口腳本
-    放進結果信封之前請自行挑選需要的欄位。
+    放進結果 JSON 之前請自行挑選需要的欄位。
     """
     states = _normalize_states(status)
 
@@ -421,8 +431,14 @@ def get_all_mr(server_url, token, project_id, created_after, status=("opened",),
         params = dict(base_params)
         params["state"] = one
 
+        # max_items 要往下傳，否則翻頁層會把整個專案的 MR 都拉回來再由這裡
+        # 切掉 —— 那不只是多切幾筆，是多打好幾趟請求、多拉回幾 MB 的資料。
+        #
+        # 多狀態時每個狀態各自取到 max_items 為止：合併後要依建立時間取最新的
+        # max_items 筆，而那些筆數必定落在「各狀態各自最新的 max_items 筆」之內。
         for item in get_paged(server_url, token, path, params=params,
-                              timeout=timeout, verify_ssl=verify_ssl):
+                              timeout=timeout, verify_ssl=verify_ssl,
+                              max_items=max_items):
             identifier = item.get("id")
             if identifier is not None and identifier in seen_ids:
                 continue
@@ -462,74 +478,281 @@ def get_mr_info(server_url, token, project_id, mr_iid,
                    timeout=timeout, verify_ssl=verify_ssl)
 
 
+def _render_file_diff(entry):
+    """把 GitLab 的單檔 diff 物件還原成 git 風格的區段。
+
+    GitLab 的 `diff` 欄位只有 `@@` 起頭的內容，沒有檔頭三行，因此這裡補上
+    `diff --git` / `---` / `+++`。新增與刪除的檔案要指向 /dev/null，改名要補
+    rename 兩行 —— 少了這些，輸出雖然看得懂，但餵給任何吃 unified diff 的工具
+    都會在那幾個情況失敗。
+    """
+    old_path = entry.get("old_path") or entry.get("new_path") or ""
+    new_path = entry.get("new_path") or old_path
+
+    lines = ["diff --git a/%s b/%s" % (old_path, new_path)]
+
+    if entry.get("new_file"):
+        lines.append("new file mode %s" % (entry.get("b_mode") or "100644"))
+    elif entry.get("deleted_file"):
+        lines.append("deleted file mode %s" % (entry.get("a_mode") or "100644"))
+    elif entry.get("renamed_file"):
+        lines.append("rename from %s" % old_path)
+        lines.append("rename to %s" % new_path)
+
+    body = entry.get("diff") or ""
+
+    # 二進位檔沒有 @@ 區段，GitLab 給的是一句說明（或空字串）。那種情況補
+    # --- / +++ 只會產生一份不合法的 diff，直接放說明本身。
+    if body.startswith("@@"):
+        lines.append("--- %s" % ("/dev/null" if entry.get("new_file")
+                                 else "a/%s" % old_path))
+        lines.append("+++ %s" % ("/dev/null" if entry.get("deleted_file")
+                                 else "b/%s" % new_path))
+
+    text = "\n".join(lines) + "\n"
+    if body:
+        text += body if body.endswith("\n") else body + "\n"
+    return text
+
+
+def _entry_path(entry):
+    """一筆 diff 項目對應的檔案路徑。"""
+    return entry.get("new_path") or entry.get("old_path") or ""
+
+
+def _changes_entries(server_url, token, base, timeout, verify_ssl):
+    """走 /changes 取得項目清單，回傳 (entries, overflow)。
+
+    overflow 是 GitLab 在「大小限制影響了這次結果」時給的旗標 —— 先前沒有讀它，於是
+    一份被截掉一半的 diff 與一份完整的 diff 在呼叫端看起來完全一樣。
+    """
+    body = request(server_url, token, "GET", base + "/changes",
+                   params={"access_raw_diffs": "true"},
+                   timeout=timeout, verify_ssl=verify_ssl)
+    body = body or {}
+    return (body.get("changes") or []), bool(body.get("overflow"))
+
+
+def _raw_entries(server_url, token, base, entries, overflow, timeout, verify_ssl):
+    """以 access_raw_diffs 重取，**內容較多的那一份勝出**。
+
+    不無條件採用重取的結果：那條路是舊端點，在某些版本上它自己也回空的
+    （gitlab-org/gitlab#300385）。比較「有內容的檔案數」再決定，所以重取失敗時至少
+    不會比原本更糟。
+
+    重取本身失敗（端點不在、權限不足）不讓整件事失敗 —— 原本那一份仍然可用，而且
+    呼叫端會從空的檔案數看見問題。
+    """
+    def with_content(items):
+        return sum(1 for one in items if (one.get("diff") or ""))
+
+    try:
+        raw, raw_overflow = _changes_entries(server_url, token, base,
+                                             timeout, verify_ssl)
+    except GitLabError as exc:
+        logger.warn("以 access_raw_diffs 重取失敗，沿用原本的結果：%s", exc)
+        return entries, overflow
+
+    if with_content(raw) > with_content(entries):
+        logger.info("access_raw_diffs 取回較完整的內容（%d → %d 個檔案有內容）",
+                    with_content(entries), with_content(raw))
+        return raw, bool(raw_overflow)
+
+    logger.warn("access_raw_diffs 沒有取回更多內容（仍有 %d 個檔案是空的）—— "
+                "多半是伺服器端的 diff 大小限制，需由管理者調整",
+                len(entries) - with_content(entries))
+    return entries, overflow or bool(raw_overflow)
+
+
+def get_mr_diff_detail(server_url, token, project_id, mr_iid, max_bytes=None,
+                       timeout=DEFAULT_TIMEOUT, verify_ssl=True, exclude=None):
+    """取得 merge request 的 unified diff，**連同取得過程中知道的事實**。
+
+    `exclude` 是一個可呼叫物件，收一個檔案路徑、回傳「要不要排除它」。被排除的檔案
+    完全不進 `text`，路徑收在 `skipped_files` 裡。None 表示不排除任何東西。
+
+    **排除發生在位元組上限之前**，這是刻意的：上限是逐檔累加到滿為止的一刀，排除放在
+    之後的話，一個不打算分析的大檔已經吃掉預算、把真正要看的檔案推進 `dropped_files`
+    了 —— 而那一筆缺口指向「上限要調」，完全指錯方向。
+
+    **本函式不決定排除什麼。** 判斷哪些檔案不必分析是呼叫端的政策，而這支是通用的
+    GitLab 存取 —— 把政策寫進來就等於讓每一個用它的功能都繼承別人的規則。
+
+    回傳一個 dict：
+
+        text          組好的 unified diff（截斷時含結尾那行說明）
+        files         完整收進 text 的檔案路徑，依出現順序
+        dropped_files 因為截斷而沒有完整收進去的檔案路徑
+        skipped_files 被 exclude 排除的檔案路徑
+        file_count    這支 merge request 共有幾個檔案變更（截斷前，含被排除的）
+        empty_files   差異內容是空的那些檔案路徑（files 的子集合）
+        truncated     是否因為超過 max_bytes 而截斷
+        bytes_total   截斷前的位元組數
+        bytes_sent    text 中實際的差異位元組數（不含結尾那行說明）
+        overflow      GitLab 表示大小限制影響了這次結果
+        collapsed_files / too_large_files
+                      GitLab 明說被收合／過大的檔案（18.4 以後才有這兩個欄位）
+
+    **為什麼不只回文字**：截斷這件事原本只留在 text 的結尾與一筆警告裡，而那兩個地方
+    呼叫端都無法據以判斷「少了幾個檔案」。少了幾個是呼叫端唯一真正想知道的 —— 一份
+    只涵蓋 21/90 個檔案的分析，與一份完整的分析，在文字上看起來完全一樣。
+
+    `files` 只收**完整**放得下的檔案。截斷是對整份差異做的一刀，切點可能落在某個檔案
+    中間；把那個被切一半的檔案算成「有送到」會讓呼叫端少算一筆缺口，而那一筆正指向
+    「上限要調」。
+
+    `empty_files` 的成因有三種（二進位檔、只有模式變更、來源自己的大小限制），在 API
+    回來的資料上都是一個空的 diff 欄位，這裡不猜是哪一種 —— 只如實說「這個檔案沒有
+    內容」。要分開得多打幾支 API，那是另一件事。
+
+    取得差異的方式見 get_mr_plain_diff。
+    """
+    if not isinstance(mr_iid, (str, int)) or str(mr_iid).strip() == "":
+        raise GitLabError("merge request iid 不可為空")
+
+    base = "/projects/%s/merge_requests/%s" % (_encode_path(project_id),
+                                               _encode_path(mr_iid))
+
+    overflow = False
+
+    try:
+        entries = get_paged(server_url, token, base + "/diffs",
+                            params={"per_page": _DIFFS_PER_PAGE},
+                            timeout=timeout, verify_ssl=verify_ssl)
+    except GitLabError as exc:
+        if exc.status_code != 404:
+            raise
+        # 舊版沒有 /diffs。/changes 回的是物件，清單在 changes 欄位底下。
+        logger.debug("/diffs 不存在，改試 /changes：%s", base)
+        entries, overflow = _changes_entries(server_url, token, base,
+                                             timeout, verify_ssl)
+
+    if not isinstance(entries, list):
+        raise GitLabError("diff 端點回傳的不是清單：%s" % base)
+
+    # **被收合的檔案要再抓一次。**
+    #
+    # GitLab 的 diff 大小限制比直覺低得多：patch 只要到門檻的 10%（預設 200 KB 的
+    # 10%，約 20 KB）就會被「收合」，而收合的檔案在 API 回來的 diff 欄位是**空字串**。
+    # 網頁上看得到（點開才載入），API 拿到的卻只有一行檔頭 —— 於是 prompt 裡只剩
+    # `diff --git a/… b/…`，而每一步都回報成功。
+    #
+    # /diffs 沒有任何參數可以繞過它（它只吃 page / per_page / unidiff）。能繞過的是舊的
+    # /changes 加上 access_raw_diffs=true —— 那條路直接向 Gitaly 取，不受資料庫端的大小
+    # 限制。較慢也較耗資源，所以**只在真的有空的時候**才走。
+    if any(not (one.get("diff") or "") for one in entries):
+        logger.warn("MR %s 有檔案的差異內容是空的（多半是被 GitLab 的大小限制收合），"
+                    "改以 access_raw_diffs 重取", mr_iid)
+        entries, overflow = _raw_entries(server_url, token, base, entries,
+                                         overflow, timeout, verify_ssl)
+
+    # 排除要在組 chunks **之前**做：那些檔案的 diff 連編碼都不必（一個被排除的大檔
+    # 光編碼就是白花的時間），而 file_count 取的是排除前的 entries 長度 —— 它回答
+    # 「這支 MR 改了幾個檔案」，那是事實，不隨設定改變。
+    file_count = len(entries)
+    skipped_files = []
+    if exclude is not None:
+        kept = []
+        for one in entries:
+            path = _entry_path(one)
+            if exclude(path):
+                skipped_files.append(path)
+            else:
+                kept.append(one)
+        entries = kept
+        if skipped_files:
+            logger.info("MR %s：依呼叫端的規則排除 %d / %d 個檔案",
+                        mr_iid, len(skipped_files), file_count)
+
+    collapsed_files = [_entry_path(one) for one in entries if one.get("collapsed")]
+    too_large_files = [_entry_path(one) for one in entries if one.get("too_large")]
+    if collapsed_files or too_large_files:
+        # collapsed / too_large 是 GitLab 18.4 才有的欄位；有就直接說，沒有就只能靠
+        # 「內容是空的」間接判斷。
+        logger.warn("MR %s：GitLab 標示 %d 個檔案被收合、%d 個過大",
+                    mr_iid, len(collapsed_files), len(too_large_files))
+
+    chunks = [_render_file_diff(one).encode("utf-8") for one in entries]
+    raw = b"".join(chunks)
+    bytes_total = len(raw)
+    logger.debug("MR %s 的 diff 共 %d 個檔案、%d bytes",
+                 mr_iid, len(entries), len(raw))
+
+    # 逐檔累加，決定切點之前有幾個檔案**完整**放得下。這與下面那一刀是同一個切點：
+    # 兩邊各算一次就會有兩份規則，而漂移的症狀是報告說送出了某個檔案、模型卻沒看到它。
+    files = []
+    dropped_files = []
+    empty_files = []
+    used = 0
+    full = True
+    for entry, chunk in zip(entries, chunks):
+        path = entry.get("new_path") or entry.get("old_path") or ""
+        if full and max_bytes is not None and used + len(chunk) > max_bytes:
+            full = False
+        if not full:
+            dropped_files.append(path)
+            continue
+        used += len(chunk)
+        files.append(path)
+        if not (entry.get("diff") or ""):
+            empty_files.append(path)
+
+    truncated_note = ""
+    truncated = max_bytes is not None and bytes_total > max_bytes
+    if truncated:
+        truncated_note = ("\n（已截斷：只取前 %d bytes，原始大小 %d bytes；"
+                          "完整收進的檔案 %d / %d）\n"
+                          % (max_bytes, bytes_total, len(files), len(entries)))
+        logger.warn("MR %s 的 diff 有 %d bytes，截斷為 %d bytes，"
+                    "完整收進 %d / %d 個檔案",
+                    mr_iid, bytes_total, max_bytes, len(files), len(entries))
+        raw = raw[:max_bytes]
+
+    # 截斷可能切在多位元組字元中間，errors="replace" 讓它變成替代字元而不是例外。
+    return {
+        "text": raw.decode("utf-8", errors="replace") + truncated_note,
+        "files": files,
+        "dropped_files": dropped_files,
+        "skipped_files": skipped_files,
+        "file_count": file_count,
+        "empty_files": empty_files,
+        "truncated": truncated,
+        "bytes_total": bytes_total,
+        "bytes_sent": len(raw),
+        "overflow": overflow,
+        "collapsed_files": collapsed_files,
+        "too_large_files": too_large_files,
+    }
+
+
 def get_mr_plain_diff(server_url, token, project_id, mr_iid, max_bytes=None,
                       timeout=DEFAULT_TIMEOUT, verify_ssl=True):
     """取得 merge request 的 unified diff 純文字。
 
-    抓的是 GitLab 網頁路由的 `.diff`：
+    走 /api/v4 取回各檔案的 diff，再組成一份 git 風格的 unified diff。
 
-        https://<server>/<group>/<project>/-/merge_requests/<iid>.diff
+    **為什麼不抓網頁路由的 `.diff`**：那條路由（`/<group>/<project>/-/
+    merge_requests/<iid>.diff`）回來的是原汁原味的 diff，不需要重組，本函式
+    最初就是那樣寫的。但它**不接受 PRIVATE-TOKEN 標頭認證** —— GitLab 只在
+    /api/v4 底下認那個標頭，網頁路由把請求當成匿名訪客，而私有專案對匿名訪客
+    一律回 404（不是 403，那是為了不洩漏「這個專案存在」）。症狀是「token 明明
+    可以用，卻說找不到」，實測後改走這條。
 
-    回來的就是原汁原味的 diff，不需要重組。相對的做法是打 /api/v4 的 changes
-    端點再把各檔案的 diff 串起來，但那樣 `diff --git` / `---` / `+++` 三行是
-    呼叫方重組的，改名、改權限與二進位檔的標頭可能與真正的 git diff 有出入。
+    代價是 `diff --git` / `---` / `+++` 這幾行由本函式重組，不是 GitLab 給的。
+    新增、刪除、改名與二進位檔都有對應處理（見 _render_file_diff），但與 git
+    自己產生的輸出仍可能有細微差異。
 
-    ⚠️ 這個路由**不在 /api/v4 底下**，因此不是版本化 API，而且前面若有 SSO 或
-    反向代理，可能導去登入頁並回 200 + HTML。那會變成「拿到一坨 HTML 卻以為是
-    diff」的靜默錯誤，所以這裡檢查 Content-Type，收到 HTML 一律轉成明確的失敗。
-
-    project_id 傳數字 ID 時會**多一次請求**把它換成完整路徑 —— 網頁路由只認
-    路徑。傳完整路徑就沒有這次額外請求。
+    端點先試 `/diffs`（較新），404 時退回 `/changes`（較舊、已標記為 deprecated
+    但仍可用）—— 兩者在不同版本的 GitLab 上各自存在，寫死任何一個都會在某些
+    伺服器上失敗。
 
     max_bytes 限制回傳大小，None 表示不限。改了幾十個檔案的 MR，diff 輕易就是
-    數百 KB 到數 MB，而它要經 stdout 進結果信封再交給 Qt。截斷時會在結尾附一行
+    數百 KB 到數 MB，而它要經 stdout 進結果 JSON 再交給 Qt。截斷時會在結尾附一行
     說明 —— 靜默截斷的話呼叫端會把半截 diff 當成完整的。
 
-    非 UTF-8 的位元組以替代字元取代，不讓一個編碼例外毀掉整份 diff。
+    **只要文字就用這一支。** 想知道少了哪幾個檔案的，用 get_mr_diff_detail ——
+    那些事實在這裡會被丟掉。
     """
-    _require_requests()
-
-    project_path = str(project_id)
-    if project_path.isdigit():
-        # 網頁路由只認路徑，數字 ID 要先換過來。
-        project = get_project(server_url, token, project_id,
-                              timeout=timeout, verify_ssl=verify_ssl)
-        project_path = (project or {}).get("path_with_namespace", "")
-        if not project_path:
-            raise GitLabError("專案 %s 沒有回傳 path_with_namespace，無法組出 "
-                              "diff 的網址" % project_id)
-
-    url = "%s/%s/-/merge_requests/%s.diff" % (
-        server_url.strip().rstrip("/"), project_path.strip("/"), mr_iid)
-
-    session = _new_session(token)
-    # 這條路由回的是純文字，不是 JSON。Accept 不改的話 GitLab 可能挑別的格式。
-    session.headers["Accept"] = "text/plain"
-
-    try:
-        logger.debug("GitLab GET %s", url)
-        response = http_utils.send(session, "GET", url, None, None,
-                                   timeout, verify_ssl, GitLabError)
-        _check_response(response, url)
-
-        content_type = response.headers.get("Content-Type", "")
-        if "html" in content_type.lower():
-            raise GitLabError(
-                "取得 diff 時收到 HTML 而不是純文字，多半是被導去登入頁："
-                "請確認權杖有效，且這台 GitLab 的網頁路由不需要另外的登入",
-                status_code=response.status_code, url=url)
-
-        raw = response.content
-    finally:
-        session.close()
-
-    truncated_note = ""
-    if max_bytes is not None and len(raw) > max_bytes:
-        truncated_note = ("\n（已截斷：只取前 %d bytes，原始大小 %d bytes）\n"
-                          % (max_bytes, len(raw)))
-        logger.warn("MR %s 的 diff 有 %d bytes，截斷為 %d bytes",
-                    mr_iid, len(raw), max_bytes)
-        raw = raw[:max_bytes]
-
-    # 截斷可能切在多位元組字元中間，errors="replace" 讓它變成替代字元而不是例外。
-    return raw.decode("utf-8", errors="replace") + truncated_note
+    return get_mr_diff_detail(server_url, token, project_id, mr_iid,
+                              max_bytes=max_bytes, timeout=timeout,
+                              verify_ssl=verify_ssl)["text"]

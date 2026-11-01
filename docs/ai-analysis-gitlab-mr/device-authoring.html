@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Analysis GitLab MR — 寫自己的 device</title>
+<link rel="stylesheet" href="../_doc.css">
+</head>
+<body>
+<main>
+
+<header>
+  <h1>寫自己的<br>device</h1>
+  <p class="sub">五個 Python 檔案，決定這條產品線要問 AI 什麼、<br>
+  報告要怎麼排。<br>只寫你要改的那幾支。</p>
+  <div class="kin">
+    確切的鍵名與回傳契約 → <code>device/_template/</code> 各檔的 docstring（權威來源）<br>
+    這份講的是<strong>為什麼</strong>與<strong>怎麼開始</strong>｜完整說明 → <a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/device-authoring.md">device-authoring.md</a>
+  </div>
+</header>
+
+<!-- ============ 為什麼 ============ -->
+<section>
+  <h2>為什麼需要它</h2>
+  <h3>五個步驟，你只換<br>其中四格的內容</h3>
+
+  <p class="lead">流程、取資料、憑證、產物的格式都是固定的，五條產品線共用。<br>device 能換掉的
+  只有流程讓出來的那幾格 —— 下面這五個檔案。</p>
+
+  <div class="fig-wrap">
+  <svg class="fig" viewBox="0 0 800 312" role="img"
+       aria-label="五步流程圖：步驟 1 沒有擴充腳本，步驟 2 到 5 各掛一或兩支 device 可以覆寫的擴充腳本檔案">
+    <text class="f-cap" x="8" y="13">流程 — 五個步驟都會跑，順序固定</text>
+    <rect class="f-pipe" x="8" y="24" width="784" height="70" rx="14"/>
+    <rect class="f-fix" x="22"  y="40" width="144" height="38" rx="9"/>
+    <text class="f-stepf" x="94"  y="64" text-anchor="middle">① 取得描述</text>
+    <rect class="f-fix" x="174" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="246" y="64" text-anchor="middle">② 單號與 MR 種類</text>
+    <rect class="f-fix" x="326" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="398" y="64" text-anchor="middle">③ AI 分析</text>
+    <rect class="f-fix" x="478" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="550" y="64" text-anchor="middle">④ 取審閱報告</text>
+    <rect class="f-fix" x="630" y="40" width="144" height="38" rx="9"/>
+    <text class="f-step"  x="702" y="64" text-anchor="middle">⑤ 合成 markdown</text>
+
+    <text class="f-cap" x="8" y="114">device 可以換掉的 — 就這五支，而且都是選用的</text>
+    <line class="f-link" x1="246" y1="94" x2="246" y2="124"/>
+    <line class="f-link" x1="398" y1="94" x2="398" y2="124"/>
+    <line class="f-link" x1="550" y1="94" x2="550" y2="124"/>
+    <line class="f-link" x1="702" y1="94" x2="702" y2="124"/>
+
+    <text class="f-entryt" x="94" y="150" text-anchor="middle">..._description.py</text>
+    <text class="f-none"   x="94" y="172" text-anchor="middle">沒有擴充腳本</text>
+
+    <rect class="f-dev" x="174" y="124" width="144" height="64" rx="10"/>
+    <text class="f-file" x="188" y="150">jira_key.py</text>
+    <text class="f-q"    x="188" y="172">哪一張單號？</text>
+    <rect class="f-dev" x="174" y="196" width="144" height="64" rx="10"/>
+    <text class="f-file" x="188" y="222">mr_type.py</text>
+    <text class="f-q"    x="188" y="244">哪一種 MR？</text>
+
+    <rect class="f-devt" x="326" y="124" width="144" height="64" rx="10"/>
+    <text class="f-filet" x="340" y="150">summary.py</text>
+    <text class="f-q"     x="340" y="172">問 AI 什麼？</text>
+
+    <rect class="f-dev" x="478" y="124" width="144" height="64" rx="10"/>
+    <text class="f-file" x="492" y="146">parse_code_</text>
+    <text class="f-file" x="492" y="161">review.py</text>
+    <text class="f-q"    x="492" y="180">審閱報告怎麼讀？</text>
+
+    <rect class="f-devt" x="630" y="124" width="144" height="64" rx="10"/>
+    <text class="f-filet" x="644" y="150">merge_to_md.py</text>
+    <text class="f-q"     x="644" y="172">那一段怎麼排？</text>
+
+    <text class="f-note" x="8" y="300"><tspan class="g">綠色兩支</tspan>還能再依種類各給一份；<tspan class="b">藍色三支</tspan>只能一個 device 一份。</text>
+  </svg>
+  </div>
+</section>
+
+<!-- ============ 入口腳本與擴充腳本 ============ -->
+<section>
+  <h2>檔案結構</h2>
+  <h3>入口腳本與擴充腳本</h3>
+
+  <div class="stuck">
+    <div class="st">
+      <div class="st-q">入口腳本 —— 流程本身，<strong>五條產品線共用</strong></div>
+      <div class="st-a">一步一支，固定五步照跑。<br>
+      <strong>你不會動到它們</strong>，也不需要為了新增一條產品線改它們。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">擴充腳本 —— 流程讓出來的格子，<strong>每條產品線自己客製</strong></div>
+      <div class="st-a">放進自己的裝置資料夾，<strong>想改哪一支就放哪一支</strong>。<br>
+      沒放的那幾支自動沿用 <code>default</code>，不必整套重寫。</div>
+    </div>
+  </div>
+
+  <div class="term" style="margin-top:22px">scripts/ai_analysis_gitlab_mr/
+│
+├── <span class="b">ai_analysis_gitlab_mr_description.py</span>   <span class="c">入口腳本 ①</span>
+├── <span class="b">ai_analysis_gitlab_mr_info.py</span>          <span class="c">入口腳本 ②</span>
+├── <span class="b">ai_analysis_gitlab_mr_summary.py</span>       <span class="c">入口腳本 ③</span>
+├── <span class="b">ai_analysis_gitlab_mr_code_review.py</span>   <span class="c">入口腳本 ④</span>
+├── <span class="b">ai_analysis_gitlab_mr_merge_to_md.py</span>   <span class="c">入口腳本 ⑤</span>
+│
+└── device/
+    ├── _template/     <span class="c">範本，複製它</span>
+    ├── default/       <span class="c">共同後備，不要改</span>
+    └── <span class="y">&lt;你的裝置名&gt;/</span>   <span class="c">你的 device，例如 ssd</span>
+        ├── __init__.py
+        ├── <span class="g">jira_key.py</span>           <span class="c">擴充腳本 ②</span>
+        ├── <span class="g">mr_type.py</span>            <span class="c">擴充腳本 ②</span>
+        ├── <span class="g">summary.py</span>            <span class="c">擴充腳本 ③</span>
+        ├── <span class="g">parse_code_review.py</span>  <span class="c">擴充腳本 ④</span>
+        ├── <span class="g">merge_to_md.py</span>        <span class="c">擴充腳本 ⑤</span>
+        │
+        └── <span class="y">bug/</span>                  <span class="c">某一種 MR 專用（選用）</span>
+            ├── <span class="g">summary.py</span>        <span class="c">這種 MR 才用這一份</span>
+            └── <span class="g">merge_to_md.py</span>    <span class="c">只有 ③ ⑤ 可以這樣分</span></div>
+</section>
+
+<!-- ============ 五支擴充腳本掛在哪 ============ -->
+<section>
+  <h2>五支擴充腳本</h2>
+  <h3>掛在五步流程的哪幾個位置</h3>
+
+  <div class="hooks">
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 1</span><b>取得 MR 描述</b></div><div class="hook-none">不因 device 而異</div><div></div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 2</span><b>擷取 JIRA key 與 MR 種類</b></div><div class="hook-name u">jira_key.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
+  <div class="hook-row"><div class="hook-step">&nbsp;</div><div class="hook-name u">mr_type.py</div><div class="hook-sig">extract(mr) → 字串</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 3</span><b>AI 分析</b></div><div class="hook-name t">summary.py</div><div class="hook-sig">analyze(inputs) → 分析結構</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 4</span><b>取得程式碼審閱報告</b></div><div class="hook-name u">parse_code_review.py</div><div class="hook-sig">parse(inputs) → 總表 + 結論</div></div>
+  <div class="hook-row"><div class="hook-step"><span class="s">步驟 5</span><b>合併為 markdown</b></div><div class="hook-name t">merge_to_md.py</div><div class="hook-sig">render(inputs) → markdown 字串</div></div>
+  <div class="hook-legend"><b class="t">綠色兩支</b>可以再依<b class="t">種類</b>分開（見下面）；<b class="u">藍色三支</b>不行。</div>
+</div>
+
+  <p class="muted" style="font-size:15px;margin-top:16px">
+    藍色那三支的理由<strong>不一樣</strong>。<br><code>jira_key</code> 與
+    <code>mr_type</code> 在步驟 2 執行，<strong>看不到</strong>種類 —— 那時候它還不存在
+    （<code>mr_type.py</code> 正是產生它的那一支）。<br>
+    <code>parse_code_review</code> 在步驟 4 執行，<strong>看得到</strong>種類，但
+    <strong>刻意不用</strong>：<br>審閱報告的格式是 device 的屬性，一個 device 底下只有一種。
+  </p>
+</section>
+
+<!-- ============ 三步開始 ============ -->
+<section>
+  <h2>開始</h2>
+  <h3>三件事</h3>
+
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <div>
+        <div class="step-t">複製範本，改成你的名字</div>
+        <div class="step-d"><code>cp -r device/_template device/ssd</code><br>
+        目錄名會被當成<strong>模組名 import</strong>，所以必須是合法的 Python 識別字：<br>
+        小寫英數與底線、不以數字開頭。<br><code>ssd_gen4</code> 可以，<code>ssd-gen4</code> 不行。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div>
+        <div class="step-t">在 <code>__init__.py</code> 宣告 <code>VERSION</code></div>
+        <div class="step-d"><strong>這一個一定要有，沒宣告會直接失敗。</strong><br>
+        它會印在報告末尾（<code>Device: ssd 1.2</code>）。<br>改了產出方式就把它往上加 ——
+        不加的話，新舊兩套邏輯產生的報告會帶同一個版本號。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div>
+        <div class="step-t">刪掉你<strong>不想</strong>覆寫的那幾支</div>
+        <div class="step-d">五支全都是選用的。<br>只想改報告版面？那就只留 <code>merge_to_md.py</code>，
+        其餘四支刪掉 —— 缺的會自動用 <code>default</code> 的。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="term" style="margin-top:20px"><span class="c"># 只想改報告版面的 device，合法而且推薦長這樣：</span>
+device/ssd/
+  __init__.py        <span class="y">VERSION = "1.0"</span>   <span class="c">← 必要</span>
+  merge_to_md.py     <span class="c">← 你唯一要寫的</span>
+
+<span class="c"># 其餘四支不存在，自動落回 default/</span></div>
+
+  <div class="stuck" style="margin-top:20px">
+    <div class="st">
+      <div class="st-q">不要改 <code>device/default/</code></div>
+      <div class="st-a">它是<strong>所有 device 的共同後備</strong>：<br>每一支沒有被覆寫的擴充腳本
+      都會落到它身上，別條產品線的也一樣。<br>改 <code>default/</code> 等於同時改掉所有人的行為。<br>
+      要不一樣的做法，在自己的目錄裡放一支同名檔覆寫它就好。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 回退 ============ -->
+<section>
+  <h2>回退是逐支的</h2>
+  <h3>不是「整個 device 找不到就用 default」，是一支一支找</h3>
+
+  <div class="term"><span class="c">PPS_DEVICE=ssd，這筆 MR 的種類是 bug</span>
+
+<span class="g">summary.py</span>（因種類而異，找三層）
+  ① device/ssd/<span class="g">bug</span>/summary.py   ← 有就用它，結束
+  ② device/ssd/summary.py         ← 再找這裡
+  ③ device/default/summary.py     ← 最後的後備
+
+<span class="b">jira_key.py</span>（不因種類而異，找兩層）
+  ① device/ssd/jira_key.py
+  ② device/default/jira_key.py
+
+<span class="y">PPS_DEVICE=sdd（打錯字）</span>
+  ✗ <span class="y">直接失敗</span>，訊息列出目前認得哪些 device</div>
+
+  <div class="stuck" style="margin-top:20px">
+    <div class="st">
+      <div class="st-q">認不得的 device 是<strong>錯誤</strong>，不是退回 default</div>
+      <div class="st-a">打錯字或忘記部署時，靜默改用通用邏輯會產出一份用錯邏輯、
+      而且每一步都回報成功的報告 —— 那比直接失敗糟得多。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">但認不得的<strong>種類</strong>相反，它視同「沒有種類」</div>
+      <div class="st-a">種類是 MR 作者在標題裡打的字，不是部署問題。<br>
+      要讓它變成錯誤的話，在 <code>__init__.py</code> 宣告 <code>STRICT_TYPE = True</code>。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 每支擴充腳本的契約 ============ -->
+<section>
+  <h2>每一支擴充腳本</h2>
+  <h3>收什麼、要回什麼</h3>
+  <p class="lead muted">中間怎麼寫完全自由 —— 自己打 HTTP、換一套 prompt 架構、
+  完全不問 AI 都可以。<br>契約只有兩端。</p>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">2</div>
+      <div>
+        <div class="io-t">jira_key.py</div>
+        <div class="io-s">extract(mr)</div>
+      </div>
+      <div><span class="fl-tag tag-net">不分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>mr</code> 六個欄位：<br>
+        <code>title</code>、<code>source_branch</code>、<code>target_branch</code>、
+        <code>description</code>、<code>repo</code>、<code>mr_iid</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v">一個<strong>字串</strong>。<br>
+        擷取不到就回 <code>""</code>。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">default 的規則</div>
+        <div class="io-v"><strong>不擷取</strong>，一律回 <code>""</code>。</div>
+      </div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/jira_key.py</code> 只有一行
+      <code>raise NotImplementedError</code> —— 換成你的規則就好。<br>
+      以「標題第一個方括號」為例：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/jira_key.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""從 MR 標題的第一個方括號擷取 JIRA key。
+
+這裡不判有效性 —— [WIP] [PPS-1234] ... 會老實回 "WIP"，由步驟 3 的
+summary.py 判定它不合格。擷取規則與判定規則同屬一個 device，放在一起
+才不會各自漂移。
+"""</span>
+
+<span class="kw">import</span> re
+
+<span class="c"># 第一個方括號裡的內容。非貪婪，且不跨行 —— 標題本來就是一行。</span>
+_FIRST_BRACKET = re.compile(<span class="str">r"\[([^\]\n]*)\]"</span>)
+
+
+<span class="kw">def</span> <span class="fn">extract</span>(mr):
+    <span class="c"># 欄位可能是 None，直接餵給 search() 會丟 TypeError。</span>
+    title = mr.get(<span class="str">"title"</span>) <span class="kw">or</span> <span class="str">""</span>
+
+    match = _FIRST_BRACKET.search(title)
+    <span class="kw">if not</span> match:
+        <span class="c"># 沒有方括號的標題很常見，那不是錯誤：回 "" 就是
+        # 「這一筆沒有 key」。不要回 None，也不要自己回 "NONE" ——
+        # 對外的表示法由入口腳本統一。</span>
+        <span class="kw">return</span> <span class="str">""</span>
+
+    <span class="c"># [ PPS-1234 ] 這種寫法會帶空白進來，不去掉的話
+    # 組出來的 JIRA 網址會壞掉。</span>
+    <span class="kw">return</span> match.group(1).strip()</div></div>
+    <div class="io-note">不要回 <code>None</code>，也不要自己回 <code>"NONE"</code> —— 那個表示法由入口腳本統一。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">2</div>
+      <div>
+        <div class="io-t">mr_type.py</div>
+        <div class="io-s">extract(mr)</div>
+      </div>
+      <div><span class="fl-tag tag-net">不分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v">與 <code>jira_key</code> <strong>完全相同</strong>的六個欄位。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v">一個<strong>字串</strong>。<br>沒有就回 <code>""</code>。<br>
+        入口腳本會去空白、轉小寫。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">可以做映射</div>
+        <div class="io-v">標題寫 <code>[FW-Update]</code>，<br>
+        這裡回 <code>"fw_update"</code>。</div>
+      </div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/mr_type.py</code> 收到的欄位與 <code>jira_key</code> 完全相同。<br>以「標題第二個方括號」為例（第一個留給 JIRA key）：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/mr_type.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""擷取出 Merge Request 的種類。種類決定步驟 3 與步驟 5 用哪一份腳本。</span>
+<span class="c"></span>
+<span class="c">規則是標題的第二個方括號 —— 第一個留給 JIRA key：</span>
+<span class="c"></span>
+<span class="c">    mod:[PPS-1234][Bug] 修正重試上限</span>
+<span class="c">        ^^^^^^^^^^ 第一個：JIRA key</span>
+<span class="c">                  ^^^^^ 第二個：種類  -&gt;  "Bug"</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> re
+
+<span class="c"># 標題裡所有的方括號內容，依出現順序。</span>
+<span class="c"># 用 [^][]* 而不是 .*? ：巢狀或未閉合的括號不該被當成一組，</span>
+<span class="c"># 而標題是人手打的，[a[b]c] 這種東西出現得比想像中多。</span>
+_BRACKET_RE = re.compile(<span class="str">r"\[([^\[\]]*)\]"</span>)
+
+<span class="c"># 取第幾個方括號（0 起算）。獨立成常數，因為這是這份規則唯一</span>
+<span class="c"># 的可變之處 —— 取第三個的 device 只要改這一行。</span>
+_BRACKET_INDEX = 1
+
+
+<span class="kw">def</span> <span class="fn">extract</span>(mr):
+    title = mr.get(<span class="str">"title"</span>) <span class="kw">or</span> <span class="str">""</span>
+    found = _BRACKET_RE.findall(title)
+
+    <span class="c"># 方括號不夠多。那不是錯誤：回 "" 就是「這一筆沒有種類」，</span>
+    <span class="c"># 後果是走該 device 的通用版（不分種類那一份）。</span>
+    <span class="kw">if</span> len(found) &lt;= _BRACKET_INDEX:
+        <span class="kw">return</span> <span class="str">""</span>
+
+    <span class="c"># 不必自己去空白或轉小寫，入口腳本會正規化。</span>
+    <span class="c"># 回 "NewTestCase" 就對到 newtestcase/ 目錄。</span>
+    <span class="kw">return</span> found[_BRACKET_INDEX]</div></div>
+    <div class="io-note">回傳<strong>非字串</strong>會直接失敗（那是擴充腳本寫壞了）；
+    回傳不合法的字串（<code>緊急</code>、<code>bug fix</code>）視同沒有種類，不報錯。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">3</div>
+      <div>
+        <div class="io-t">summary.py</div>
+        <div class="io-s">analyze(inputs)</div>
+      </div>
+      <div><span class="fl-tag tag-local">可分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>description</code> 原始描述<br>
+        <code>mr_diff</code> 差異純文字<br>
+        <code>fetch_jira(key)</code> <strong>函式</strong><br>
+        <code>jira_key</code>、<code>mr_type</code><br>
+        AI 端點、金鑰、模型、逾時…</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v"><code>contract.analysis_body(...)</code> 的結果。<br>
+        <span class="muted">入口腳本會驗證它的形狀。</span></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">能用的工具</div>
+        <div class="io-v"><code>ai_utils.ask()</code>／<code>ask_json()</code><br>
+        <code>ai_utils.split_connection()</code>／<code>lookup_model()</code>
+        <span class="muted">（必要步驟：<br>provider 與模型寫進分析結構）</span><br>
+        <code>contract.hunk_of()</code><br>
+        <code>contract.ai_credentials()</code></div>
+      </div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/summary.py</code> 的骨架 —— 收什麼、回什麼。<br>
+      中間怎麼問 AI 完全自由，能跑的完整版見 <code>device/default/summary.py</code>：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/summary.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""AI 分析。問 AI 什麼、怎麼解析回應、組出什麼，都你決定。</span>
+<span class="c"></span>
+<span class="c">怎麼呼叫 AI 見 script_utils.ai_utils；能跑的完整版見 default/summary.py。</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> ai_analysis_gitlab_mr as contract
+
+
+<span class="kw">def</span> <span class="fn">analyze</span>(inputs):
+    <span class="c"># 收到什麼 —— 全是現成的文字，不必自己連線：</span>
+    <span class="c">#</span>
+    <span class="c">#     inputs["description"]   MR 的原始描述</span>
+    <span class="c">#     inputs["mr_diff"]       差異純文字</span>
+    <span class="c">#     inputs["fetch_jira"]    fetch_jira(key) -&gt; dict 或 None</span>
+    <span class="c">#     inputs["jira_key"]      該次採用的 key</span>
+    <span class="c">#     inputs["progress"]      progress(text)，在對話框顯示一行字</span>
+    <span class="c">#</span>
+    <span class="c"># （AI 端點、金鑰、逾時、重試、重問也在 inputs 裡，交給 ai_utils.ask）</span>
+
+    <span class="c"># 要回什麼 —— 一定是 analysis_body() 的結果，不要自己組 dict。</span>
+    <span class="kw">return</span> contract.analysis_body(
+        overview=<span class="str">u"把重試上限從 3 調高到 10。"</span>,
+        provider=<span class="str">u"openai"</span>,
+        model=<span class="str">u"gpt-4o"</span>,
+        jira_key=inputs[<span class="str">"jira_key"</span>],
+        jira_state=contract.JIRA_STATE_OK,
+        jira_url=contract.jira_url(inputs[<span class="str">"jira_key"</span>]),
+        mr_diff={
+            <span class="str">u"cpp/test.cpp"</span>: [
+                contract.finding(
+                    title=<span class="str">u"重試上限調高"</span>,
+                    reason=<span class="str">u"原本 3 次在忙碌時不夠。"</span>,
+                    hunk_header=<span class="str">u"@@ -12,7 +12,7 @@"</span>,
+                ),
+            ],
+        },
+    )</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      回傳值會變成步驟 3 的產物。<strong>報告就是從這份檔案排出來的</strong>：
+    </div>
+    <div class="code-h"><span>03_summary.json</span><span class="lang">json</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23</div><div class="term" style="border:0;border-radius:0;padding:18px 22px">{
+  <span class="b">"schema_version"</span>: 1,
+  <span class="b">"analysis"</span>: {
+    <span class="b">"provider"</span>: <span class="str">"openai"</span>,
+    <span class="b">"model"</span>: <span class="str">"gpt-4o"</span>,
+    <span class="b">"mr_type"</span>: <span class="str">"bug"</span>,
+    <span class="b">"jira_key"</span>: <span class="str">"PPS-1234"</span>,
+    <span class="b">"jira_state"</span>: <span class="str">"ok"</span>,
+    <span class="b">"jira_url"</span>: <span class="str">"https://jira.example.com/browse/PPS-1234"</span>,
+    <span class="b">"overview"</span>: <span class="str">"把重試上限從 3 調高到 10。"</span>,
+    <span class="b">"mrDiff"</span>: {
+      <span class="b">"cpp/test.cpp"</span>: [
+        {
+          <span class="b">"title"</span>: <span class="str">"重試上限調高"</span>,
+          <span class="b">"reason"</span>: <span class="str">"原本 3 次在忙碌時不夠。"</span>,
+          <span class="b">"hunkHeader"</span>: <span class="str">"@@ -12,7 +12,7 @@"</span>,
+          <span class="b">"diffCode"</span>: <span class="str">""</span>
+        }
+      ]
+    },
+    <span class="b">"coverage"</span>: { <span class="b">"files_changed"</span>: 90, <span class="b">"files_reported"</span>: 1 }
+  }
+}</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>schema_version</code>、<code>mr_type</code>、<code>coverage</code>
+      這三個<strong>不必填</strong> —— 由入口腳本蓋章，填了也會被覆蓋。
+    </div>
+    <div class="io-note"><code>fetch_jira</code> 是<strong>函式</strong>，不是現成的內容 —— 要用才呼叫。<br>
+    先確定 key 是有效的再叫它：像 <code>[WIP]</code> 這種擷取錯的字，叫下去就是白跑一趟 JIRA。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">4</div>
+      <div>
+        <div class="io-t">parse_code_review.py</div>
+        <div class="io-s">parse(inputs)</div>
+      </div>
+      <div><span class="fl-tag tag-net">不分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>text</code> 報告全文（現成的）<br>
+        <code>heading</code> 要找哪一節<br>
+        <code>jira_key</code>、<code>log_write</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v"><code>contract.code_review_parsed(</code><br>
+        　<code>risk_table, review_result)</code><br>
+        結論是 <code>PASS</code>／<code>FAIL</code>／<code>UNKNOWN</code></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">default 的規則</div>
+        <div class="io-v">總表最後一欄是數量，<br>全部加總為 0 就判定通過。</div>
+      </div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/parse_code_review.py</code> 只幫你切好表格，判定留給你。<br>以「最後一欄是數量，加總為 0 判定通過」為例：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/parse_code_review.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""看懂別人的 code review 報告，並判定這份審閱的結論。</span>
+<span class="c"></span>
+<span class="c">查議題附件、挑最新那一份、擋大小上限、下載、解碼都在入口腳本 ——</span>
+<span class="c">那些要 JIRA 權杖，而權杖不交給 device 的程式碼。你拿到的是現成全文。</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> ai_analysis_gitlab_mr as contract
+
+
+<span class="kw">def</span> <span class="fn">parse</span>(inputs):
+    <span class="c"># heading 是你在 __init__.py 宣告的 CODE_REVIEW_SOURCE_HEADING，</span>
+    <span class="c"># 沒宣告就是契約的預設值。自己的切法也可以。</span>
+    table = contract.extract_risk_table(inputs[<span class="str">"text"</span>], inputs[<span class="str">"heading"</span>])
+
+    total = 0
+    <span class="kw">for</span> index, row <span class="kw">in</span> enumerate(_rows(table), 1):
+        count = _count_of(row[-1])
+
+        <span class="kw">if</span> count <span class="kw">is</span> <span class="kw">None</span>:
+            <span class="c"># 表格不是這個形狀 —— raise，報告上留一行 ⚠️ 說明原因。</span>
+            <span class="c"># 讀得懂但就是判不出結論的話回 REVIEW_RESULT_UNKNOWN，</span>
+            <span class="c"># 結論那一行就不印。兩種都不要猜：印一個錯的 PASS 比不印更糟。</span>
+            <span class="kw">raise</span> contract.RiskTableError(
+                <span class="str">u"總表最後一欄的第 %d 列是 %r，不是數量"</span> % (index, row[-1]),
+                <span class="str">u"這一份規則把最後一欄當數量，全部列加總為 0 判定通過。"</span>,
+                <span class="str">u"CODE_REVIEW_COUNT_NOT_A_NUMBER"</span>)
+
+        total += count
+
+    <span class="c"># 一列資料都沒有也是 0，也就是 pass —— 那張表的意思就是「沒有項目」。</span>
+    verdict = (contract.REVIEW_RESULT_PASS <span class="kw">if</span> total == 0
+               <span class="kw">else</span> contract.REVIEW_RESULT_FAIL)
+
+    <span class="c"># risk_table 原樣放，不要自帶 ## 標題 —— 那一行由步驟 5 寫出，</span>
+    <span class="c"># 它才知道自己在第幾層。</span>
+    <span class="kw">return</span> contract.code_review_parsed(risk_table=table, review_result=verdict)</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      回傳值會變成步驟 4 的產物：
+    </div>
+    <div class="code-h"><span>04_code_review.json</span><span class="lang">json</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12</div><div class="term" style="border:0;border-radius:0;padding:18px 22px">{
+  <span class="b">"schema_version"</span>: 1,
+  <span class="b">"code_review"</span>: {
+    <span class="b">"filename"</span>: <span class="str">"CodeReview_20260910_092900.md"</span>,
+    <span class="b">"created"</span>: <span class="str">"2026-09-10T09:29:00.000+0800"</span>,
+    <span class="b">"author"</span>: <span class="str">"Jonas"</span>,
+    <span class="b">"url"</span>: <span class="str">"https://jira.example.com/secure/attachment/12345/CodeReview_20260910.md"</span>,
+    <span class="b">"risk_table"</span>: <span class="str">"| 類別 | 風險等級 | 數量 |\n|---|---|---|\n| 記憶體 | 高 | 0 |"</span>,
+    <span class="b">"review_result"</span>: <span class="str">"pass"</span>,
+    <span class="b">"error"</span>: <span class="str">""</span>
+  }
+}</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>filename</code>、<code>created</code>、<code>author</code>、<code>url</code>
+      由<strong>入口腳本</strong>填 —— 附件的資訊只有它拿得到。<br>
+      你只回 <code>risk_table</code> 與 <code>review_result</code> 兩個。
+    </div>
+    <div class="io-note">查附件、挑最新那份、擋大小上限、下載、解碼<strong>都不在這裡</strong> ——
+    那些要 JIRA 權杖，而權杖不交給 device 的程式碼。<br>你拿到的是現成全文。<br>
+    判不出結論就回 <code>UNKNOWN</code>，<strong>不要猜</strong>。</div>
+  </div>
+
+  <div class="io">
+    <div class="io-head">
+      <div class="io-n">5</div>
+      <div>
+        <div class="io-t">merge_to_md.py</div>
+        <div class="io-s">render(inputs)</div>
+      </div>
+      <div><span class="fl-tag tag-local">可分種類</span></div>
+    </div>
+    <div class="io-body">
+      <div class="io-cell">
+        <div class="io-k">收到</div>
+        <div class="io-v"><code>analysis</code> 第 3 步的結構<br>
+        <code>description</code>、<code>code_review</code><br>
+        <span class="muted">（後兩者是唯讀參考）</span></div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">要回</div>
+        <div class="io-v">一段 <strong>markdown 字串</strong>。<br>
+        只要「<code># AI 分析結果</code>底下的內容」。</div>
+      </div>
+      <div class="io-cell">
+        <div class="io-k">你管不到的</div>
+        <div class="io-v">標題那一行、原始描述那段、<br>
+        code review 那段、末尾出處。</div>
+      </div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      <code>device/_template/merge_to_md.py</code> 只回了總覽一段。<br>補上發現清單與 JIRA 那一行，大致長這樣：
+    </div>
+    <div class="code-h"><span>device/&lt;你的裝置名&gt;/merge_to_md.py</span><span class="lang">python</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="c">"""AI 分析那一段的版面。</span>
+<span class="c"></span>
+<span class="c">你只負責「# AI 分析結果」底下那一段。標題那一行、原始描述、</span>
+<span class="c">程式碼審閱那一段與末尾的出處都由入口腳本寫出，你改不到也不必管。</span>
+<span class="c">"""</span>
+
+<span class="kw">import</span> ai_analysis_gitlab_mr as contract
+
+
+<span class="kw">def</span> <span class="fn">render</span>(inputs):
+    analysis = inputs[<span class="str">"analysis"</span>]
+    blocks = []
+
+    <span class="c"># plain() 把 None 與非字串收斂成字串，不用的話報告會印出 "None"。</span>
+    <span class="c"># as_list() 把一整段總覽排成逐行清單 —— 它尊重來源已有的結構，</span>
+    <span class="c"># 切不動就原樣回傳，所以可以無條件套用。</span>
+    overview = contract.plain(analysis.get(<span class="str">"overview"</span>))
+    <span class="kw">if</span> overview:
+        blocks.append(<span class="str">u"## Summary\n\n"</span> + contract.as_list(overview))
+
+    <span class="kw">for</span> path, items <span class="kw">in</span> (analysis.get(<span class="str">"mrDiff"</span>) <span class="kw">or</span> {}).items():
+        blocks.append(<span class="str">u"### `%s`"</span> % path)
+        <span class="kw">for</span> one <span class="kw">in</span> items:
+            code = contract.plain(one.get(<span class="str">"diffCode"</span>))
+            <span class="kw">if</span> <span class="kw">not</span> code:
+                <span class="kw">continue</span>
+            <span class="c"># 圍籬長度用算的。寫死三個反引號的話，內容本身含有反引號的</span>
+            <span class="c"># diff（改到 markdown 檔就會）會讓程式碼區塊提前結束，後面</span>
+            <span class="c"># 變成一般文字 —— 而報告仍然「成功」產出。</span>
+            fence = contract.fence_for(code)
+            blocks.append(<span class="str">u"%s diff\n%s\n%s"</span> % (fence, code, fence))
+
+    <span class="c"># 你這一份一旦存在就完全接管這一段 —— default 的「## 詳細資料」</span>
+    <span class="c"># 不會自動出現在你的報告裡。要指向那張單子就自己加這三行。</span>
+    <span class="c"># 狀態不要自己重判，也不要自己呼叫 contract.jira_url()：</span>
+    <span class="c"># 兩者都由步驟 3 填好帶過來，重算就多一個會跟產物不一致的來源。</span>
+    <span class="kw">if</span> analysis.get(<span class="str">"jira_state"</span>) == contract.JIRA_STATE_OK:
+        blocks.append(<span class="str">u"## 詳細資料\n\n- [%s](%s)"</span>
+                      % (analysis[<span class="str">"jira_key"</span>], analysis[<span class="str">"jira_url"</span>]))
+
+    <span class="kw">return</span> <span class="str">u"\n\n"</span>.join(blocks)</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      回傳的字串會被放進報告的 <code># AI 分析結果</code> 底下：
+    </div>
+    <div class="code-h"><span>報告裡的這一段</span><span class="lang">markdown</span></div>
+    <div class="code-wrap"><div class="code-ln">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15</div><div class="term" style="border:0;border-radius:0;padding:18px 22px"><span class="b">## Summary</span>
+
+- 把重試上限從 3 調高到 10。
+
+<span class="b">### `cpp/test.cpp`</span>
+
+<span class="c">```diff</span>
+<span class="b">@@ -12,7 +12,7 @@</span>
+<span class="y">-    retry = 3</span>
+<span class="g">+    retry = 10</span>
+<span class="c">```</span>
+
+<span class="b">## 詳細資料</span>
+
+- [PPS-1234](https://jira.example.com/browse/PPS-1234)</div></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);font-size:14px;color:var(--ink2)">
+      上面那段程式碼就是排出這些的。<br>
+      <code># AI 分析結果</code> 那一行、前面的原始描述、後面的涵蓋範圍與
+      code review 都<strong>不在你的回傳值裡</strong> —— 入口腳本自己會寫。
+    </div>
+    <div class="io-note"><code># AI 分析結果</code> 那一行<strong>不歸你管</strong>，因為它同時是下一輪
+    切出原始描述的邊界。<br>某個 device 把它寫成別的字，下一輪就找不到邊界 ——
+    整份舊報告被當成原始描述，每跑一次疊一段，而每一步都回報成功。</div>
+  </div>
+</section>
+
+<section>
+  <h2>常見問題</h2>
+  <h3>開始寫之前會想問的</h3>
+
+  <div class="qa">
+
+    <div class="qa-item">
+      <div class="qa-q"><span>怎麼新增一個 device？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-grp">照這個順序</div>
+          <div class="spec-k">1</div>
+          <div class="spec-v">複製範本：<br><code>cp -r device/_template device/ssd</code><br>
+            <span class="dim">目錄名就是 device 名，必須是合法識別字（<code>ssd_gen4</code> 可以，<code>ssd-gen4</code> 不行）</span></div>
+          <div class="spec-k">2</div>
+          <div class="spec-v">在 <code>__init__.py</code> 宣告 <code>VERSION</code>
+            <span class="dim">—— 沒有就直接失敗</span></div>
+          <div class="spec-k">3</div>
+          <div class="spec-v">只留你要覆寫的擴充腳本，其餘刪掉
+            <span class="dim">—— 缺的各自用 <code>default</code> 的</span></div>
+          <div class="spec-k">4</div>
+          <div class="spec-v">設定檔 <code>PPS_Device</code> 填名字
+            <span class="dim">（CI 設環境變數 <code>PPS_DEVICE</code>）</span></div>
+          <div class="spec-k">5</div>
+          <div class="spec-v">跑一次，看報告末尾出處的 <code>Device</code> 欄位</div>
+        </div>
+        <p class="spec-note">⚠️ 不要改 <code>device/default/</code> —— 那是所有 device 的共同
+        後備，改它等於改掉所有產品線。<br>要不一樣的做法，在自己的目錄裡覆寫。</p>
+      </span></div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>沒放的擴充腳本會用哪一份？</span></div>
+      <div class="qa-a"><span>
+        假設 <code>PPS_DEVICE=ssd</code>，這一筆 MR 的標題是
+        <code>[PPS-1234][Bug] 修正重試上限</code>，<strong>擷取出來的種類是
+        <code>bug</code></strong>。<br>
+        而 <code>ssd</code> 的資料夾裡<strong>只放了兩支</strong>：
+
+        <div class="term">device/
+├── default/                  <span class="c">五支都在，誰都可以退到這裡</span>
+└── <span class="y">ssd/</span>
+    ├── <span class="g">summary.py</span>            <span class="c">③ 覆寫了</span>
+    └── <span class="y">bug/</span>
+        └── <span class="g">merge_to_md.py</span>    <span class="c">⑤ 只有 bug 這種 MR 用</span></div>
+
+        <p style="margin:14px 0 10px">那這一筆 MR 的五支，各自會用到哪一份：</p>
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th>步驟</th>
+                <th class="near">device/ssd/bug/</th>
+                <th class="near">device/ssd/</th>
+                <th>device/default/</th></tr>
+          </thead>
+          <tbody>
+            <tr><th><span class="n">②</span>jira_key</th>
+                <td class="na">不看種類</td>
+                <td>—</td>
+                <td class="win">jira_key.py</td></tr>
+            <tr><th><span class="n">②</span>mr_type</th>
+                <td class="na">不看種類</td>
+                <td>—</td>
+                <td class="win">mr_type.py</td></tr>
+            <tr><th><span class="n">③</span>summary</th>
+                <td>—</td>
+                <td class="win">summary.py</td>
+                <td class="dead">summary.py</td></tr>
+            <tr><th><span class="n">④</span>parse_code_review</th>
+                <td class="na">不看種類</td>
+                <td>—</td>
+                <td class="win">parse_code_review.py</td></tr>
+            <tr><th><span class="n">⑤</span>merge_to_md</th>
+                <td class="win">merge_to_md.py</td>
+                <td>—</td>
+                <td class="dead">merge_to_md.py</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <p class="spec-note">一列一支，<strong>由左往右找，第一個有檔案的就用</strong>。<br>
+        五支各找各的 —— 覆寫一支，不會影響其他四支。</p>
+        <p class="spec-note"><strong>最左邊那一欄只有 ③ ⑤ 用得到。</strong><br>
+        ② 的兩支跑在種類出來<strong>之前</strong>（<code>bug</code> 就是它們判出來的），
+        ④ 則是刻意不分種類。</p>
+        <p class="spec-note">⚠️ <strong>沒有 <code>default/bug/</code> 這一欄</strong>，
+        也不會有。<br>種類名稱是各 device 自己的字彙，你的 <code>bug</code>
+        不保證等於別人的 <code>bug</code>。</p>
+      </span></div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>JIRA key 怎麼擷取的？要換規則怎麼寫？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
+          <div class="spec-k">規則</div>
+          <div class="spec-v"><strong>不擷取</strong>，一律回 <code>""</code></div>
+        </div>
+
+        <p style="margin:18px 0 0">repo 裡附了一個 <code>ssd</code> 當例子，它的規則是
+        <strong>標題第一個方括號</strong>。<br>同一批標題，兩邊各擷取出：</p>
+
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th>MR 標題</th>
+                <th>default</th>
+                <th class="near">ssd —— 第一個方括號</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>[PPS-1234] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="win">"PPS-1234"</td></tr>
+            <tr><td>mod:[PPS-1234][Bug] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="win">"PPS-1234"</td></tr>
+            <tr><td>[WIP] [PPS-1234] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td>"WIP" <span class="na">← 不判有效性</span></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="spec-note">⚠️ <code>mr_type.py</code> 多半要一起寫 —— 不然種類會回退到 default，
+        而 default 也不擷取，於是永遠是空的。</p>
+      </span></div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>MR 種類怎麼擷取的？要換規則怎麼寫？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
+          <div class="spec-k">規則</div>
+          <div class="spec-v"><strong>不擷取</strong>，一律回 <code>""</code></div>
+        </div>
+
+        <p style="margin:18px 0 0"><code>ssd</code> 的規則是<strong>標題第二個方括號</strong>
+        —— 第一個留給 JIRA key：</p>
+
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th>MR 標題</th>
+                <th>default</th>
+                <th class="near">ssd —— 第二個方括號</th>
+                <th>於是用哪一份</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>mod:[PPS-1234][Bug] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="win">"Bug"</td>
+                <td>ssd/<strong>bug</strong>/</td></tr>
+            <tr><td>[PPS-1234][NewTestCase] 新增開卡案例</td>
+                <td class="empty">""</td>
+                <td class="win">"NewTestCase"</td>
+                <td>ssd/<strong>newtestcase</strong>/ <span class="na">轉小寫</span></td></tr>
+            <tr><td>[PPS-1234] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td class="empty">""</td>
+                <td>ssd/ <span class="na">不分種類那一份</span></td></tr>
+            <tr><td>[PPS-1234][緊急] 修正重試上限</td>
+                <td class="empty">""</td>
+                <td>"緊急" <span class="na">← 不合法</span></td>
+                <td>ssd/ <span class="na">不分種類那一份</span></td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <p style="margin:18px 0 10px">「不分種類那一份」是指<strong>直接放在
+        <code>ssd/</code> 底下</strong>、沒進種類資料夾的那幾支：</p>
+
+        <div class="term">device/ssd/
+├── <span class="g">summary.py</span>            <span class="c">不分種類那一份，什麼種類都用它</span>
+└── <span class="y">bug/</span>
+    └── <span class="g">merge_to_md.py</span>    <span class="c">只有 bug 這種 MR 用</span></div>
+
+        <p class="spec-note">所以種類擷取不到時，<strong>整個跳過 <code>ssd/&lt;種類&gt;/</code>
+        那一層</strong>，直接用 <code>ssd/</code>；<code>ssd/</code> 也沒放才退到
+        <code>default/</code>。</p>
+        <p class="spec-note">⚠️ 不合法的字串（<code>緊急</code>、<code>bug fix</code>）
+        <strong>視同沒有種類，不會報錯</strong> —— 那是 MR 作者打的字，不是部署問題。<br>
+        要讓它變成錯誤的話，在 <code>__init__.py</code> 宣告 <code>STRICT_TYPE = True</code>。</p>
+      </span></div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>code review 報告怎麼判定通過？要換規則怎麼寫？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
+          <div class="spec-k">規則</div>
+          <div class="spec-v">在 <code>## 風險評估總表</code> 那一節取第一張表，
+            <strong>最後一欄當數量，加總為 0 就是 pass</strong></div>
+          <div class="spec-k">範例</div>
+          <div class="spec-v"><div class="spec-pre">| 類別   | 風險等級 | 數量 |
+| 記憶體 | 高       | 0    |   加總 0 → pass
+| 執行緒 | 中       | 2    |   加總 2 → fail</div>
+            </div>
+          <div class="spec-k">當 0</div>
+          <div class="spec-v">純數字當數量；<code>-</code>、<code>—</code>、<code>無</code>、
+            <code>N/A</code>、<code>none</code>、空白一律當 <strong>0</strong>
+            <span class="dim">—— 報告常用這幾種寫法表示「這一列沒有項目」，不收的話一張正常的表
+            會因為一個破折號就判不出結論。<br>整張表只有表頭、一列資料都沒有，同樣是 0，也就是
+            pass。</span></div>
+          <div class="spec-k">報錯</div>
+          <div class="spec-v"><code>3 件</code>、<code>~5</code>、<code>&gt;10</code>
+            這種帶了字的寫法<strong>一律報錯，不猜</strong>
+            <span class="dim">—— 猜錯的方向是把一份有風險的審閱判成通過，而報告上看不出來。<br>
+            某一列的欄數與表頭對不起來時同樣報錯，不拿最後一格將就。</span></div>
+        </div>
+        <p class="spec-note">💡 <strong>只是節名不同的話不必寫擴充腳本</strong> ——
+        在 <code>__init__.py</code> 宣告 <code>CODE_REVIEW_SOURCE_HEADING</code> 就好。</p>
+      </span></div>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  同一個資料夾裡：<br>
+  <a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/device-authoring.md">device-authoring.md</a> — 完整說明：<br>產物格式、呼叫 AI、改 prompt、素材怎麼來、type 的細節<br>
+  <a href="getting-started.html">getting-started.html</a> — 第一次接觸這個功能<br>
+  <a href="cli.html">cli.html</a> — 不開 Qt 跑（圖解）｜<a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/cli.md">cli.md</a> — 完整參數<br>
+  <a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/README.md">README.md</a> — 功能的完整行為規則
+</footer>
+
+</main>
+</body>
+</html>

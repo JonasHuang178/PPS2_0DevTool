@@ -2,6 +2,7 @@
 
 #include <QCloseEvent>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QPushButton>
 
@@ -10,6 +11,17 @@ namespace {
 // 腳本回報 stage 前的初始文字。切換步驟時也用它把上一步的殘留文字蓋掉。
 const char *const kInitialStageText = "Processing...";
 
+// 對話框的固定尺寸。
+//
+// 寬度取 460 是為了讓常見的中文階段文字一行放得下；高度只需容納一行標籤、一條
+// 跑馬燈與取消鈕，130 留了餘裕。兩個值都只在這個檔案出現，要調整改這裡即可。
+const int kDialogWidth  = 460;
+const int kDialogHeight = 130;
+
+// 標籤可用寬度 = 對話框寬度扣掉左右內距。QProgressDialog 的內距沒有公開的取得
+// 方式，這是估的：估寬了文字會提早被截斷，估窄了會貼到邊。
+const int kLabelPadding = 60;
+
 } // namespace
 
 ProcessingDialog::ProcessingDialog(const QString &stepLabel, QWidget *parent)
@@ -17,7 +29,6 @@ ProcessingDialog::ProcessingDialog(const QString &stepLabel, QWidget *parent)
     , m_cancelling(false)
 {
     setWindowTitle(stepLabel.isEmpty() ? QString("Processing") : stepLabel);
-    setLabelText(QString(kInitialStageText));
     setCancelButtonText(QString("Cancel"));
 
     // 跑馬燈：range 為 (0, 0) 才會是不確定進度。
@@ -34,7 +45,21 @@ ProcessingDialog::ProcessingDialog(const QString &stepLabel, QWidget *parent)
     // 移除標題列的關閉鈕：讓它消失，比留著但沒有反應好 ——
     // 後者會讓使用者以為程式當掉了。
     setWindowFlags((windowFlags() & ~Qt::WindowCloseButtonHint)
-                   | Qt::CustomizeWindowHint);
+                   | Qt::CustomizeWindowHint
+                   | Qt::MSWindowsFixedSizeDialogHint);
+
+    // 固定尺寸：使用者不能以滑鼠改變大小。
+    //
+    // 兩件事一起做才完整 ——
+    //   setFixedSize()                 鎖住尺寸，順便擋掉「標籤文字一變、視窗就
+    //                                  跟著縮放」那種執行過程中的跳動
+    //   MSWindowsFixedSizeDialogHint   Windows 上換成固定尺寸對話框的細邊框，
+    //                                  視窗邊緣不再是可拖曳的縮放區
+    //
+    // 順序有關係：setWindowFlags() 會重建原生視窗，尺寸要在它之後才鎖得住。
+    setFixedSize(kDialogWidth, kDialogHeight);
+
+    applyLabelText(QString(kInitialStageText));
 
     connect(this, SIGNAL(canceled()), this, SLOT(onCanceled()));
 }
@@ -45,7 +70,7 @@ void ProcessingDialog::setStep(const QString &stepLabel)
         return;   // 取消中不再被流程的步驟切換覆蓋
 
     setWindowTitle(stepLabel.isEmpty() ? QString("Processing") : stepLabel);
-    setLabelText(QString(kInitialStageText));
+    applyLabelText(QString(kInitialStageText));
 }
 
 void ProcessingDialog::setStage(const QString &stage)
@@ -54,7 +79,7 @@ void ProcessingDialog::setStage(const QString &stage)
         return;   // 取消中不再被腳本的進度覆蓋
 
     if (!stage.isEmpty())
-        setLabelText(stage);
+        applyLabelText(stage);
 }
 
 void ProcessingDialog::onCanceled()
@@ -66,7 +91,7 @@ void ProcessingDialog::onCanceled()
 
     // QProgressDialog::cancel() 會把對話框藏起來，但行程還要幾秒才會真的
     // 結束。這段期間主視窗必須維持鎖定，所以把它再顯示回來。
-    setLabelText(QString("取消中…"));
+    applyLabelText(QString("取消中…"));
     setCancelButtonText(QString("Cancel"));
     if (QPushButton *button = findChild<QPushButton *>())
         button->setEnabled(false);
@@ -74,6 +99,18 @@ void ProcessingDialog::onCanceled()
     show();
 
     emit cancelRequested();
+}
+
+void ProcessingDialog::applyLabelText(const QString &text)
+{
+    // 尺寸固定之後，視窗不會再為了長文字變寬，所以放不下的部分要自己處理。
+    // 與 MR 表格的標題欄同一種作法：截斷成「…」，完整內容放進 tooltip。交給
+    // QLabel 硬裁的話，斷點取決於像素寬度，中文可能剛好斷在半個字上。
+    const int available = kDialogWidth - kLabelPadding;
+    const QString shown = fontMetrics().elidedText(text, Qt::ElideRight, available);
+
+    setLabelText(shown);
+    setToolTip(shown == text ? QString() : text);
 }
 
 bool ProcessingDialog::event(QEvent *event)

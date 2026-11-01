@@ -18,6 +18,7 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class PPS2_0DevTool; }
 QT_END_NAMESPACE
 
+class AIAnalysisGitLabMR;
 class ProcessingDialog;
 class SingleBuilding;
 
@@ -46,12 +47,14 @@ class SingleBuilding;
 //   2. 在 pps2_0devtool.ui 加一個 tab，標題就是功能名稱
 //   3. 在 setupToolService() 建立實例；UI_Init() 依 isFunctionVisible() 決定是否
 //      removeTabByTitle()；UI_SetupSignal() 連接該 tab 的元件
-//   4. 在 PPS2_0DevTool.json 的 Function 加設定區塊
+//   4. 在 PPS2_0DevTool.example.json 的 Function 加設定區塊（跨功能共用的端點
+//      與憑證放 Service，不要抄進功能區塊）
 //   5. 在 PPS2_0DevTool.pro 的 SOURCES / HEADERS 加檔案
 //   6. 建立 scripts/<功能名>/，把 scripts/_function_template.py 複製進去寫成
 //      入口腳本；跨功能的共用能力放進 script_utils/ 底下對應的技術領域分組
 //
-// 不需要修改 json.cpp。
+// 不需要修改 json.cpp。新增共用服務的鍵也不需要 —— 只有新增一整個工具層級
+// 區塊才需要動它。
 
 class PPS2_0DevTool : public QMainWindow
 {
@@ -66,7 +69,7 @@ public:
     // 非同步：立即回傳是否成功啟動，結果經由 onDone 送達。
     // 取消時 onDone 不會被呼叫 —— 這是「取消後畫面完全不動」的物理保證。
     //
-    // tool 身分不放進信封，改由環境變數 TOOLNAME / TOOLVERSION 傳遞。
+    // tool 身分不放進請求 JSON，改由環境變數 TOOLNAME / TOOLVERSION 傳遞。
     // source_path 與 config 由外殼自動填入，功能不需傳。
     //
     // 內部實作為「只有一步的流程」，因此對話框、耗時、取消三者與多步流程
@@ -153,8 +156,14 @@ public:
     void showUI_InfoMessageBox(const QString &text);
     void showUI_WarningMessageBox(const QString &text);
     void showUI_ErrorMessageBox(const QString &text);
+    // folder 非空時，視窗在 OK 左邊多出一顆開啟它的按鈕（完整路徑在該按鈕的 tooltip
+    // 上）；空的時候版面與沒有這項功能時完全相同。
+    //
+    // 要不要給、給哪一個，由**功能**決定 —— 外殼不認得任何功能的產物放在哪裡，只有
+    // 功能知道「剛才那一次」的目錄是哪一個。
     void showResultDialog(const QString &title, const QString &content,
-                          qint64 elapsedMs);
+                          qint64 elapsedMs,
+                          const QString &folder = QString());
     QString getUI_sourcePathLineEditText() const;
     bool    removeTabByTitle(const QString &title);
 
@@ -223,7 +232,8 @@ private:
     QList<PythonRunner::PythonRunnerResult> m_flowResults;
 
     // --- 功能實例 ---
-    SingleBuilding    *m_singleBuilding;
+    SingleBuilding     *m_singleBuilding;
+    AIAnalysisGitLabMR *m_aiAnalysisGitLabMR;
 
     // 每個功能各自的來源路徑，鍵為功能名稱（即 tab 標題）。
     //

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Analysis GitLab MR — 第一次使用</title>
+<link rel="stylesheet" href="../_doc.css">
+</head>
+<body>
+<main>
+
+<header>
+  <h1>AI Analysis<br>GitLab MR</h1>
+  <p class="sub">它幫你讀一支 Merge Request，然後寫一份報告。<br>
+  你只要點四下。</p>
+  <div class="kin">
+    不開 Qt、在命令列或 CI 上跑 → <a href="cli.html">cli.html</a><br>
+    讓這條產品線有自己的分析邏輯 → <a href="device-authoring.html">device-authoring.html</a>
+  </div>
+</header>
+
+<!-- ============ 這是什麼 ============ -->
+<section>
+  <h2>這是什麼</h2>
+  <h3>把「一支別人寫的 MR」變成「一份看得懂的報告」</h3>
+
+  <div class="ba">
+    <div class="ba-card">
+      <div class="ba-ico">🗂️</div>
+      <div class="ba-t">你有的</div>
+      <div class="ba-d">一支 Merge Request。<br>90 個檔案被改過。<br>你不知道從哪裡看起。</div>
+    </div>
+    <div class="ba-arrow">→</div>
+    <div class="ba-card">
+      <div class="ba-ico">📄</div>
+      <div class="ba-t">你會拿到</div>
+      <div class="ba-d">一份 markdown 報告。<br>改了什麼、為什麼、<br>哪裡有風險。</div>
+    </div>
+  </div>
+  <p class="muted" style="font-size:15px">
+    報告可以直接複製，貼回那支 MR 的討論串。
+  </p>
+</section>
+
+<!-- ============ 你要做的事 ============ -->
+<section>
+  <h2>你要做的事</h2>
+  <h3>選一個專案，挑一支 MR，按下去</h3>
+
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <div>
+        <div class="step-t">在 Repository 清單點一個專案</div>
+        <div class="step-d">這份清單來自設定檔，一打開就在那裡。只能選一個。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div>
+        <div class="step-t">按 Merge Request 區的重新整理</div>
+        <div class="step-d">清單<strong>不會</strong>自己出現 —— 每次取得都是一次網路請求，所以等你開口。
+        預設只拿「還沒關閉的」和「最近 7 天建立的」。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div>
+        <div class="step-t">在表格裡點一支 MR</div>
+        <div class="step-d">也只能選一個。想先看看它長什麼樣，<strong>連按兩下標題</strong>會開 GitLab 頁面。</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">4</div>
+      <div>
+        <div class="step-t">（可有可無）勾 Save run log</div>
+        <div class="step-d">勾了就把中間產物留在你指定的資料夾，想知道每一步各自產出什麼時用。
+        不勾也完全跑得完。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="press">
+    <span class="press-btn">AI Analysis</span>
+    <div class="press-d">按下去，然後等。中間會有一個對話框擋住主視窗，<br>
+    上面寫著現在跑到第幾步。想停就按它的取消。</div>
+  </div>
+</section>
+
+<!-- ============ 按下去之後 ============ -->
+<section>
+  <h2>按下去之後</h2>
+  <h3>它會跑五步，一步接一步</h3>
+  <p class="lead muted">任何一步失敗就整條停下來，並告訴你是第幾步、為什麼。
+  畫面上的東西完全不會變，沒有東西需要你收拾。</p>
+
+  <div class="flow">
+    <div class="fl">
+      <div class="fl-n">1</div>
+      <div>
+        <div class="fl-t">去 GitLab 抄下那支 MR 的描述<span class="fl-tag tag-net">要連線</span></div>
+        <div class="fl-d">如果上一輪已經把 AI 分析貼回去過，<strong>那一段會被扣掉</strong> ——
+        否則 AI 會對自己上次的輸出再分析一次。</div>
+      </div>
+    </div>
+    <div class="fl">
+      <div class="fl-n">2</div>
+      <div>
+        <div class="fl-t">看看這支 MR 有沒有單號、是什麼種類<span class="fl-tag tag-net">要連線</span></div>
+        <div class="fl-d">怎麼看由 device 決定，而<strong>預設的 device 兩個都不看</strong> ——
+        單號可以在畫面上手動指定。寫了自己的 device 之後多半是從標題的方括號擷取，例如
+        <code>[PPS-1234][Bug] 修正重試上限</code> 擷取出單號 <code>PPS-1234</code>、種類
+        <code>bug</code>。</div>
+      </div>
+    </div>
+    <div class="fl">
+      <div class="fl-n">3</div>
+      <div>
+        <div class="fl-t">把差異交給 AI，問它改了什麼<span class="fl-tag tag-cost">要錢、要等</span></div>
+        <div class="fl-d">五步裡唯一要花錢、唯一會等到分鐘級的一步。
+        檔案太多的話只送得進一部分 —— 報告會老實說少了哪些。</div>
+      </div>
+    </div>
+    <div class="fl">
+      <div class="fl-n">4</div>
+      <div>
+        <div class="fl-t">去那張單子上找別人做的 code review<span class="fl-tag tag-net">要連線</span></div>
+        <div class="fl-d">找得到就把風險評估表抓進報告。沒有單號、單號無效、
+        或單子上沒掛那份附件 —— <strong>都算正常</strong>，報告裡就少那一段而已。</div>
+      </div>
+    </div>
+    <div class="fl">
+      <div class="fl-n">5</div>
+      <div>
+        <div class="fl-t">把前面四步的東西拼成一份 markdown<span class="fl-tag tag-local">不連線</span></div>
+        <div class="fl-d">純排版，不再問任何人。跑完就彈出結果視窗。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 報告長什麼樣 ============ -->
+<section>
+  <h2>報告長什麼樣</h2>
+  <h3>固定五塊，從上到下</h3>
+
+  <div class="report">
+    <div class="rb">
+      <div class="rb-l"><span class="rb-h"># Original Description</span></div>
+      <div class="rb-r"><div class="rb-d">MR 原本的描述，原封不動。</div></div>
+    </div>
+    <div class="rb">
+      <div class="rb-l"><span class="rb-h"># AI 分析結果</span></div>
+      <div class="rb-r"><div class="rb-d">
+        <strong>Summary</strong> 幾句話講這支 MR 在做什麼。<br>
+        <strong>Code Changes</strong> 逐個檔案講改了什麼、為什麼，diff 收在可展開的區塊裡。
+      </div></div>
+    </div>
+    <div class="rb">
+      <div class="rb-l">
+        <span class="rb-h">## 詳細資料</span><br>
+        <span class="rb-opt">只在真的用到單子時出現</span>
+      </div>
+      <div class="rb-r"><div class="rb-d">一行連到那張 JIRA 單。</div></div>
+    </div>
+    <div class="rb">
+      <div class="rb-l"><span class="rb-h"># 分析涵蓋範圍</span></div>
+      <div class="rb-r"><div class="rb-d">
+        「共 90 個檔案，送進分析 21 個，AI 回報了 3 個。」<br>
+        <strong>少了什麼它會自己說</strong> —— 這一段就是為了讓你不用猜。
+      </div></div>
+    </div>
+    <div class="rb">
+      <div class="rb-l">
+        <span class="rb-h"># Code Review 報告</span><br>
+        <span class="rb-opt">只在找得到那份附件時出現</span>
+      </div>
+      <div class="rb-r"><div class="rb-d">別人做的風險評估表，加上日期、作者、原件連結。</div></div>
+    </div>
+    <div class="rb">
+      <div class="rb-l"><span class="rb-h">出處（最後一行小字）</span></div>
+      <div class="rb-r"><div class="rb-d">哪一套邏輯、哪一版腳本、問了哪個 AI。<br>
+      報告被貼到別處之後，靠這一行知道它是誰產的。</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 卡住的地方 ============ -->
+<section>
+  <h2>第一次最常卡住的地方</h2>
+  <h3>四個「它壞了嗎」其實都不是壞了</h3>
+
+  <div class="stuck">
+    <div class="st">
+      <div class="st-q">AI Analysis 按鈕是灰的，而且沒說為什麼</div>
+      <div class="st-a">它要四個條件都滿足：選了專案、指定了 MR、
+      勾了除錯就要填存放目錄、選了手動單號就要填單號。
+      <strong>不說明原因是刻意的</strong>，與工具裡另一個功能同一個作法。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">MR 清單空的</div>
+      <div class="st-a">按重新整理。另外，<strong>換專案或改查詢條件都會清空清單</strong> ——
+      否則你看到的是上一個專案的 MR，按下去分析的卻是現在選的那個。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">報告第一行說「未經過 AI」</div>
+      <div class="st-a">AI 端點還沒設定。這時第三步<strong>不會失敗</strong>，而是產出替代內容
+      並在第一行講明白 —— 這樣還沒有端點的時候整條流程仍然跑得完、驗得到。</div>
+    </div>
+    <div class="st">
+      <div class="st-q">報告裡的檔案比 MR 實際改的少很多</div>
+      <div class="st-a">正常，而且「分析涵蓋範圍」那一段會告訴你少在哪裡：
+      差異太大送不進去、你的設定把它排除了、或是送進去了但 AI 沒回報。
+      三種各自有不同的處理方式。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 常見問題 ============
+
+     這一節的題目全部清空了，等使用者逐題提出需求再加回來。
+
+     要加第一題時：把這整段註解的頭尾拿掉，然後照下面的形狀填。
+     答案裡有 strong 或 br 這類標籤時，**一定**要包在內層那一個 span 裡 ——
+     .qa-a 是 grid，直接放的話每個標籤都會變成獨立的格子，被擠成一行一個字。
+
+<section>
+  <h2>常見問題</h2>
+  <h3>大家問過的</h3>
+
+  <div class="qa">
+    <div class="qa-item">
+      <div class="qa-q"><span>問題寫這裡？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-grp">分組的小標題</div>
+          <div class="spec-k">欄位</div>
+          <div class="spec-v">內容。<span class="dim">次要的說明用 dim</span></div>
+          <div class="spec-grp">第二組</div>
+          <div class="spec-k">欄位</div>
+          <div class="spec-v">內容</div>
+        </div>
+        <p class="spec-note">⚠️ 要特別提醒的寫這裡（選用）。</p>
+      </span></div>
+    </div>
+  </div>
+</section>
+
+============ 常見問題結束 ============ -->
+
+<div class="closing">
+  選一個專案 → 按重新整理 → 點一支 MR → 按 AI Analysis。<br>
+  其餘的它自己跑，跑完給你一份可以直接貼回去的報告。
+</div>
+
+<footer>
+  同一個資料夾裡：<br>
+  <a href="cli.html">cli.html</a> — 不開 Qt 跑（圖解）｜<a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/cli.md">cli.md</a> — 完整參數與指令<br>
+  <a href="device-authoring.html">device-authoring.html</a> — 寫自己的 device（圖解）｜<a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/device-authoring.md">device-authoring.md</a> — 完整說明<br>
+  <a class="ext" href="https://github.com/JonasHuang178/PPS2_0DevTool/blob/add-ai-analysis-gitlab-mr/docs/ai-analysis-gitlab-mr/README.md">README.md</a> — 畫面每一個控件、過濾器、報告版面的完整規則
+</footer>
+
+</main>
+</body>
+</html>

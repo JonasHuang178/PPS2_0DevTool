@@ -12,7 +12,7 @@
 
 要寫新腳本，改三個常數、列出 config / params、填實作區就完成了。
 
-四件必須遵守的事：
+五件必須遵守的事：
 
 1. 入口腳本放在 scripts/<功能>/ 底下，同一個功能的腳本收在一起。因為放進
    了子目錄，**底下那段 sys.path 設定不能刪** —— Python 只把「腳本所在目錄」
@@ -20,8 +20,8 @@
    不到。Qt 會注入指向 scripts/ 的 PYTHONPATH，但別把那當成前提：命令列與
    CI 直接執行時沒有那個環境，而那是本專案明確支援的用法。
 
-2. 業務邏輯寫在 script_utils/ 裡，這支腳本只做轉接（收信封 → 呼叫
-   script_utils → 回信封）。「給別人用」的正確介面是 script_utils，
+2. 業務邏輯寫在 script_utils/ 裡，這支腳本只做轉接（收請求 → 呼叫
+   script_utils → 回結果）。「給別人用」的正確介面是 script_utils，
    不是腳本。
 
    script_utils/ 依**技術領域**分組（system_utils、gitlab_utils…），不依
@@ -30,7 +30,11 @@
 
 3. 只有結果 JSON 可以印到 stdout。診斷訊息用 logger（走 stderr）。
 
-4. **每一個功能要宣告自己的腳本名稱與版號**，宣告在該功能的套件裡
+4. 不要整包 log 出 config。跨功能共用的憑證會被併進來，而 Debug_Mode 開啟時
+   那一行會直接出現在 debug console 上。憑證優先走環境變數，log 時只印出
+   你真正需要的那幾個鍵。
+
+5. **每一個功能要宣告自己的腳本名稱與版號**，宣告在該功能的套件裡
    （`scripts/<功能>/__init__.py`），由該功能的所有入口腳本共用一份。
    版號兩碼、每改一次就把第二碼加一 —— 詳見底下那一段。
 """
@@ -69,11 +73,11 @@ SCRIPT_VERSION = "2.0"
 # --- 改這三個常數 -----------------------------------------------------------
 #
 # TEMPLATE_VERSION 與上面的 SCRIPT_VERSION **是兩個不同的東西，不要搞混**：
-# 它是**信封模板**的版本（請求與回應長什麼樣），全專案共用一個值，只有信封格式
+# 它是**請求／回應格式**的版本（請求與回應長什麼樣），全專案共用一個值，只有請求／回應格式
 # 本身改了才動。改你的功能不要動它。
 TEMPLATE_VERSION = "2.0.0"
 ACTION           = "example_action"
-DESCRIPTION      = "範本腳本：示範信封的收送方式"
+DESCRIPTION      = "範本腳本：示範請求與回應的收送方式"
 
 
 def main():
@@ -83,7 +87,7 @@ def main():
         template_version=TEMPLATE_VERSION,
 
         # 這支腳本需要哪些設定鍵。Qt 會從 PPS2_0DevTool.json 的
-        # Function/<功能名> 區塊挖出來放進信封的 config。
+        # Function/<功能名> 區塊挖出來放進請求 JSON 的 config。
         # required=True 的缺漏會在進入業務邏輯之前就被擋下來。
         config=[
             script_io.cfg("Example_Server_URL", required=False,
@@ -100,8 +104,11 @@ def main():
         ],
     )
 
-    # 每一支入口腳本在開始時把功能名稱與版號記進診斷 —— 支援時問一句
-    # 「console 第一行是什麼」就知道使用者手上跑的是哪一版。
+    # **沒有報告可以承載版號的功能**（結果顯示在畫面上、看完就關掉）在開始時把功能名稱
+    # 與版號記進診斷 —— 支援時問一句「console 第一行是什麼」就知道使用者手上跑的是哪一版。
+    #
+    # 這一行**不是無條件的規則**：產出報告的功能改由報告頁尾承載版號（ai_analysis 的六支
+    # 都是這樣），兩處都印只是同一個值講兩次。留著或刪掉，看你的功能屬於哪一種。
     logger.info("%s %s", SCRIPT_NAME, SCRIPT_VERSION)
 
     cfg         = req["config"]
@@ -114,8 +121,12 @@ def main():
     tool_name = os.environ.get("TOOLNAME", "")
 
     logger.info("開始處理 %s（%d 筆）", name, count)          # -> stderr
-    logger.debug("呼叫方 =%r，來源路徑 =%r，設定 =%r",
-                 tool_name, source_path, cfg)                  # -v 才會出現
+    logger.debug("呼叫方 =%r，來源路徑 =%r", tool_name, source_path)
+
+    # 不要整包印出 cfg。設定檔的 Service 區塊會被併進 config，裡面有權杖，
+    # 而 Debug_Mode 開啟時這一行會出現在 console 上。只印你真正需要的鍵：
+    #
+    #     logger.debug("伺服器 =%r", cfg.get("Example_Server_URL"))
 
     # ---- 實作區：呼叫 script_utils，拿回資料結構 ----
     items = []

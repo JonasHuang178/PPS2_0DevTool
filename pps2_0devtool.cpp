@@ -1,6 +1,7 @@
 #include "pps2_0devtool.h"
 #include "ui_pps2_0devtool.h"
 
+#include "AIAnalysisGitLabMR.h"
 #include "ProcessingDialog.h"
 #include "SingleBuilding.h"
 #include "common.h"
@@ -11,8 +12,13 @@
 #include <QAction>
 #include <QCloseEvent>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFileDialog>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QUrl>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
@@ -32,6 +38,7 @@ PPS2_0DevTool::PPS2_0DevTool(const Config &config, QWidget *parent)
     , m_flowActive(false)
     , m_flowCancelled(false)
     , m_singleBuilding(Q_NULLPTR)
+    , m_aiAnalysisGitLabMR(Q_NULLPTR)
 {
     ui->setupUi(this);
 
@@ -64,6 +71,7 @@ void PPS2_0DevTool::setupToolService()
 
     // 功能實例在這裡建立。
     m_singleBuilding = new SingleBuilding(this, this);
+    m_aiAnalysisGitLabMR = new AIAnalysisGitLabMR(this, this);
 }
 
 // 通知功能它被進入了。
@@ -75,21 +83,48 @@ void PPS2_0DevTool::notifyFunctionEntered(const QString &functionName)
 {
     if (m_singleBuilding && functionName == SingleBuilding::functionName())
         m_singleBuilding->enterFunction();
+    else if (m_aiAnalysisGitLabMR
+             && functionName == AIAnalysisGitLabMR::functionName())
+        m_aiAnalysisGitLabMR->enterFunction();
 }
 
 void PPS2_0DevTool::UI_Init()
 {
     setWindowTitle(QString("%1 %2").arg(TOOL_NAME, TOOL_VERSION));
 
-    // 固定尺寸 1200x830。
-    setFixedSize(1200, 830);
+    // 固定尺寸 1280x830。
+    //
+    // 寬度從 1200 加到 1280 是為了 MR 表格：固定欄（編號 / 作者 / 建立日期 /
+    // 狀態）合計約 330，左欄約 460，1200 之下標題欄只剩約 324px —— 中文標題
+    // 看得到約 22 字。標題是使用者唯一用來認出「是哪一筆 MR」的欄位，被截掉
+    // 的話那張表就退化成一行字的清單。
+    setFixedSize(1280, 830);
 
-    ui->progressBar->setRange(0, 100);
-    ui->progressBar->setValue(0);
+    // 共用的清單選取樣式。
+    //
+    // 兩個 :!active 的規則不是複製貼上的贅字 —— Windows 上視窗焦點離開清單
+    // 之後，預設的選取高亮會退成很淡的灰色。使用者在清單裡選好之後，下一個
+    // 動作往往就是去點別的控件，焦點因此離開；少了 :!active 那兩條，他就看
+    // 不出自己選的是哪一項，而真正生效的正是那一項。
+    //
+    // :hover 寫在 :selected 之前：兩者特異度相同，後寫的贏，所以滑過已選取的
+    // 項目時仍然維持選取色。
+    setStyleSheet(QString(
+        "QListView::item:hover, QTableView::item:hover {"
+        "  background-color: #E5F3FF;"
+        "}"
+        "QListView::item:selected, QTableView::item:selected,"
+        "QListView::item:selected:!active, QTableView::item:selected:!active {"
+        "  background-color: #CCE8FF;"
+        "  color: #042C53;"
+        "}"));
 
     // 功能依 isFunctionVisible() 決定是否 removeTabByTitle()。
     if (!isFunctionVisible(SingleBuilding::functionName()))
         removeTabByTitle(SingleBuilding::functionName());
+
+    if (!isFunctionVisible(AIAnalysisGitLabMR::functionName()))
+        removeTabByTitle(AIAnalysisGitLabMR::functionName());
 
     // 記下開場的當前功能。移除分頁後索引可能已經變動，因此在這裡才讀。
     const int current = ui->functionTabWidget->currentIndex();
@@ -127,6 +162,39 @@ void PPS2_0DevTool::UI_SetupSignal()
 
         connect(this, SIGNAL(sourcePathChanged(QString,QString)),
                 m_singleBuilding, SLOT(onSourcePathChanged(QString,QString)));
+    }
+
+    // AI Analysis GitLab MR 不連接 sourcePathChanged —— 它不使用來源路徑。
+    // 不需要的功能不連接任何訊號即可正常運作。
+    if (m_aiAnalysisGitLabMR) {
+        AIAnalysisGitLabMRWidgets widgets;
+        widgets.providerCombo       = ui->aiProviderComboBox;
+        widgets.logFileCheck      = ui->aiLogFileCheckBox;
+        widgets.saveDirEdit         = ui->aiSaveDirLineEdit;
+        widgets.saveDirBrowseButton = ui->aiSaveDirBrowseButton;
+        widgets.jiraKeyEdit         = ui->aiJiraKeyLineEdit;
+        widgets.jiraNoneRadio       = ui->aiJiraNoneRadioButton;
+        widgets.jiraManualRadio     = ui->aiJiraManualRadioButton;
+        widgets.jiraAutoRadio       = ui->aiJiraAutoRadioButton;
+        widgets.repoView            = ui->aiRepoListView;
+        widgets.manualMrRadio       = ui->aiManualMrRadioButton;
+        widgets.manualMrEdit        = ui->aiManualMrLineEdit;
+        widgets.getMrRadio          = ui->aiGetMrRadioButton;
+        widgets.onlyOpenCheck       = ui->aiOnlyOpenCheckBox;
+        widgets.createdAfterCheck   = ui->aiCreatedAfterCheckBox;
+        widgets.createdAfterSpin    = ui->aiCreatedAfterSpinBox;
+        widgets.refreshButton       = ui->aiRefreshButton;
+        widgets.mrView              = ui->aiMrTableView;
+        widgets.analysisButton      = ui->aiAnalysisButton;
+        widgets.filterToggleButton  = ui->aiFilterToggleButton;
+        widgets.filterStatusLabel   = ui->aiFilterStatusLabel;
+        widgets.filterClearButton   = ui->aiFilterClearButton;
+        widgets.filterContentWidget = ui->aiFilterContentWidget;
+        widgets.authorView          = ui->aiAuthorListView;
+        widgets.skipStartsWithEdit  = ui->aiSkipStartsWithLineEdit;
+        widgets.skipEndsWithEdit    = ui->aiSkipEndsWithLineEdit;
+        widgets.skipContainsEdit    = ui->aiSkipContainsLineEdit;
+        m_aiAnalysisGitLabMR->attachWidgets(widgets);
     }
 
     connect(m_runner, SIGNAL(progressStage(QString)),
@@ -324,7 +392,7 @@ bool PPS2_0DevTool::startFlowStep(const FlowStep &step, QString *failureMessage)
             ? functionConfig.value("Program").toString(QString("python"))
             : step.program;
 
-    // 信封四個欄位。tool 身分不在這裡 —— 走 TOOLNAME / TOOLVERSION 環境變數。
+    // 請求 JSON 四個欄位。tool 身分不在這裡 —— 走 TOOLNAME / TOOLVERSION 環境變數。
     QJsonObject envelope;
     envelope.insert("source_path", getUI_sourcePathLineEditText());
     envelope.insert("config",      functionConfig);
@@ -494,7 +562,8 @@ void PPS2_0DevTool::showUI_ErrorMessageBox(const QString &text)
 
 void PPS2_0DevTool::showResultDialog(const QString &title,
                                      const QString &content,
-                                     qint64 elapsedMs)
+                                     qint64 elapsedMs,
+                                     const QString &folder)
 {
     QDialog dialog(this);
     dialog.setWindowTitle(title);
@@ -514,7 +583,29 @@ void PPS2_0DevTool::showResultDialog(const QString &title,
     QDialogButtonBox *buttons =
             new QDialogButtonBox(QDialogButtonBox::Ok, &dialog);
     connect(buttons, SIGNAL(accepted()), &dialog, SLOT(accept()));
-    layout->addWidget(buttons);
+
+    // 按鈕列自己排，不交給 QDialogButtonBox 的角色順序：那個順序由平台樣式決定
+    // （Windows 把 ActionRole 排在 Accept 之後），而這裡要的是開啟入口在 OK 左邊。
+    // OK 仍然留在 button box 裡，所以 Enter 與 Esc 的預設行為不變。
+    QHBoxLayout *buttonRow = new QHBoxLayout;
+    buttonRow->addStretch();
+
+    // 紀錄目錄的入口。功能沒給目錄就不出現 —— 沒勾選紀錄時那次的產物在暫存目錄，
+    // 流程一結束就被移除，入口會指向一個不存在的位置。
+    //
+    // 只有按鈕，不另外顯示路徑：那一行字在這個視窗的最底下，而真正要做的事（打開它）
+    // 按鈕已經做完了。要路徑本身的人開了目錄就能從檔案總管取得。
+    if (!folder.isEmpty()) {
+        QPushButton *open = new QPushButton(QString("Open log folder"), &dialog);
+        open->setToolTip(QDir::toNativeSeparators(folder));
+        connect(open, &QPushButton::clicked, &dialog, [folder]() {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        });
+        buttonRow->addWidget(open);
+    }
+
+    buttonRow->addWidget(buttons);
+    layout->addLayout(buttonRow);
 
     dialog.exec();
 }

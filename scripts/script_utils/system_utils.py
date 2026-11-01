@@ -190,7 +190,7 @@ def to_windows_path_format(path_string):
     相對路徑**不會**被轉成絕對路徑。在 Linux 上執行時，「絕對化」只能以
     Linux 的當前目錄為基準，那對一個要交給 Windows 用的路徑毫無意義。
 
-    空字串原樣回傳，不視為錯誤 —— 信封的 `source_path` 允許為空，這裡
+    空字串原樣回傳，不視為錯誤 —— 請求 JSON 的 `source_path` 允許為空，這裡
     拋例外的話每個呼叫端都得先寫一次 if。
 
     path_string 不是字串時拋出 ValueError。

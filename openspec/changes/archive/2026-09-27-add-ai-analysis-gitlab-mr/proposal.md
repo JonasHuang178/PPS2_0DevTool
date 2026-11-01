@@ -1,0 +1,173 @@
+## Why
+
+工具目前只有 Single Building 一個功能，而它不需要對外連線。AI Analysis GitLab MR 是第二個功能，也是第一個需要對外部服務認證的功能 —— GitLab、AI 供應商，以及日後的 JIRA。它讓使用者在工具裡瀏覽指定 repo 的 Merge Request，並把選定的 MR 交給 AI 分析。
+
+加這個功能會撞上三個外殼層級的缺口，它們在「沒有任何憑證、沒有任何表格」的時候都不痛，現在會痛：
+
+**設定檔沒有地方放共用憑證。** 依現況，GitLab token 只能抄進每一個需要它的功能區塊。使用者換 token 時漏改其中一份，那個 tab 就開始回 401 —— 而 401 的第一直覺是「token 過期了」，於是去 GitLab 重發一把新的，找錯方向。這與 `script_io` 註解裡記載過的舊坑是同一種。
+
+**設定檔被 git 追蹤，而且每次建置都無條件覆蓋執行檔旁那一份。** 目前這個檔案裡一個祕密都沒有，所以沒人撞到過。一旦放進三把憑證，使用者就只剩兩個選擇：填在執行檔旁那份（下次建置被蓋掉），或填在專案那份（`git status` 永遠顯示被改過，遲早 commit 上去）。後者是那種發現時已經來不及的錯。
+
+**1200 的寬度撐不住表格。** MR 清單需要 MR / Title / Author / Created / State 五欄，其中只有 Title 需要伸縮。1200 寬度下 Title 只剩約 324px，而標題正是使用者唯一用來認出「是哪一筆 MR」的欄位；那一欄被截掉，這張表就退化成一行字的清單。
+
+## What Changes
+
+### 新增 AI Analysis GitLab MR 功能 tab
+
+畫面左右兩欄。左欄由上而下為 AI Mode（下拉選單）、Analysis Parameter（除錯分析檔開關、存檔目錄、JIRA Key 三選一）、Repository（單選清單，內容來自設定檔）；右欄為 Merge Requests（手動輸入 MR 編號或取得清單二選一、查詢條件、MR 表格），右下角為 AI Analysis 動作按鈕。
+
+- 分析單位是**一個 repo 的一個 MR** —— Repository 與 MR 表格皆為單選
+- **進入 tab 不執行任何腳本**：Repository 清單來自設定檔，MR 清單一律由使用者按重新整理才取得
+- 切換 repository 會清空 MR 清單並停用 AI Analysis，使用者必須重新取得 —— 否則畫面上是 A 的 MR、選定的卻是 repo B
+- MR 表格區分「尚未取得」與「沒有符合條件的結果」兩種空白狀態
+- 動作按鈕在條件不足時停用，不另外說明原因（與 Single Building 的既有作法一致）
+
+### 新增六支 Python 腳本
+
+全部由 `scripts/_function_template.py` 複製而來，放在 `scripts/ai_analysis_gitlab_mr/` 之下：一支供重新整理鈕取得 Merge Request 清單，五支為分析流程的各個步驟。
+
+GitLab REST 的呼叫沿用主線既有的 `scripts/script_utils/gitlab_utils.py`（`requests` + 共用的 `http_utils`）。
+
+> 本 change 原先要自己在 `scripts/script_utils/gitlab_utils/` 建立一份以標準函式庫實作的版本，理由是「本專案沒有任何 Python 相依清單」。該前提在本 change 進行期間失效 —— 主線獨立地把 `script_utils` 擴充成七個模組並加入 `requirements.txt`。本 change 因此在 rebase 時移除自帶的那份，改接主線的模組。原委見 design.md 決策二十一。
+
+**取得 Merge Request 清單與步驟 1 取得 Merge Request 描述兩支為真實實作**；步驟 5 合併為 markdown 是真實邏輯（它沒有外部依賴）；其餘三支本次回傳寫死的假資料（見下）。
+
+### **BREAKING** 設定檔新增工具層級 `Service` 區塊
+
+外殼認得的工具層級欄位從三個（`Debug_Mode` / `User_Guide_Link` / `Function`）增為四個，新增的 `Service` 存放跨功能共用的服務端點與憑證。
+
+`Service` 與 `Function` 同樣**整包保留、不做任何解析**。功能取設定時得到的是「`Service` 併上自己區塊」的結果，同名鍵以功能自己的區塊為準（讓個別功能能指向不同的伺服器）。信封的 `config` 因此改為這個合併後的物件。
+
+- **BREAKING**：信封 `config` 的定義從「該功能在 `Function` 底下的完整區塊」改為「`Service` 併上該區塊」。協定是加法式的，既有腳本收到多出來的鍵會忽略，`scripts/single_building/` 四支腳本不需要修改
+- `json.h` 上「新增一個功能不得修改這個檔案」的硬性規則隨之改寫。規則的牙齒保留（不准逐鍵解析），但誠實反映結構已是兩個區塊：新增功能與新增共用服務鍵都不需要改它，只有新增整個工具層級區塊才需要
+
+### **BREAKING** 設定檔移出 git 追蹤
+
+- `PPS2_0DevTool.json` 停止追蹤並加入 `.gitignore`
+- 新增 `PPS2_0DevTool.example.json`（追蹤，憑證欄位留空）作為範本
+- 建置的複製規則改為：執行檔旁已有設定檔就完全不動它，沒有才從範本生成一份
+
+代價是新增的設定鍵不會傳播到既有部署。症狀由腳本層的必填檢查負責回報（「缺少必填項目：設定 `Gitlab_Access_Token`」），指名道姓、使用者知道下一步做什麼。
+
+此檔案自第一次 commit 起從未裝過任何憑證，因此不需要改寫 git 歷史。
+
+### **BREAKING** 主視窗固定尺寸 1200x830 改為 1280x830
+
+高度不變，維持固定尺寸。Single Building 的兩個清單會連帶變寬，行為不變。
+
+### 共用清單選取樣式進外殼
+
+清單項目的選取樣式改由外殼統一提供，且**選取態不因視窗焦點離開而變色**。
+
+Windows 上焦點離開清單後，預設的選取高亮會退成很淡的灰色。這個功能的操作順序每次都會踩到它：選 repository、按重新整理、到表格挑 MR —— 三步之後使用者已經看不清楚自己選的是哪個 repo，而按下 AI Analysis 時真正生效的正是那一個。此問題不是本功能特有，任何「有清單又有其他控件」的分頁都會遇到，因此放進外殼的共用服務，所有功能一併受惠。
+
+### AI Analysis 的執行流程
+
+按下 AI Analysis 啟動一條**固定五步**的流程：取得 Merge Request 描述 → 取得相關資訊 → AI 分析 → 取得程式碼審閱報告 → 合併為 markdown。
+
+- 五步全部執行，Qt 端 MUST NOT 依條件跳過任何一步。「是否真的做事」由該步的腳本看參數自行決定
+- 各步的腳本路徑固定，MUST NOT 取自任何步驟的回傳資料
+- 任一步失敗即結束流程，以一個錯誤訊息框指出第幾步與該步回報的原因
+- 全部成功時以結果視窗顯示最後一步回傳的 markdown 內容與整條流程耗時
+
+理由：這批腳本同時要能被 CI/CD 的 shell 直接串接。若分支判斷寫在 Qt 端，CI 那一側就成為第二份編排實作，兩份必然漂移。把判斷壓進腳本後，兩個呼叫端都只是固定順序的線性呼叫。
+
+GitLab 與 JIRA 的服務端點與存取權杖由功能注入為環境變數（鍵名的全大寫形式），腳本只從環境變數取用；AI 的端點、金鑰與模型名經由參數傳入。兩者皆不出現在行程的命令列上。
+
+JIRA Key 的模式（`none` / `manual` / `auto`）、手動指定的 key、以及流程中取得的 key 三者一併傳入分析步驟，由腳本決定採用哪一個。
+
+勾選 `Add Debug Analysis file` 時，Qt 在流程啟動前建立一個帶時間戳記的目錄並把路徑傳入每一步；未勾選時傳空字串，整條流程不產生任何檔案 —— 報告內容一律經由回應的 `data` 送回，Qt 從不開檔。
+
+### MR 描述的分段與最終報告的形狀
+
+MR 的描述可能同時裝著兩樣東西：人寫的原始描述，以及先前某一輪的 AI 分析。步驟 1
+以 AI 分析的標題為界切開，只取它之前的原始描述；步驟 5 把那一段接上這一輪的 AI
+分析，組成要顯示的報告。
+
+報告的版面：
+
+```
+# Original Description        <- 步驟 5 寫出
+<GitLab 上那份描述的內容>
+
+# AI 分析結果                  <- 步驟 5 寫出，同時是下一輪切段的邊界
+## Summary
+<總覽>
+## Code Changes
+### 1. `<檔案路徑>`
+- <標題>
+  <理由>
+  <details> 收合的 diff
+
+---
+MR Summary Script v1.0(<AI 模式>)   <- 出處，永遠都在
+<pipeline 與 commit，或工具名稱與版本>
+```
+
+- **兩個標題都由步驟 5 寫出**；步驟 1 的產物（`01_description.md`）仍是 GitLab 原文、
+  不冠標題 —— 標題屬於報告，不屬於描述
+- `# AI 分析結果` 是切段時唯一的邊界，該常數由步驟 1（切）與步驟 5（寫）共用
+- 標題的比對刻意寬鬆（階層、大小寫、詞間空白都容許），但**只認得現在這一個** ——
+  改標題的代價與補救見 design.md 決策二十四
+- 原始描述為空時該段整個不出現
+- 報告不含涵蓋全篇的標題，也不含產生時間；唯一的分隔線在出處資訊之前
+- 報告只用於顯示，工具**不寫回** GitLab 的 MR 描述
+- **每次執行全部重新生成**，只有原始描述被保留 —— 舊的分析與出處一併被切掉重產
+
+### 本次的實作範圍：契約為真，流程中段三步的內臟為假
+
+六支腳本的**對外契約一律為真**（標準輸出只有結果 JSON、進度走錯誤輸出、結束碼、必填檢查、參數宣告、模板傾印、兩種投遞方式）。
+
+| | 本次 |
+|---|---|
+| Qt 側全部 | 真實實作 |
+| 取得 Merge Request 清單 | **真實實作**，真的連線至 GitLab |
+| 步驟 1：取得 Merge Request 描述 | **真實實作**，真的連線至 GitLab |
+| 流程步驟 2–4 | 回傳寫死的假資料 |
+| 步驟 5：合併為 markdown | 真實邏輯 —— 沒有外部依賴，工作就是把前面各步的產物接起來 |
+
+取得清單那支做成真的，是因為它一次驗證掉四件否則要等下一個 change 才知道的事：`namespace/project` 字串是否足以識別專案、憑證經環境變數的整條路徑是否接通、`gitlab_utils` 用起來的形狀、以及畫面上的查詢條件如何對應到實際的查詢參數。它同時是風險最低的一支：唯讀、單一端點、失敗了只是表格空著。
+
+步驟 1 後來也做成真的，理由同一類：描述分段的規則（邊界標題、舊版留下的標題、圍籬內
+不算）只有對著真實的 MR 描述才驗得出來，而它與取得清單同樣是唯讀、單一端點，
+失敗了只是那一步回報錯誤而流程停下。
+
+## Capabilities
+
+### New Capabilities
+
+- `ai-analysis-gitlab-mr`: AI Analysis GitLab MR 功能 tab 的完整行為 —— 畫面配置與元件啟用規則、Repository 與 MR 清單的來源與取得時機、單選語意與過期清單的處理、JIRA Key 三種模式、五步分析流程的組成與參數組裝、MR 描述的分段規則與最終報告的形狀、憑證的傳遞方式、失敗與結果的呈現，以及本次交付的腳本實作範圍
+
+### Modified Capabilities
+
+- `app-shell`: 三項需求變更 ——（1）工具層級設定讀取新增 `Service` 區塊，功能設定查詢改為回傳合併結果，顯示與否仍只看功能自己的區塊；（2）主視窗固定尺寸改為 1280x830；（3）共用 UI 服務新增清單選取樣式，且不因焦點離開而變色
+- `script-execution`: 「請求信封組裝」需求變更 —— `config` 欄位從功能區塊改為 `Service` 併上功能區塊，並定義同名鍵的優先順序
+
+## Impact
+
+### 程式碼
+
+- `json.{h,cpp}` —— 保留 `Service`、`getFunctionConfig()` 改回傳合併結果、硬性規則改寫。**注意：上一個 change 曾把此檔列為「不受影響」，本次是它首次因結構變更而被修改**
+- `pps2_0devtool.{h,cpp,ui}` —— 新增 tab 與其元件、視窗尺寸、共用清單選取樣式、功能實例的建立與訊號連接
+- 新增 `AIAnalysisGitLabMR.{h,cpp}` —— 功能本體
+- `PPS2_0DevTool.pro` —— 新檔案加入 SOURCES / HEADERS、設定檔複製規則改為不覆蓋既有檔案
+- `PythonRunner`、`ProcessingDialog`、`debug`、`common`、`SingleBuilding` 不受影響（`SingleBuilding` 的畫面會因視窗變寬與選取樣式而改變外觀，行為不變）
+
+### 腳本
+
+- `scripts/ai_analysis_gitlab_mr/` 新增入口腳本
+- `scripts/ai_analysis_gitlab_mr/__init__.py`：除既有的 helper 之外，另收兩個
+  AI 分析的標題常數與描述分段的函式，供步驟 1 與步驟 5 共用
+- `scripts/script_utils/gitlab_utils.py`：沿用主線既有模組，本 change 不新增共用模組（原計畫要自建一份，見 design.md 決策二十一）
+- `scripts/single_building/` 四支腳本不需修改
+
+### 設定與部署
+
+- `PPS2_0DevTool.json` 移出 git 追蹤、`.gitignore` 新增一條
+- 新增 `PPS2_0DevTool.example.json`
+- 既有部署的設定檔需手動補上新增的鍵
+
+### 文件
+
+- `README.md` —— 設定檔章節新增 `Service`、命名風格補註腳本路徑的實際作法、新增設定檔與 git 的說明、新增功能章節
+- `pps2_0devtool.h` 開頭的「新增一個功能的步驟」註解與 README 是同一份，兩邊都要更新

@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1200</width>
+    <width>1280</width>
     <height>830</height>
    </rect>
   </property>
@@ -228,16 +228,462 @@
         </item>
        </layout>
       </widget>
-     </widget>
-    </item>
-    <item>
-     <widget class="QProgressBar" name="progressBar">
-      <property name="value">
-       <number>0</number>
-      </property>
-      <property name="textVisible">
-       <bool>false</bool>
-      </property>
+      <widget class="QWidget" name="aiAnalysisGitLabMrTab">
+       <attribute name="title">
+        <string>AI Analysis GitLab MR</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="aiMainLayout">
+        <item>
+         <layout class="QHBoxLayout" name="aiColumnsLayout">
+          <item>
+           <widget class="QWidget" name="aiLeftPanel" native="true">
+            <property name="minimumSize">
+             <size>
+              <width>460</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>460</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="aiLeftLayout">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QGroupBox" name="aiProviderGroupBox">
+               <property name="title">
+                <string>AI Provider</string>
+               </property>
+               <layout class="QVBoxLayout" name="aiProviderLayout">
+                <item>
+                 <widget class="QComboBox" name="aiProviderComboBox"/>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="aiParamGroupBox">
+               <property name="title">
+                <string>Analysis Parameter</string>
+               </property>
+               <layout class="QVBoxLayout" name="aiParamLayout">
+                <item>
+                 <widget class="QCheckBox" name="aiLogFileCheckBox">
+                  <property name="text">
+                   <string>Save run log</string>
+                  </property>
+                  <property name="checked">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <layout class="QHBoxLayout" name="aiSaveDirLayout">
+                  <item>
+                   <widget class="QLabel" name="aiSaveDirLabel">
+                    <property name="text">
+                     <string>Save Analysis file Path</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLineEdit" name="aiSaveDirLineEdit"/>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="aiSaveDirBrowseButton">
+                    <property name="maximumSize">
+                     <size>
+                      <width>32</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>...</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QGroupBox" name="aiJiraGroupBox">
+                  <property name="title">
+                   <string>JIRA Key</string>
+                  </property>
+                  <layout class="QHBoxLayout" name="aiJiraLayout">
+                   <item>
+                    <widget class="QRadioButton" name="aiJiraNoneRadioButton">
+                     <property name="text">
+                      <string>None</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QRadioButton" name="aiJiraManualRadioButton">
+                     <property name="text">
+                      <string>Manual JIRA</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QLineEdit" name="aiJiraKeyLineEdit"/>
+                   </item>
+                   <item>
+                    <widget class="QRadioButton" name="aiJiraAutoRadioButton">
+                     <property name="text">
+                      <string>Auto</string>
+                     </property>
+                     <property name="checked">
+                      <bool>true</bool>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="aiRepoGroupBox">
+               <property name="title">
+                <string>Repository</string>
+               </property>
+               <layout class="QVBoxLayout" name="aiRepoLayout">
+                <item>
+                 <widget class="QListView" name="aiRepoListView"/>
+                </item>
+               </layout>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="aiMrGroupBox">
+            <property name="title">
+             <string>Merge Requests</string>
+            </property>
+            <layout class="QVBoxLayout" name="aiMrLayout">
+             <item>
+              <layout class="QHBoxLayout" name="aiManualMrLayout">
+               <item>
+                <widget class="QRadioButton" name="aiManualMrRadioButton">
+                 <property name="text">
+                  <string>Manual Merge Request ID</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="aiManualMrLineEdit">
+                 <property name="maximumSize">
+                  <size>
+                   <width>160</width>
+                   <height>16777215</height>
+                  </size>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="aiManualMrSpacer">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <widget class="QRadioButton" name="aiGetMrRadioButton">
+               <property name="text">
+                <string>Get Merge Requests</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="aiMrParamGroupBox">
+               <property name="title">
+                <string>Merge Request Parameter</string>
+               </property>
+               <layout class="QHBoxLayout" name="aiMrParamLayout">
+                <item>
+                 <widget class="QCheckBox" name="aiOnlyOpenCheckBox">
+                  <property name="text">
+                   <string>Only Open</string>
+                  </property>
+                  <property name="checked">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="aiCreatedAfterCheckBox">
+                  <property name="text">
+                   <string>Created after</string>
+                  </property>
+                  <property name="checked">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QSpinBox" name="aiCreatedAfterSpinBox">
+                  <property name="minimum">
+                   <number>1</number>
+                  </property>
+                  <property name="maximum">
+                   <number>365</number>
+                  </property>
+                  <property name="value">
+                   <number>7</number>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="aiCreatedAfterUnitLabel">
+                  <property name="text">
+                   <string>days</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="aiRefreshButton">
+                  <property name="maximumSize">
+                   <size>
+                    <width>32</width>
+                    <height>16777215</height>
+                   </size>
+                  </property>
+                  <property name="toolTip">
+                   <string>重新取得 Merge Request 清單</string>
+                  </property>
+                  <property name="text">
+                   <string/>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="aiMrParamSpacer">
+                  <property name="orientation">
+                   <enum>Qt::Horizontal</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>40</width>
+                    <height>20</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="aiFilterGroupBox">
+               <property name="title">
+                <string>Filter</string>
+               </property>
+               <layout class="QVBoxLayout" name="aiFilterLayout">
+                <item>
+                 <layout class="QHBoxLayout" name="aiFilterHeaderLayout">
+                  <item>
+                   <widget class="QToolButton" name="aiFilterToggleButton">
+                    <property name="maximumSize">
+                     <size>
+                      <width>24</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="toolTip">
+                     <string>展開或收合過濾條件</string>
+                    </property>
+                    <property name="text">
+                     <string/>
+                    </property>
+                    <property name="checkable">
+                     <bool>true</bool>
+                    </property>
+                    <property name="autoRaise">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="aiFilterStatusLabel">
+                    <property name="text">
+                     <string/>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="aiFilterHeaderSpacer">
+                    <property name="orientation">
+                     <enum>Qt::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="aiFilterClearButton">
+                    <property name="text">
+                     <string>Clear Filter</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QWidget" name="aiFilterContentWidget" native="true">
+                  <layout class="QFormLayout" name="aiFilterContentLayout">
+                   <property name="leftMargin">
+                    <number>0</number>
+                   </property>
+                   <property name="topMargin">
+                    <number>0</number>
+                   </property>
+                   <property name="rightMargin">
+                    <number>0</number>
+                   </property>
+                   <property name="bottomMargin">
+                    <number>0</number>
+                   </property>
+                   <property name="labelAlignment">
+                    <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                   </property>
+                   <property name="fieldGrowthPolicy">
+                    <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                   </property>
+                   <item row="0" column="0">
+                    <widget class="QLabel" name="aiAuthorLabel">
+                     <property name="text">
+                      <string>Author</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="0" column="1">
+                    <widget class="QListView" name="aiAuthorListView">
+                     <property name="maximumSize">
+                      <size>
+                       <width>16777215</width>
+                       <height>92</height>
+                      </size>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="1" column="0">
+                    <widget class="QLabel" name="aiSkipStartsWithLabel">
+                     <property name="text">
+                      <string>Starts with</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="1" column="1">
+                    <widget class="QLineEdit" name="aiSkipStartsWithLineEdit">
+                     <property name="placeholderText">
+                      <string>以逗號分隔，例如 Revert,fixup!</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="2" column="0">
+                    <widget class="QLabel" name="aiSkipEndsWithLabel">
+                     <property name="text">
+                      <string>Ends with</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="2" column="1">
+                    <widget class="QLineEdit" name="aiSkipEndsWithLineEdit">
+                     <property name="placeholderText">
+                      <string>以逗號分隔</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="3" column="0">
+                    <widget class="QLabel" name="aiSkipContainsLabel">
+                     <property name="text">
+                      <string>Contains</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="3" column="1">
+                    <widget class="QLineEdit" name="aiSkipContainsLineEdit">
+                     <property name="placeholderText">
+                      <string>以逗號分隔，例如 [WIP],[Draft]</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QTableView" name="aiMrTableView"/>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="aiActionLayout">
+          <item>
+           <spacer name="aiActionSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="aiAnalysisButton">
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>AI Analysis</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
      </widget>
     </item>
    </layout>
@@ -247,7 +693,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1200</width>
+     <width>1280</width>
      <height>24</height>
     </rect>
    </property>
