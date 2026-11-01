@@ -36,6 +36,17 @@ from script_utils import logger
 # 要改的東西都在這一段
 # ===========================================================================
 
+# 這一份有沒有把差異送給 AI 看。**這一份有**（`{diff}` 在 PROMPT_TEMPLATE 裡），所以
+# 涵蓋範圍照常計算、報告照常印出「分析涵蓋範圍」那一段、涵蓋層的重查照常執行。
+#
+# 不宣告的預設值也是 True，所以這一行不影響行為 —— 擺在這裡是因為範本帶著它
+# （`device/_template/summary.py`），而把它寫出來讓「這一份看不看程式碼」在檔案裡有
+# 答案，不必回頭比對 PROMPT_TEMPLATE 裡有沒有 `{diff}`。
+#
+# 不放差異的那幾份改成 False，例子見 `new_test_case/summary.py`。
+ANALYZES_CODE = True
+
+
 # 角色與語氣。
 #
 # 這一段放在 prompt 最前面，而不是另一個 system 欄位 —— 這個服務的 payload 只有一個
