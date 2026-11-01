@@ -86,6 +86,16 @@ def analyze(inputs):
     coverage 尤其不要填：它正是用來說明「這支擴充腳本回報了多少個檔案」的，報告會把
     「差異裡有、你沒回報」的那些列出來。想讓那個數字好看，唯一的辦法是真的多回報。
 
+    **例外：這一份根本不讓 AI 看程式碼的話，在模組層級宣告** `ANALYZES_CODE = False`
+    （不是回傳值，見 `device/sd/new_test_case/summary.py`）。那一段問的是「送進分析的
+    檔案回報了多少」，而你一個檔案都沒送進去 —— 不宣告的話每一個檔案都會落進「AI 沒有
+    回報」，於是每一份報告都掛著一段讀起來像缺陷的警告，而涵蓋層的重查也會為了補不回來
+    的東西把次數用完。宣告之後報告整段不出現、重查不執行。
+
+    ⚠️ 哪一天把差異加回 prompt，**那一行要跟著拿掉** —— 留著的話真正的漏報就再也不會
+    出現在報告上了。完整說明見 docs/ai-analysis-gitlab-mr/device-authoring.md 的
+    「`summary.py`」一節。
+
     JIRA 的有效性由**你**判定：
 
         通過檢查    jira_state=contract.JIRA_STATE_OK，jira_key 放那個 key
