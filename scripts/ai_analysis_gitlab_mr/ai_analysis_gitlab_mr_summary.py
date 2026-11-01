@@ -101,6 +101,40 @@ def _coverage_of(body, diff_info):
         files_skipped=diff_info.get("skipped_files") or ())
 
 
+def _analyzes_code(hook, where, log):
+    """這一份 summary 擴充腳本有沒有讓 AI 看程式碼。未宣告即 True。
+
+    涵蓋範圍問的是「送進分析的檔案，擴充腳本回報了多少」。那個問題只有在**程式碼真的
+    送進去過**的時候才成立 —— 一份刻意不把 diff 放進 prompt 的擴充腳本（`sd/new_test_case`
+    就是）每一次都會讓每一個檔案落進 missing，於是報告上掛著一段「N 個檔案已送進分析，
+    但 AI 沒有回報」。那句話在它底下不是缺陷而是事實，但它讀起來像缺陷。
+
+    **這是一個宣告，不是擴充腳本的回傳值**，所以它不違反「涵蓋範圍由入口蓋章」那條
+    規矩（見 diff_coverage）。差別在誰說了什麼：
+
+        回傳值  「我涵蓋了這些檔案」   —— 被檢查的一方自評，不採用
+        宣告    「我這一份不看程式碼」 —— 部署時就寫在原始碼裡的事實，與
+                                        STRICT_TYPE、CODE_REVIEW_SOURCE_HEADING 同一類
+
+    宣告寫在**擴充腳本自己的模組層級**而不是 device 的 `__init__.py`：這件事是「哪一份
+    summary」的屬性，不是整個 device 的 —— 同一個 device 底下，一個種類看程式碼、另一個
+    不看是正常的。而擴充腳本的解析已經是按種類來的，所以宣告跟著它走，自然就是按種類。
+
+    用 getattr 而不是 import 那個名字：絕大多數擴充腳本不會宣告它，缺了是常態。
+
+    型別不對時明確失敗，不做真值判斷 —— `ANALYZES_CODE = "false"` 在 Python 裡是真，
+    而寫成那樣的人想的是假，靜默照字串判斷會讓涵蓋範圍那一段無聲地回來。
+    """
+    value = getattr(hook, "ANALYZES_CODE", True)
+    if not isinstance(value, bool):
+        _fail(log,
+              "%s 的 ANALYZES_CODE 不是布林值" % where,
+              "收到的型別是 %s。請寫成 ANALYZES_CODE = False（不要加引號），"
+              "或整行拿掉以沿用預設值 True。" % type(value).__name__,
+              "DEVICE_ANALYZES_CODE_INVALID")
+    return value
+
+
 def _round_writer(base_write, round_no):
     """第二輪起把紀錄檔名加上 `recheckN_` 前綴。
 
@@ -372,6 +406,14 @@ def main():
     except ai_analysis_gitlab_mr.CredentialError as exc:
         _fail(log, str(exc), exc.detail, exc.code)
 
+    # 不看程式碼的擴充腳本沒有涵蓋範圍可談，重查也補不回任何東西 —— 它每一輪都會回報
+    # 零個檔案，於是迴圈會把每一輪都當成「還是漏了」而重問到次數用完，純粹燒錢。
+    analyzes_code = _analyzes_code(hook, where, log)
+    if not analyzes_code and ai_recheck:
+        logger.info("%s 宣告了 ANALYZES_CODE = False，不做涵蓋層的重查"
+                    "（原本設定 %d 次）", where, ai_recheck)
+        ai_recheck = 0
+
     logger.info("AI 等待設定：逾時 %s 秒、重試 %d 次、重問 %d 次、重查 %d 次"
                 "（最壞情況約 %d 秒，不含退避）",
                 ai_seconds, ai_retries, ai_reask, ai_recheck,
@@ -507,14 +549,20 @@ def main():
             break
 
     missing, round_used, body, coverage = best
-    if round_used > 1 or missing:
+    # 不看程式碼的那幾份不報這一行：它的 missing 永遠是全部的檔案，而那不是漏報。
+    if analyzes_code and (round_used > 1 or missing):
         logger.info("採用第 %d 輪的分析（共 %d 輪），仍有 %d 個檔案沒被回報",
                     round_used, round_no, missing)
 
     # 涵蓋範圍由入口蓋章，而且理由比種類更強：這份數字是用來檢查**擴充腳本回報了多少**的。
     # 讓被檢查的一方提供它，這個機制就等於不存在 —— 一支宣稱自己涵蓋全部的擴充腳本不會有
     # 任何一步發現它說謊。入口同時握有差異與擴充腳本的回傳，兩樣都在手上。
-    body["coverage"] = coverage
+    #
+    # 宣告了不看程式碼的那幾份蓋一個**空的** coverage（見 _analyzes_code）：那一段問的是
+    # 「送進去的檔案回報了多少」，而它一個檔案都沒送進去，所以那個問題在它底下沒有答案 ——
+    # 不是答案是零。空的結構讓 has_coverage_gap() 回假，報告因此沒有那一段（欄位本身留著，
+    # 它在契約裡是選填的，拿掉會讓讀產物的人分不出「沒有這個欄位」與「舊版的產物」）。
+    body["coverage"] = coverage if analyzes_code else {}
 
     payload = ai_analysis_gitlab_mr.wrap_analysis(body)
 
@@ -529,23 +577,31 @@ def main():
         _fail(log, str(exc), exc.detail, exc.code)
 
     ai_analysis_gitlab_mr.write_artifact(params["out_path"], payload)
+    # 不看程式碼的那幾份記 `coverage=(不適用)`，不記一排零 —— 一排零與「真的什麼都沒
+    # 回報」在 log 上長得一模一樣，而那是事後唯一要分辨的事。
+    if analyzes_code:
+        coverage_note = ("coverage=%d/%d/%d dropped=%d empty=%d missing=%d "
+                         "unknown=%d"
+                         % (coverage["files_reported"],
+                            coverage["files_sent"],
+                            coverage["files_changed"],
+                            coverage["dropped"]["count"],
+                            coverage["empty"]["count"],
+                            coverage["missing"]["count"],
+                            coverage["unknown"]["count"]))
+    else:
+        coverage_note = "coverage=(不適用，ANALYZES_CODE = False)"
+
     log(
         # files 是「提到的檔案數／其中有發現的檔案數」。兩個都記，因為空的發現清單
         # 現在留在 mrDiff 裡（見 default/summary.py 的 parse_reply）—— 只記一個的話，
         # 「模型提了 20 個檔案但只有 2 個有話說」與「模型只提了 2 個」在 log 上長得
         # 一模一樣，而那正是調 prompt 時要分辨的事。
-        "summary(%s) repo=%s mr=%s type=%r jira_state=%s files=%d/%d "
-        "coverage=%d/%d/%d dropped=%d empty=%d missing=%d unknown=%d"
+        "summary(%s) repo=%s mr=%s type=%r jira_state=%s files=%d/%d %s"
         % (owner, repo, mr_iid, mr_type, body.get("jira_state"),
            len(body.get("mrDiff") or {}),
            sum(1 for one in (body.get("mrDiff") or {}).values() if one),
-           body["coverage"]["files_reported"],
-           body["coverage"]["files_sent"],
-           body["coverage"]["files_changed"],
-           body["coverage"]["dropped"]["count"],
-           body["coverage"]["empty"]["count"],
-           body["coverage"]["missing"]["count"],
-           body["coverage"]["unknown"]["count"]))
+           coverage_note))
 
     script_io.reply(
         message="AI 分析完成（device：%s%s）"
