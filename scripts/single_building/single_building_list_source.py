@@ -22,16 +22,16 @@ import single_building
 from script_utils import logger
 from script_utils import system_utils
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "list_source"
-DESCRIPTION      = "列出來源路徑該層的 .cpp 檔案"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "list_source"
+DESCRIPTION     = "列出來源路徑該層的 .cpp 檔案"
 
 
 def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
 
         # 這支腳本不需要任何自訂設定鍵：來源路徑走請求 JSON 的 source_path，
         # 暫存設定檔的位置由 single_building 套件決定。
@@ -43,8 +43,8 @@ def main():
 
     # 版號記進診斷：這個功能的產出不會脫離產生它的環境，所以沒有一份報告
     # 可以承載版號 —— console 是唯一看得到它的地方（見 single_building 套件）。
-    logger.info("%s %s", single_building.SCRIPT_NAME,
-                single_building.SCRIPT_VERSION)
+    logger.info("%s %s", single_building.FEATURE_NAME,
+                single_building.FEATURE_VERSION)
 
     source_path = req["source_path"]
     if not source_path:

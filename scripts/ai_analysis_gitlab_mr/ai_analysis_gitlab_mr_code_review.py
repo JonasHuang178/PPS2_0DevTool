@@ -55,9 +55,9 @@ from ai_analysis_gitlab_mr import device
 from script_utils import jira_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "fetch_code_review"
-DESCRIPTION      = "自 JIRA 議題的附件取得程式碼審閱報告的風險評估總表"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "fetch_code_review"
+DESCRIPTION     = "自 JIRA 議題的附件取得程式碼審閱報告的風險評估總表"
 
 # 下載回來的原始附件存成這個名字。
 #
@@ -406,7 +406,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[
             script_io.arg("repo", required=True,

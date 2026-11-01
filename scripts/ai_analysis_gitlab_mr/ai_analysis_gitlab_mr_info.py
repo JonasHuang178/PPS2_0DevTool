@@ -38,9 +38,9 @@ from ai_analysis_gitlab_mr import device
 from script_utils import gitlab_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "mr_info"
-DESCRIPTION      = "取得 Merge Request 的相關資訊並解出 JIRA key 與種類"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "mr_info"
+DESCRIPTION     = "取得 Merge Request 的相關資訊並解出 JIRA key 與種類"
 
 
 def _mr_fields(repo, mr_iid, mr):
@@ -149,7 +149,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
 
         # 憑證與 device 不在這裡宣告 —— 它們走環境變數。在 config 宣告會讓使用者
         # 以為該把它們填進 request 檔案裡。

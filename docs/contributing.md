@@ -15,11 +15,11 @@
 ### ① 改了常數或版號 → grep 那個數字
 
 ```bash
-grep -rn '2\.11' --include='*.md' .          # 改了 SCRIPT_VERSION 之後
+grep -rn 'v2\.1\.0' --include='*.md' --include='*.html' .   # 改了 FEATURE_VERSION 之後
 ```
 
 文件裡抄了數字的地方不會自己更新。這個專案的文件已經因此過期三次
-（`SCRIPT_VERSION`、`device/default` 的 `VERSION`、`CODE_REVIEW_SCHEMA_VERSION`）。
+（`FEATURE_VERSION`、`device/default` 的 `DEVICE_VERSION`、`CODE_REVIEW_SCHEMA_VERSION`）。
 
 **寫文件時盡量不要抄數字。** 要抄就一併寫出它是哪個檔案的哪個常數，下一個人才知道
 去哪裡對。
@@ -235,15 +235,15 @@ import script_io
 from script_utils import gitlab_utils      # 業務邏輯模組
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "get_gitlab_mr"
-DESCRIPTION      = "取得指定 repo 的 merge request 清單"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "get_gitlab_mr"
+DESCRIPTION     = "取得指定 repo 的 merge request 清單"
 
 def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         # 憑證不在 config 宣告 —— 它們走環境變數（見 AUTHORING 3.5）。
         config=[],
         params=[
@@ -288,54 +288,121 @@ Python 只把「腳本所在目錄」放進 `sys.path`，少了它，`from scrip
 `PYTHONPATH`，但命令列與 CI 沒有那個環境，而那正是本專案明確支援的用法 ——
 所以可匯入性是入口腳本自己的責任。
 
-### 腳本的版號
+### 版號
 
-**每一個功能都要宣告自己的名稱與版號**，放在該功能的套件裡（`scripts/<功能>/__init__.py`），
-由該功能的所有入口腳本共用一份：
+這一節是版號規則的**唯一權威來源**。程式與其他文件裡提到版號的地方只放指向這裡的指標，
+不重述規則。
 
-```python
-SCRIPT_NAME    = "Single Building"
-SCRIPT_VERSION = "2.0"
-```
+#### 名稱對照
 
-```
-     2  .  0
-     │     └── 第二碼：任何修改都 +1，包含只改註解或診斷文字
-     └──────── 第一碼：重大修改才動，動的時候第二碼歸零
-```
+| 名稱 | 版的是什麼 | 宣告在哪裡 | 什麼時候動 | 範例 |
+|---|---|---|---|---|
+| `TOOL_VERSION` | Qt 工具本身 | `version.h` | 工具發版 | `v2.0.0` |
+| `FEATURE_NAME` / `FEATURE_VERSION` | 一個功能的通用層 | `scripts/<功能>/__init__.py` | 見下面的三碼規則 | `v2.1.0` |
+| `DEVICE_VERSION` | 一個 device 的實作 | `device/<名稱>/__init__.py` | 見「device 的例外」 | `v2.1.0` |
+| `TEMPLATE_VERSION` | device 範本 | `device/_template/__init__.py` | 範本自己改了 | `v2.1.0` |
+| `REQUEST_VERSION` | 請求／回應信封的格式 | 每支入口腳本 | 請求／回應格式本身改了 | `2.0.0` |
+| `ANALYSIS_SCHEMA_VERSION` | 分析產物的結構 | `ai_analysis_gitlab_mr/__init__.py` | 結構改了 | `1` |
+| `CODE_REVIEW_SCHEMA_VERSION` | 審閱產物的結構 | 同上 | 結構改了 | `1` |
 
-**兩碼而不是三碼**是刻意的：三碼的中間那一碼需要判斷「這算 minor 還是 patch」，而需要判斷
-的規則就是會被漏掉的規則。兩碼沒有判斷餘地 —— 不是重大修改，就是 +1。
+**同一個名稱不指稱兩類不同的版號。** 這個專案曾經以 `VERSION` 同時指 device 的實作與 device
+範本，以 `TEMPLATE_VERSION` 同時指請求信封與（在規格裡）功能腳本範本 —— 讀的人只能靠上下文
+猜，而猜錯的後果是改錯一個數字，那不會報錯。
 
-**各支腳本不各自宣告。** 同一個功能的入口腳本是同一次提交一起出去的，沒有「其中一支升級了
-其他沒有」的情況；各自宣告的結果是數個數字要維護，而它們能回答的問題，一個已經回答了。
-
-| | 回答什麼 | 範圍 | 什麼時候動 |
-|---|---|---|---|
-| `TEMPLATE_VERSION` | 請求與回應長什麼樣 | **全專案**，所有功能同一個值 | 請求／回應格式本身改了 |
-| `SCRIPT_VERSION` | 這個功能的腳本是哪一版 | 單一功能 | 該功能每次修改 |
-
-> ⚠️ **兩者不要共用一個宣告。** 把 `TEMPLATE_VERSION` 拿來當某個功能的版號，它就會隨那個
-> 功能一直往上跳而其他功能停著不動 —— 兩個本該代表同一份請求／回應格式的數字於是分岔，而它還會
-> 被 `--dump-config` 印出去給呼叫端看。
-
-**有擴充層的功能要多一個版號。** 例如 AI Analysis 的 device 機制：那一層由各產品線自己寫、
-自己改，步調與通用層不同，所以它宣告自己的 `VERSION`，而**第一碼要與功能的通用版號一致** ——
-讀的人一眼就看得出那份擴充是照哪一代的契約寫的。
-
-**沒有任何機制強迫。** 改了但忘了更新版號，不會有任何東西擋你；第一碼不一致也不會讓執行
-失敗（第一碼升級是功能維護者做的事，而擴充層可能由別人維護 —— 因為維護者升級就讓人家的環境
-跑不起來，代價與收益不成比例）。呈現版號的地方一律**照實印出讀到的值**，不做驗證也不加標記。
-這是明知的取捨。
-
-**沒有報告可以承載版號的功能**（例如 Single Building，結果顯示在畫面上看完就關掉）**在每支
-腳本開始時把它記進診斷輸出**：
+#### 三碼 `vX.Y.Z`
 
 ```
-[2026-10-02 11:28:17.805] [ PY INFO  ] Single Building 2.0
+    v2  .  1  .  0
+     │     │     └── Z：只改文字、註解或錯字
+     │     └──────── Y：改動或新增功能
+     └────────────── X：工具的主版號（取自 version.h 的 TOOL_VERSION）
+```
+
+**值要帶 `v` 前綴**，寫成 `"v2.1.0"`，不是 `"2.1.0"`。
+
+**某一碼累加時，右邊各碼歸零。** 改了功能是 `v2.1.3 → v2.2.0`；只改錯字是 `v2.1.3 → v2.1.4`。
+
+**`X` 取自工具的主版號，工具自己的次版與修訂碼不往下傳。** 工具從 v2.3.1 升到 v2.4.0，腳本的
+版號一律不動；工具升到 v4.0.0，**所有**受本規則管的版號第一碼都要改成 4 並把右邊歸零，即使
+那支腳本本身一行都沒改。那會是一批說不出任何事情的提交 —— 這是為了讓「這份腳本屬於哪一代
+工具」一眼可答而付的代價，是明知的取捨。
+
+**三碼需要判斷「這算哪一種」，而需要判斷的規則就是會被漏掉的規則。** 這一點沒有被規避 ——
+沒有任何機制保證判斷正確，也沒有任何機制強迫「改了就一定更新版號」（要有強制力得靠提交前
+檢查或持續整合，而兩者目前都不存在）。判斷錯的代價是版號說得不精確，不是執行失敗。
+
+#### device 的例外：`vA.B.C`
+
+device 是由各產品線自己寫、自己改的實作層，步調與通用層不同，所以它有自己的版號。寫成
+`vA.B.C` 只是為了行文時能分別稱呼「通用層的 `Y`」與「device 的 `B`」 —— 位置與 `vX.Y.Z`
+完全相同。
+
+```
+    v2  .  1  .  7
+     │     │     └── C：這個 device 自己動過幾次
+     │     └──────── B：它照的是哪一代通用層（＝通用層 FEATURE_VERSION 的 Y）
+     └────────────── A：＝ X，工具的主版號
+```
+
+- **`A` ＝ `X`。**
+- **`B` 跟著通用層 `FEATURE_VERSION` 的 `Y`**，指出這份實作是照哪一代寫的。`B` 變動時 `C` 歸零。
+- **`C` 是這個 device 自己動過的次數。新增、刪除、修正、改文字都算，不分種類。**
+
+`C` 不分種類是刻意的：device 的維護者未必是功能的維護者，而需要判斷的規則就是會被漏掉的
+規則。這一碼只回答「動過幾次」，沒有判斷餘地。
+
+**`B` 要不要跟上，由該 device 的負責人決定。** 他的責任是**知道目前最新的 `FEATURE_VERSION`**，
+並自行判斷那幾代的改動是否影響自己。通用層從 `v2.5.1` 升到 `v2.6.0` 只是修了一個渲染瑕疵，
+某個 device 完全不受影響 —— 那就不必跟。
+
+**版號落後是事實陳述，不是待辦事項，也不是錯誤。** 看到 `sd = v2.5.8` 而通用層是 `v2.6.0`，
+讀的人就知道 sd 還在 2.5 那一代的邏輯上跑 —— 而那正是這個版號要傳達的資訊。強制跟上只會
+製造一批只動版號、說不出任何事情的提交。
+
+**種類（type）沒有自己的版號。** 種類目錄裡的改動累加所屬 device 的 `C`。種類的數量不固定，
+而它們與所屬 device 同一個維護者；各自一個版號會讓報告出處那幾行長到沒有人讀。
+
+#### 不受本規則管的版號
+
+| | 為什麼不受管 |
+|---|---|
+| `REQUEST_VERSION` | 它跟著**格式**走，不跟著任何一個功能走，全專案共用一個值。受本規則管它就會隨某個功能一直往上跳而其他功能停著不動 —— 兩個本該代表同一份格式的數字於是分岔，而它會被 `--dump-config` 印出去給呼叫端看。 |
+| `ANALYSIS_SCHEMA_VERSION`、`CODE_REVIEW_SCHEMA_VERSION` | 它們是**程式讀的整數**，以 `==` 與 `ACCEPTED_*` 清單比對。寫成 `"v2.6.0"` 會被產物自己的驗證擋下來。**不帶 `v`，不是三碼。** |
+
+> ⚠️ `REQUEST_VERSION` 與功能的版號**不要共用一個宣告**（見上一段的理由）。
+>
+> ⚠️ `--dump-config` 傾印出的 JSON 鍵仍叫 `_template_version`，**不隨常數改名**。已發佈的請求
+> 檔會照它的名字寫。
+
+#### 沒有報告可以承載版號的功能
+
+例如 Single Building —— 結果顯示在畫面上，使用者看完就關掉，沒有一份會被貼到別處的報告。
+這類功能**在每支入口腳本開始時把名稱與版號記進診斷輸出**：
+
+```
+[2026-10-02 11:28:17.805] [ PY INFO  ] Single Building v2.0.0
 ```
 
 支援時問一句「console 第一行是什麼」就知道使用者手上跑的是哪一版。
+
+#### 工具主版號升級時要掃過的清單
+
+`X` 改變時，下面每一處都要改第一碼並把右邊歸零：
+
+- `scripts/ai_analysis_gitlab_mr/__init__.py` 的 `FEATURE_VERSION`
+- `scripts/single_building/__init__.py` 的 `FEATURE_VERSION`
+- `scripts/_function_template.py` 的 `FEATURE_VERSION`（範例值）
+- `scripts/ai_analysis_gitlab_mr/device/_template/__init__.py` 的 `TEMPLATE_VERSION`
+- `scripts/ai_analysis_gitlab_mr/device/{default,sd,ssd,ufs}/__init__.py` 的 `DEVICE_VERSION`
+
+`REQUEST_VERSION` 與兩個 `*_SCHEMA_VERSION` **不在這張清單上**。
+
+#### 一致性不被檢查
+
+版號的一致性沒有任何機制強制。`DEVICE_VERSION` 的前兩碼與通用層不一致不會讓執行失敗 ——
+升級通用層是功能維護者做的事，而 device 可能由別人維護，因為維護者升級就讓人家的環境跑不
+起來，代價與收益不成比例。呈現版號的地方一律**照實印出讀到的值**，不做驗證也不加標記。
+
 
 ### 參數與設定只宣告一次
 
@@ -361,7 +428,7 @@ SCRIPT_VERSION = "2.0"
 
 | API | 用途 |
 |---|---|
-| `parse_request(action, description, config, params, template_version)` | 收請求 + 驗證必填 |
+| `parse_request(action, description, config, params, request_version)` | 收請求 + 驗證必填 |
 | `cfg(name, required, help)` | 宣告一個設定鍵 |
 | `arg(name, type, default, required, help)` | 宣告一個參數 |
 | `progress(stage)` | 往 stderr 印進度並 flush |

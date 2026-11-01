@@ -251,7 +251,7 @@ def strict_type(device=None):
     「MR 一定要標明種類」是一條團隊紀律，而紀律是各條產品線自己的事 —— 所以開關掛在
     device 上，不是全域的。字彙都不共用的兩條產品線，沒道理在這件事上必須一致。
 
-    與 VERSION 不同，**這一項不是必填**：設成必填會讓每一個既有的 device 立刻失效，
+    與 DEVICE_VERSION 不同，**這一項不是必填**：設成必填會讓每一個既有的 device 立刻失效，
     而它有一個明確且安全的預設值。
 
     型別不對時明確失敗，不做真值判斷 —— `STRICT_TYPE = "false"` 在 Python 裡是真，
@@ -421,12 +421,13 @@ def device_version(device=None):
     name = resolve_name() if device is None else device
     module = _import("%s.%s" % (__name__, name), name, "__init__.py")
 
-    version = getattr(module, "VERSION", None)
+    version = getattr(module, "DEVICE_VERSION", None)
     if not isinstance(version, str) or not version.strip():
         raise DeviceError(
-            "device %s 沒有宣告 VERSION" % name,
-            "請在 device/%s/__init__.py 加上 VERSION = \"2.0\"。\n"
-            "第一碼要與通用層的 SCRIPT_VERSION 一致，第二碼是這個 device 自己的修改次數。\n"
+            "device %s 沒有宣告 DEVICE_VERSION" % name,
+            "請在 device/%s/__init__.py 加上 DEVICE_VERSION = \"v2.0.0\"。\n"
+            "形如 vA.B.C：前兩碼指出這個 device 照的是哪一代通用層，第三碼是它自己\n"
+            "動過的次數。規則見 docs/contributing.md 的「版號」一節。\n"
             "報告末尾會標示這個版本；改了產出方式就把它往上加，否則新舊報告在外觀上"
             "分不出來。" % name,
             "DEVICE_VERSION_MISSING")

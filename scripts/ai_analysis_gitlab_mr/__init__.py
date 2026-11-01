@@ -53,8 +53,8 @@ __all__ = [
     "ANALYSIS_SCHEMA_VERSION",
     "ACCEPTED_SCHEMA_VERSIONS",
     "AnalysisFormatError",
-    "SCRIPT_NAME",
-    "SCRIPT_VERSION",
+    "FEATURE_NAME",
+    "FEATURE_VERSION",
     "render_footer",
     "JIRA_STATE_OK",
     "JIRA_STATE_NONE",
@@ -2486,17 +2486,9 @@ def _escape_link_text(text):
 
 # 這個功能的名稱與版號。五支入口腳本與這份契約共用這一份。
 #
-# 版號兩碼：第一碼留給重大修改，第二碼是修改計數。**這個功能每改一次就把第二碼加一**
-# ——包含只改註解或診斷文字；第一碼更新時第二碼歸零。沒有判斷餘地是刻意的：需要判斷
-# 「這算大改還是小改」的規則，就是會被漏掉的規則。
-#
-# **不要與 TEMPLATE_VERSION 搞混。** 那一個是請求／回應格式的版本，全專案共用一個值，只有
-# 請求／回應格式本身改了才動。改這個功能不要動它。
-#
-# device 那一層另外宣告自己的 VERSION，**第一碼要與這裡一致** —— 讀報告的人看第一碼
-# 就知道那份 device 是照哪一代的契約寫的。不一致不會讓執行失敗（見 device 模組）。
-SCRIPT_NAME = "AI Analysis GitLab MR"
-SCRIPT_VERSION = "2.0"
+# 版號規則見 docs/contributing.md 的「版號」一節 —— 那裡是唯一的來源，這裡只放值。
+FEATURE_NAME = "AI Analysis GitLab MR"
+FEATURE_VERSION = "v2.1.0"
 
 
 def _link(text, url):
@@ -2550,7 +2542,7 @@ def render_footer(device_name="", device_version="", analysis=None):
 
         ---
 
-        <sub>**Device** `ssd` `2.1` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.0`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+        <sub>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**功能** AI Analysis GitLab MR `v2.1.0`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 
     四行各回答一個問題：用哪一套邏輯、哪一版骨架、哪個模型、誰在哪裡產生的。
 
@@ -2588,7 +2580,7 @@ def render_footer(device_name="", device_version="", analysis=None):
         lines.append(" ".join(bits))
 
     # 二、哪一版骨架。**這一行永遠都在** —— 它是這整段存在的理由。
-    lines.append("**腳本** %s `%s`" % (SCRIPT_NAME, SCRIPT_VERSION))
+    lines.append("**功能** %s `%s`" % (FEATURE_NAME, FEATURE_VERSION))
 
     # 三、哪個 AI。兩個值都只從分析結構讀 —— 那是分析當下的事實，單獨拿一份舊產物
     # 重跑這一步，印出的仍是當時的值。各帶標示：只有兩個值並列時，讀的人看不出哪個

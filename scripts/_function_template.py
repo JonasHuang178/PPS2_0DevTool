@@ -53,38 +53,25 @@ from script_utils import logger
 # **真正的功能把這兩個放在 `scripts/<功能>/__init__.py`**，由該功能的所有入口腳本
 # 匯入共用一份。這份範本不屬於任何功能，所以就地宣告示範。
 #
-# 版號兩碼：
-#
-#     2  .  0
-#     │     └── 第二碼：任何修改都 +1，包含只改註解或診斷文字
-#     └──────── 第一碼：重大修改才動，動的時候第二碼歸零
-#
-# 兩碼而不是三碼是刻意的：三碼的中間那一碼需要判斷「這算 minor 還是 patch」，而需要
-# 判斷的規則就是會被漏掉的規則。兩碼沒有判斷餘地。
-#
-# 若這個功能有「由別人各自維護的實作層」（例如 AI Analysis 的 device 機制），那一層
-# 要另外宣告自己的版號，而且**第一碼要與這裡一致** —— 讀的人一眼就看得出那份擴充是照
-# 哪一代的契約寫的。
-#
-# 沒有任何機制強迫你更新它：忘了就是忘了，由開發者自負。不一致也不會讓執行失敗。
-SCRIPT_NAME    = "Example Function"
-SCRIPT_VERSION = "2.0"
+# 版號規則見 docs/contributing.md 的「版號」一節 —— 那裡是唯一的來源，這裡只放值。
+FEATURE_NAME    = "Example Function"
+FEATURE_VERSION = "v2.0.0"
 
 # --- 改這三個常數 -----------------------------------------------------------
 #
-# TEMPLATE_VERSION 與上面的 SCRIPT_VERSION **是兩個不同的東西，不要搞混**：
+# REQUEST_VERSION 與上面的 FEATURE_VERSION **是兩個不同的東西，不要搞混**：
 # 它是**請求／回應格式**的版本（請求與回應長什麼樣），全專案共用一個值，只有請求／回應格式
-# 本身改了才動。改你的功能不要動它。
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "example_action"
-DESCRIPTION      = "範本腳本：示範請求與回應的收送方式"
+# 本身改了才動。改你的功能不要動它，它也不受「版號」那一節的三碼規則管。
+REQUEST_VERSION = "2.0.0"
+ACTION          = "example_action"
+DESCRIPTION     = "範本腳本：示範請求與回應的收送方式"
 
 
 def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
 
         # 這支腳本需要哪些設定鍵。Qt 會從 PPS2_0DevTool.json 的
         # Function/<功能名> 區塊挖出來放進請求 JSON 的 config。
@@ -109,7 +96,7 @@ def main():
     #
     # 這一行**不是無條件的規則**：產出報告的功能改由報告頁尾承載版號（ai_analysis 的六支
     # 都是這樣），兩處都印只是同一個值講兩次。留著或刪掉，看你的功能屬於哪一種。
-    logger.info("%s %s", SCRIPT_NAME, SCRIPT_VERSION)
+    logger.info("%s %s", FEATURE_NAME, FEATURE_VERSION)
 
     cfg         = req["config"]
     source_path = req["source_path"]

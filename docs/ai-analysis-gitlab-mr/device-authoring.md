@@ -635,7 +635,7 @@ PPS_DEVICE = sdd         ->  失敗，訊息列出目前認得哪些
 
 ```
 device/ssd/
-  __init__.py       VERSION、STRICT_TYPE
+  __init__.py       DEVICE_VERSION、STRICT_TYPE
   mr_type.py        怎麼從 MR 擷取出種類
   bug/
     summary.py      Bug 專用的 prompt，版面沿用 ssd 或 default 的
@@ -716,7 +716,7 @@ from ai_analysis_gitlab_mr.device.default.bug import summary as base
 要改成報錯，在該 device 的 `__init__.py` 宣告：
 
 ```python
-VERSION = "1.2"
+DEVICE_VERSION = "v2.1.0"
 STRICT_TYPE = True
 ```
 
@@ -1045,9 +1045,14 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 
 五支擴充腳本都是選用的，只放你要覆寫的；要再依種類分開就多開子目錄（見上面的 type 一節）。
 
-但 `__init__.py` 的 `VERSION` **一定要有** —— 沒宣告會直接失敗。那個版本會印在報告末尾
-（`Device: ssd v1.2`），**改了產出方式就把它往上加**；不加的話，用舊邏輯與新邏輯產生的
-兩份報告會帶同一個版本號。
+但 `__init__.py` 的 `DEVICE_VERSION` **一定要有** —— 沒宣告會直接失敗。那個版本會印在
+報告末尾（`Device: ssd v2.1.0`），**改了產出方式就把它往上加**；不加的話，用舊邏輯與新邏輯
+產生的兩份報告會帶同一個版本號。
+
+版號形如 `vA.B.C`：前兩碼指出這個 device 照的是哪一代通用層，第三碼是它自己動過的次數
+（種類目錄的改動也算在這一碼）。完整規則見 [`contributing.md`](../contributing.md) 的「版號」
+一節 —— 從 `_template` 複製過來時**要把 `TEMPLATE_VERSION` 這個名字改成 `DEVICE_VERSION`**，
+載入器只讀後者。
 
 `__init__.py` 裡還有哪些可宣告的（目前是 `STRICT_TYPE` 與 `CODE_REVIEW_SOURCE_HEADING`），
 範本已經以註解列好，不必翻文件。兩者都是選填，未宣告就落到預設值 —— 所以 `default/`

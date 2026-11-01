@@ -48,16 +48,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import script_io
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "do_something"
-DESCRIPTION      = "做某件事"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "do_something"
+DESCRIPTION     = "做某件事"
 
 
 def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[
             script_io.arg("thing", required=True, help="要處理的東西"),
@@ -510,23 +510,24 @@ cp scripts/_function_template.py scripts/mr_report/mr_report_summarise.py
 ```
 
 **複製，不要從零手寫，也不要從別的功能的腳本抄。** 範本裡有幾樣東西看起來可有可無，
-其實不能少：那行 `sys.path.insert`、`TEMPLATE_VERSION` 常數、以及 `script_io.run(main)`
+其實不能少：那行 `sys.path.insert`、`REQUEST_VERSION` 常數、以及 `script_io.run(main)`
 這個統一的錯誤處理入口。
 
 ```python
-TEMPLATE_VERSION = "2.0.0"          # 保留範本原本的值，不要改
-ACTION           = "summarise_merge_requests"
-DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
+REQUEST_VERSION = "2.0.0"           # 保留範本原本的值，不要改
+ACTION          = "summarise_merge_requests"
+DESCRIPTION     = "統計指定專案的 Merge Request，依作者分組"
 ```
 
-`TEMPLATE_VERSION` 是**請求／回應格式的版本** —— 請求與回應長什麼樣，**全專案共用一個值**，
+`REQUEST_VERSION` 是**請求／回應格式的版本** —— 請求與回應長什麼樣，**全專案共用一個值**，
 只有請求／回應格式本身改了才動。它不是你這支腳本的版本號，也不是「這支腳本依據哪一版範本寫的」。
+它**不受三碼版號規則管**，所以不帶 `v` 前綴。
 
 ⚠️ **不要把它拿來當某個功能的版號。** 那樣它就會隨那個功能一直往上跳而其他功能停著不動，
 兩個本該代表同一份請求／回應格式的數字於是分岔 —— 而它還會被 `--dump-config` 印成
-`_template_version` 給呼叫端看。功能自己的版號是**另一個宣告**：`SCRIPT_VERSION`，
-放在 `scripts/<功能>/__init__.py`，該功能每次修改就往上加
-（規則見 `docs/contributing.md` 的「腳本的版號」）。
+`_template_version` 給呼叫端看（**那個 JSON 鍵的名字不隨常數改名**，已發佈的請求檔會照它寫）。
+功能自己的版號是**另一個宣告**：`FEATURE_VERSION`，放在 `scripts/<功能>/__init__.py`
+（規則見 `docs/contributing.md` 的「版號」）。
 
 ### 5.4 完整的腳本
 
@@ -559,9 +560,9 @@ import script_io
 from script_utils import gitlab_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "summarise_merge_requests"
-DESCRIPTION      = "統計指定專案的 Merge Request，依作者分組"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "summarise_merge_requests"
+DESCRIPTION     = "統計指定專案的 Merge Request，依作者分組"
 
 
 def truthy(text):
@@ -573,7 +574,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
 
         # 憑證不在這裡宣告 —— 它們走環境變數。在 config 宣告會讓使用者以為
         # 該把權杖填進 request 檔案裡。
@@ -940,7 +941,7 @@ def resolve_key(mode, manual, detected):
 ## 9. 自我檢查清單
 
 - [ ] `sys.path.insert(...)` 那一行在，而且在 `import script_io` 之前
-- [ ] `TEMPLATE_VERSION` 保留
+- [ ] `REQUEST_VERSION` 保留
 - [ ] `ACTION` 與 `DESCRIPTION` 改成這支腳本的
 - [ ] 整份檔案搜尋 `print(` —— 應該一個都沒有
 - [ ] 整份檔案搜尋 `sys.exit` —— 只有 `script_io` 內部該有，你的程式碼裡不該有
