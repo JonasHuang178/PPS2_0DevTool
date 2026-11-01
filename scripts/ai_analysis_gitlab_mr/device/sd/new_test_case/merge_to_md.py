@@ -40,8 +40,8 @@ import ai_analysis_gitlab_mr as contract
 # 複製一份就是宣告「從今天起與它無關」—— 之後 sd 改了 finding 的排版或 diff 的收合方式，
 # 這份複本不會跟著動，而且不會有任何徵兆。
 #
-# **指向 sd 而不是 default**：sd 那一層是這個 device 的版面，`pattern_issue/` 也是回退到
-# 它。這個種類只是在那個版面之上換掉一節，所以它要跟著 sd 走。
+# **指向 sd 而不是 default**：sd 那一層是這個 device 的版面，沒有自己版面的種類也是回退
+# 到它。這個種類只是在那個版面之上換掉一節，所以它要跟著 sd 走。
 from ai_analysis_gitlab_mr.device.sd import merge_to_md as base
 
 

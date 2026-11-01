@@ -17,17 +17,16 @@ SD 的規則是標題的**第二個**方括號。第一個留給 JIRA key（見 
 - 擷取不到就回空字串，後果是走該 device 的通用版；除非 `__init__.py` 宣告了
   `STRICT_TYPE = True`，那時入口腳本會在**步驟 2**失敗，也就是在任何 AI 花費之前
 
-SD 目前有兩個種類，各對應一個子目錄：
+SD 目前有一個種類，對應一個子目錄：
 
-    [Pattern Issue]   ->  pattern_issue/    沿用 sd 的通用版（空目錄，逐支回退）
     [New Test Case]   ->  new_test_case/    不看程式碼，只總結 JIRA 單的內容
 
 > **標題的寫法必須與 `_TYPE_BY_LABEL` 的鍵一字不差**（區分大小寫、空白也算）。對照表
 > 存在的原因是目錄名不能有空白與大寫 —— 入口腳本要求種類名稱符合 `^[a-z_][a-z0-9_]*$`，
-> 所以 `Pattern Issue` 這種給人看的寫法必須由這一支對到 `pattern_issue`。
+> 所以 `New Test Case` 這種給人看的寫法必須由這一支對到 `new_test_case`。
 >
-> 寫法不是一字不差（`[pattern issue]`、`[PatternIssue]`、`[ Pattern Issue ]`，連目錄名
-> 本身 `[pattern_issue]` 也算）時**一律回空字串**，當成這筆 MR 沒有宣告種類，走 sd 的
+> 寫法不是一字不差（`[new test case]`、`[NewTestCase]`、`[ New Test Case ]`，連目錄名
+> 本身 `[new_test_case]` 也算）時**一律回空字串**，當成這筆 MR 沒有宣告種類，走 sd 的
 > 通用版。
 
 種類沒有對應目錄時，入口腳本會把它回退成空字串（不嚴格模式），產物與報告出處的 `Type`
@@ -53,8 +52,8 @@ _BRACKET_INDEX = 1
 
 # 認得的寫法 -> 種類目錄名。**一字不差地比對，區分大小寫、空白也算。**
 #
-# 標題要寫 `[Pattern Issue]`；`[pattern issue]`、`[PATTERN ISSUE]`、`[Pattern-Issue]`、
-# `[PatternIssue]`、`[ Pattern Issue ]` 一概**不認**，一律當成「這筆 MR 沒有宣告種類」。
+# 標題要寫 `[New Test Case]`；`[new test case]`、`[NEW TEST CASE]`、`[New-Test-Case]`、
+# `[NewTestCase]`、`[ New Test Case ]` 一概**不認**，一律當成「這筆 MR 沒有宣告種類」。
 #
 # 這是刻意的嚴格：這張表就是 SD 的標題約定本身，而約定要有約束力才有意義。放寬成「空白
 # 換底線、轉小寫」那種通用規則的話，同一個種類會有七八種寫法都通，於是沒有人需要照約定
@@ -65,7 +64,6 @@ _BRACKET_INDEX = 1
 # 只加表沒建目錄的話，入口腳本會判定「認不得」而回退（console 有一行）；只建目錄沒加表
 # 的話，這一支永遠不會回出那個名字（console 有一行 debug）。兩者都沒有徵兆會寫在報告上。
 _TYPE_BY_LABEL = {
-    u"Pattern Issue": u"pattern_issue",
     u"New Test Case": u"new_test_case",
 }
 
@@ -73,14 +71,13 @@ _TYPE_BY_LABEL = {
 def _canonical(raw):
     """把標題裡的寫法對到種類目錄名；**不是一字不差就回空字串**。
 
-        "Pattern Issue"  ->  "pattern_issue"
         "New Test Case"  ->  "new_test_case"
-        "pattern issue"  ->  ""      大小寫不符
-        "pattern_issue"  ->  ""      那是目錄名，不是標題的寫法
-        "PatternIssue"   ->  ""      少了空格
-        " Pattern Issue "->  ""      前後多了空白
+        "new test case"  ->  ""      大小寫不符
+        "new_test_case"  ->  ""      那是目錄名，不是標題的寫法
+        "NewTestCase"    ->  ""      少了空格
+        " New Test Case "->  ""      前後多了空白
 
-    **一個都不放寬。** 連目錄名本身（`pattern_issue`）寫在標題裡都不認 —— 認了就等於有
+    **一個都不放寬。** 連目錄名本身（`new_test_case`）寫在標題裡都不認 —— 認了就等於有
     兩套合法寫法，而兩套寫法遲早變成「大家各寫一套」。
 
     回空字串＝「這筆 MR 沒有宣告種類」，後果是走 sd 的通用版，不失敗（`STRICT_TYPE` 未開）。

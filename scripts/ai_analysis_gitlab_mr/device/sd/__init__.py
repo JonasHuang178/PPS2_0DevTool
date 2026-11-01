@@ -3,27 +3,32 @@
 
 設定檔的 `PPS_Device` 填 `sd` 時選用這一份（CI 則是環境變數 `PPS_DEVICE`）。
 
-這個 device 覆寫兩支擴充腳本，都在步驟 2：
+這個 device 覆寫四支擴充腳本：
 
-    jira_key.py     標題的**第一個**方括號
-    mr_type.py      標題的**第二個**方括號
+    jira_key.py     步驟 2：標題的**第一個**方括號
+    mr_type.py      步驟 2：標題的**第二個**方括號
+    summary.py      步驟 3：SD 自己的 prompt 與解析
+    merge_to_md.py  步驟 5：SD 自己的版面
 
-        mod:[PPS-1234][Bug] 修正重試上限
+        mod:[PPS-1234][New Test Case] 補上 TRIM 的邊界測試
             ^^^^^^^^^^ 第一個：JIRA key
-                      ^^^^^ 第二個：種類  ->  bug
+                      ^^^^^^^^^^^^^^^ 第二個：種類  ->  new_test_case
 
-其餘三支（`summary`、`parse_code_review`、`merge_to_md`）**沒有放**，逐支回退到
-`device/default/`。回退是逐支的，所以沒放的那幾支拿到的是 default 當下的實作，而不是
-一份會慢慢與 default 漂移的複本。
+`parse_code_review` **沒有放**，回退到 `device/default/`。回退是逐支的，所以沒放的那
+一支拿到的是 default 當下的實作，而不是一份會慢慢與 default 漂移的複本。
 
-> **種類目前還沒有任何子目錄，所以種類實際上還不生效。** `mr_type.py` 會把第二個方括號
-> 擷取出來，但入口腳本接著會發現這個 device 認不得它（底下沒有同名目錄），於是**回退成
-> 空字串** —— `02_mr_info.json` 與報告出處的 `Type` 都會是空的，兩支因種類而異的擴充腳本
-> 一律走通用版（也就是 default 的那兩份）。唯一看得見那個字串的地方是 `Debug_Mode` 開啟時
-> console 上那一行「device sd 認不得種類 'bug'（認得的是：(無)）」。
+> **目前有一個種類生效：`new_test_case/`**（標題寫 `[New Test Case]`，對照表見
+> `mr_type.py`）。那個種類兩支因種類而異的擴充腳本都自己覆寫，而且是明著 import sd
+> 這一層來共用排版。
+>
+> `mr_type.py` 擷取出來但這裡沒有同名目錄的種類，入口腳本會**回退成空字串** ——
+> `02_mr_info.json` 與報告出處的 `Type` 都會是空的，兩支因種類而異的擴充腳本一律走
+> sd 的通用版。唯一看得見那個字串的地方是 `Debug_Mode` 開啟時 console 上那一行
+> 「device sd 認不得種類 …」。
 >
 > 要讓某個種類真的生效，就在這個目錄底下開一個以它命名的子目錄（見
-> `device/_template/_type_template/`）—— 目錄一存在，那個種類就被認得，也才會進產物。
+> `device/_template/_type_template/`）**並在 `mr_type.py` 的對照表加一列** —— 目錄名
+> 只能用小寫英數與底線，所以 `[New Test Case]` 這種給人看的寫法要靠那張表對過來。
 """
 
 # 這個 device 的版本，會印在報告末尾的出處資訊裡。**必填。**
@@ -39,7 +44,7 @@
 #
 # **不一致不會讓執行失敗**，也沒有任何機制強迫你更新第二碼 —— 忘了就是忘了，由開發者
 # 自負。報告照實印出讀到的值，兩個版號都在眼前，對照得出來。
-VERSION = "2.0"
+VERSION = "2.1"
 
 # `new_test_case` 那張工單狀態表，「項目」欄要印的字樣。
 #
@@ -97,8 +102,8 @@ NEW_TEST_CASE_RELATED_LABEL = u"New test case"
 # 這裡**還沒有宣告** STRICT_TYPE 與 CODE_REVIEW_SOURCE_HEADING，兩者都沿用預設值。
 #
 # STRICT_TYPE 未宣告即 False：標題解不出種類、或解出的名稱這裡沒有對應目錄時，走通用版
-# 而不失敗。「MR 一定要標明種類」是一條團隊紀律 —— 要不要強制由 SD 自己決定，而現在還
-# 沒有任何種類目錄，宣告 True 會讓每一筆 MR 都在步驟 2 失敗。
+# 而不失敗。「MR 一定要標明種類」是一條團隊紀律 —— 要不要強制由 SD 自己決定，而目前只有
+# `new_test_case` 一個種類，宣告 True 會讓其餘每一筆 MR 都在步驟 2 失敗。
 #
 # 不要為了「寫清楚」先照抄一份與預設值相同的宣告 —— 日後通用層改了預設值，這裡抄的那
 # 一份不會跟著動，而且不會有任何徵兆。
