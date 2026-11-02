@@ -53,17 +53,24 @@ NEW_TEST_CASE_ITEM_LABEL = u"JIRA 單"
 # `new_test_case` 那張表的**第二列**：另一張用 JQL 找出來的 JIRA 單。
 #
 # **這裡只寫 JQL 固定的那一段。** 隨每一筆 MR 變動的條件由 `new_test_case/summary.py`
-# 接上去 —— 預設接的是主單的標題：
+# 接上去 —— 預設接的是**主單標題的最後一段**：
 #
+#     主單標題 SSD-FW-Secure Erase
 #     宣告     project = PPS AND issuetype = "Test Plan"
-#     實際送出 project = PPS AND issuetype = "Test Plan" AND summary ~ "補上 TRIM 的邊界測試"
+#     實際送出 project = PPS AND issuetype = "Test Plan" AND summary ~ "Secure Erase"
+#
+# 接最後一段而不是整個標題，是因為測試計畫的標題不帶開發單的產品與模組前置詞，
+# 兩者共有的就是那一段功能名稱；它也正是工單狀態那一節標題上的字
+# （`## Secure Erase狀態`）。切法在 `new_test_case/__init__.py` 的 `issue_title()`
+# —— 改分隔字元改那一支，報告與查詢兩邊一起跟著動。切不出來時（標題除了分隔
+# 字元以外沒有字）退回接整個標題。
 #
 # 接上去的文字會被包成 JQL 的字串常量並跳脫（反斜線與雙引號）—— 標題裡一個雙引號就會讓
 # 整段 JQL 語法錯誤，而 JIRA 回的 400 會指著一段你從沒寫過的查詢字串。
 #
 # **要自己決定那一段接在哪裡**（例如查詢帶 ORDER BY，或變動的條件不在最後）就用佔位符：
 #
-#     {summary}   主單的標題
+#     {summary}   主單標題的最後一段（與自動接上去的是同一個值）
 #     {key}       主單的 key
 #
 # 兩個佔位符代入的都是**已經包好引號的字串常量**，所以 `summary ~ {summary}`、

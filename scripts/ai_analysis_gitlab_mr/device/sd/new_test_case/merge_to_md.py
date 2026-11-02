@@ -44,6 +44,10 @@ import ai_analysis_gitlab_mr as contract
 # 到它。這個種類只是在那個版面之上換掉一節，所以它要跟著 sd 走。
 from ai_analysis_gitlab_mr.device.sd import merge_to_md as base
 
+# 切主單標題的規則。**步驟 3 讀的是同一支** —— 相關工單的 JQL 比對的就是這一段，
+# 所以這裡不自己 split（理由見那一支的模組說明）。
+from ai_analysis_gitlab_mr.device.sd.new_test_case import issue_title
+
 
 # 總覽那一節的標題。**與通用版一字不差**，所以直接取用它的那一行，不自己寫一份字面文字 ——
 # 兩邊各寫一份的話，通用版哪天改了字樣（`## Summary` -> `## 總覽`），這個種類會悄悄落單。
@@ -62,9 +66,6 @@ STATUS_HEADING_TEMPLATE = u"## %s狀態"
 # 推導不出標題時用的字樣。**這一節不能因為沒有標題就沒有標題** —— 它底下
 # 那張表永遠印得出來（連「未指定」也印），一張沒有標題的表讀起來就是版面壞了。
 STATUS_HEADING_FALLBACK = u"## 工單狀態"
-
-# 切標題的分隔字元。抽成常數是為了改它不必讀函式的本體。
-TITLE_SEPARATOR = u"-"
 STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
 
 # 兩列「項目」欄的預設字樣。device 沒有宣告對應的名字時用這些。
@@ -154,22 +155,17 @@ def _status_heading(analysis):
 
         主單標題 SSD-FW-Secure Erase  ->  ## Secure Erase狀態
 
-    切在這裡而不是步驟 3：產物存的是 JIRA 說了什麼（標題的原文），版面由它推導
-    —— 與總覽折成清單同一條規則。切法哪天要改（改分隔字元、或改成取第二段），改的
-    就是這一支，而舊的 `03_summary.json` 重跑步驟 5 也跟著改。
+    切法本身在 `new_test_case/__init__.py`，因為步驟 3 的相關工單 JQL 比對的就是同一段；
+    兩支各切一次就有兩份規則，而漂移的結果是標題寫著一個功能、底下那一列卻是用另一個
+    字串查出來的單子。
 
-    `split()` 取最後一段，所以標題裡有幾個分隔字元都無所謂，**沒有也無所謂** ——
-    整行就是最後一段，標題變成那一整行。這比「沒有分隔字元就不印標題」好：單子
-    標題的寫法是人的約定，不是格式規定。
+    取的是**產物裡的標題原文**，切在這一步：產物存的是 JIRA 說了什麼，版面由它推導
+    （與總覽折成清單同一條規則），所以舊的 `03_summary.json` 重跑步驟 5 也跟著改。
 
-    標題取不到或切完是空的就回退到固定字樣：沒有有效的單號、取不到單子內容、
-    以分隔字元結尾的標題，或那份產物是加這個欄位之前產生的。
-
-    易行字元不跳脈：這是一行 markdown 標題，不是表格的儲存格。但空白要收 ——
-    `plain()` 只做首尾 strip，而一個帶折行的標題會讓後半段跑到標題外面變成內文。
+    推導不出標題時回退到固定字樣：沒有有效的單號、取不到單子內容、以分隔字元
+    結尾的標題，或那份產物是加這個欄位之前產生的。
     """
-    summary = contract.plain(analysis.get("jira_summary"))
-    title = u" ".join(summary.split(TITLE_SEPARATOR)[-1].split())
+    title = issue_title(analysis.get("jira_summary"))
     return STATUS_HEADING_TEMPLATE % title if title else STATUS_HEADING_FALLBACK
 
 

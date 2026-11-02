@@ -44,6 +44,10 @@ from script_utils import logger
 # 個 device 的哪一支擴充腳本 —— 一個會被看見的失敗，不是安靜的行為改變。
 from ai_analysis_gitlab_mr.device.sd import summary as base
 
+# 切主單標題的規則。**步驟 5 讀的是同一支** —— 工單狀態那一節的標題用的就是
+# 這一段，而這裡拿它去查相關工單。兩邊必須是同一段（理由見那份模組說明）。
+from ai_analysis_gitlab_mr.device.sd.new_test_case import issue_title
+
 
 # ===========================================================================
 # 要改的東西都在這一段
@@ -220,13 +224,19 @@ def _declared(name, default=u""):
     return value if isinstance(value, str) else default
 
 
-def _build_jql(template, key, issue_summary):
+def _build_jql(template, key, title):
     """把宣告的那一段 JQL 組成真正要送出的查詢；組不出來回空字串。
 
     宣告裡只寫 JQL **固定的那一段**，隨每一筆 MR 變動的條件在這裡接上去。兩種形式：
 
         有佔位符   照宣告的位置代入 {summary} / {key}
-        沒有佔位符 自動在最後接上 `AND summary ~ "<主單標題>"`
+        沒有佔位符 自動在最後接上 `AND summary ~ "<標題的最後一段>"`
+
+    `title` 是**主單標題的最後一段**（`SSD-FW-Secure Erase` -> `Secure Erase`，見
+    `new_test_case.issue_title`），不是整個標題。用整個標題比對永遠查不到測試計畫 ——
+    測試計畫的標題不會帶著開發單的產品與模組前置詞，兩者共有的就是那一段功能名稱。
+    報告上工單狀態那一節的標題用的也是同一段 —— 兩邊指著同一個功能，不然那一節讀起來
+    是自相矛皾的。
 
     兩個佔位符代入的都是**已經包好引號的 JQL 字串常量**，所以宣告寫 `summary ~ {summary}`
     而不是 `summary ~ "{summary}"` —— 統一成「代入的值自帶引號」才不會有一個要加、一個
@@ -239,7 +249,7 @@ def _build_jql(template, key, issue_summary):
     代入用字串替換而不是 `format()`：JQL 裡的大括號、引號與括號都原樣送出，寫宣告的人不必
     疊兩層大括號（通用層的 prompt 樣板就是因為 `format()` 而有那個坑）。
 
-    主單標題是空的時候回空字串，呼叫端據此不查：一條用來比對標題的查詢少了標題，剩下的
+    標題是空的時候回空字串，呼叫端據此不查：一條用來比對標題的查詢少了標題，剩下的
     固定條件會回一整個專案的單子，而「取第一張」在那時完全是任意的。
     """
     has_summary = u"{summary}" in template
@@ -247,18 +257,18 @@ def _build_jql(template, key, issue_summary):
 
     # 只有 {key} 的那一種（`issue in linkedIssues({key})`）用不到標題，少了它照樣查得成。
     # 其餘兩種都要標題：用了 {summary} 的，以及沒有任何佔位符、要自動接標題的。
-    if (has_summary or not has_key) and not issue_summary:
+    if (has_summary or not has_key) and not title:
         return u""
 
     if has_summary or has_key:
-        return (template.replace(u"{summary}", jira_utils._quote_jql(issue_summary))
+        return (template.replace(u"{summary}", jira_utils._quote_jql(title))
                         .replace(u"{key}", jira_utils._quote_jql(key)))
 
     return u"%s %s %s" % (template.strip(), _APPEND_OPERATOR,
-                          jira_utils._quote_jql(issue_summary))
+                          jira_utils._quote_jql(title))
 
 
-def _search_related(inputs, key, issue_summary):
+def _search_related(inputs, key, title):
     """用 device 宣告的 JQL 找出第二張單，回傳 {"searched":…, "key":…, "status":…, "url":…}。
 
     `url` 是那張單的網址，給報告裡的工單狀態表做成可點的單號。**在這一步組**，與主單的
@@ -295,7 +305,7 @@ def _search_related(inputs, key, issue_summary):
         logger.debug("sd 沒有宣告 NEW_TEST_CASE_RELATED_JQL，不查相關工單")
         return empty
 
-    jql = _build_jql(template, key, issue_summary)
+    jql = _build_jql(template, key, title)
     if not jql:
         logger.info("主單沒有標題可代入，不查相關工單（JQL 宣告：%s）", template)
         return empty
@@ -436,16 +446,24 @@ def analyze(inputs):
     # 提前返回的路。取一次就好。
     issue_summary = contract.plain(issue.get("summary"))
 
+    # 查相關工單用的是標題的**最後一段**（`SSD-FW-Secure Erase` -> `Secure Erase`）。
+    # 報告上工單狀態那一節的標題也是它，一個寫著「Secure Erase 狀態」、列子卻是用
+    # 整串開發單標題查出來的表，兩行說的不是同一件事。
+    #
+    # 推導不出來時退回整個標題：這一步原本就是用整個標題查的，而「切不出功能名稱」
+    # 不是「沒有標題」—— 因此整條查詢放棄的話，那一列會從「查得到」變成「未查詢」。
+    search_title = issue_title(issue_summary) or issue_summary
+
     if not contract.plain(issue.get("description")):
         logger.warn("JIRA 單 %s 沒有描述，沒有可總結的素材，不呼叫 AI", key)
         return _body(
             u"JIRA 單 %s 沒有填寫描述，所以沒有可以總結的內容。" % key,
             key, state, provider, model, jira_status,
-            _search_related(inputs, key, issue_summary), issue_summary)
+            _search_related(inputs, key, search_title), issue_summary)
 
     # 第二列那張單。放在送 AI **之前**：它不進 prompt（總結講的是主單），但失敗了也只是
     # 那一列留空，而這裡做完就不必在等了兩分鐘的 AI 之後再多等一趟 JIRA。
-    related = _search_related(inputs, key, issue_summary)
+    related = _search_related(inputs, key, search_title)
 
     prompt = build_prompt(dict(inputs, jira_issue=issue))
     logger.info("prompt 組好了，%d 字元", len(prompt))
