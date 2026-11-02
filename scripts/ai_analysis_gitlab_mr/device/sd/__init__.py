@@ -95,6 +95,19 @@ NEW_TEST_CASE_RELATED_JQL = u'project = PPS AND issuetype = "Test Plan"'
 # 第二列叫什麼：上面那條 JQL 找出來的那張單。
 NEW_TEST_CASE_TEST_CASE_LABEL = u"Test case"
 
+# 報告 Check list 那一節的兩條狀態檢查，各自的期望值。
+#
+# 狀態不是那一個就在報告上標 ❌，**但不會讓任何一步失敗** —— 那一節是給 reviewer 的
+# 資訊，兩張單該不該放行是他的判斷。
+#
+# 比對忽略大小寫與前後空白，不做模糊比對：`In Review` 與 `in review` 是同一個狀態，
+# 與 `Review` 不是。
+#
+# 兩條分開宣告，因為 Task 與 Test case 常常走不同的工作流；目前兩者剛好都是 In Review，
+# 但那是現況，不是同一件事。沒有宣告時用 `new_test_case/merge_to_md.py` 的預設值。
+NEW_TEST_CASE_EXPECTED_TASK_STATUS = u"In Review"
+NEW_TEST_CASE_EXPECTED_TEST_CASE_STATUS = u"In Review"
+
 # 這裡**還沒有宣告** STRICT_TYPE 與 CODE_REVIEW_SOURCE_HEADING，兩者都沿用預設值。
 #
 # STRICT_TYPE 未宣告即 False：標題解不出種類、或解出的名稱這裡沒有對應目錄時，走通用版

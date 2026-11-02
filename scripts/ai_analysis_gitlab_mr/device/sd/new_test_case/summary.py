@@ -199,9 +199,10 @@ def parse_reply(data):
 # 一條寫得太寬的 JQL（例如忘了限定專案）會回成千上萬張，而那時最該看到的就是這個數字。
 _RELATED_MAX_ITEMS = 5
 
-# 搜尋只要這兩個欄位。key 一律會回，status 是表格要印的那一格 —— 不限定欄位的話每一張都
-# 會連描述一起拖回來。
-_RELATED_FIELDS = "status"
+# 搜尋只要這幾個欄位。key 一律會回；status 是表格要印的那一格；description 只用來判斷
+# 「有沒有填」（Check list 第三條），**文字本身不進產物**。不限定欄位的話，每一張符合的
+# 單子都會連所有欄位一起拖回來。
+_RELATED_FIELDS = "status,description"
 
 # 宣告沒有佔位符時，自動接在後面的那一段。`~` 是 JQL 的文字比對（不是完全相等）——
 # 標題不會一字不差，所以用它；要完全相等就在宣告裡用 {summary} 佔位符自己寫 `summary = `。
@@ -292,7 +293,17 @@ def _build_jql(template, key, title):
 
 
 def _search_related(inputs, key, title):
-    """用 device 宣告的 JQL 找出第二張單，回傳 {"searched":…, "key":…, "status":…, "url":…}。
+    """用 device 宣告的 JQL 找出第二張單。
+
+    回傳 {"searched":…, "key":…, "status":…, "url":…, "has_description":…}。
+
+    `has_description` 給報告的 Check list 判斷「Test case 有沒有填描述」。帶的是**布林
+    值，不是描述的文字** —— 報告只需要知道有沒有填，而描述可能是好幾千字，整段塞進
+    `03_summary.json` 只是讓產物變大、日後還得煩惱要不要截斷。
+
+    沒查到那張單時它是 `None` 而不是 `False`：「沒填描述」與「不知道有沒有填」在報告上
+    是不同的兩件事（❌ 要去補描述，⚠️ 要去看查詢設定），分不出來就會叫人去改一張其實
+    沒問題的單子。
 
     `url` 是那張單的網址，給報告裡的 Pattern 資訊表做成可點的單號。**在這一步組**，與主單的
     `jira_url` 同一條理由：組網址要讀 `JIRA_SERVER_URL`，而步驟 5 刻意沒有任何外部依賴。
@@ -316,12 +327,12 @@ def _search_related(inputs, key, title):
         searched 為真、key 為空      查完了，沒有符合的單子 —— 去看 JQL 的條件
     """
     empty = {"searched": False, "key": u"", "status": u"", "error": u"",
-             "url": u""}
+             "url": u"", "has_description": None}
 
     def failed(reason):
         """查了但沒查完。與「沒查」分開 —— 印一樣的字會把該修 JQL 的人送去填宣告。"""
         return {"searched": True, "key": u"", "status": u"", "error": reason,
-                "url": u""}
+                "url": u"", "has_description": None}
 
     template = _declared("NEW_TEST_CASE_RELATED_JQL")
     if not template.strip():
@@ -356,7 +367,7 @@ def _search_related(inputs, key, title):
     if not issues:
         logger.info("相關 Pattern 的 JQL 沒有符合的單子")
         return {"searched": True, "key": u"", "status": u"", "error": u"",
-                "url": u""}
+                "url": u"", "has_description": None}
 
     first = issues[0] or {}
     fields = first.get("fields") or {}
@@ -373,7 +384,8 @@ def _search_related(inputs, key, title):
             "key": related_key,
             "status": contract.plain(status),
             "error": u"",
-            "url": contract.jira_url(related_key)}
+            "url": contract.jira_url(related_key),
+            "has_description": bool(contract.plain(fields.get("description")))}
 
 
 def _body(overview, key, state, provider="", model="", jira_status="",
@@ -406,7 +418,7 @@ def _body(overview, key, state, provider="", model="", jira_status="",
     body["jira_status"] = contract.plain(jira_status)
     body["related_issue"] = dict(related or {"searched": False, "key": u"",
                                              "status": u"", "error": u"",
-                                             "url": u""})
+                                             "url": u"", "has_description": None})
     return body
 
 

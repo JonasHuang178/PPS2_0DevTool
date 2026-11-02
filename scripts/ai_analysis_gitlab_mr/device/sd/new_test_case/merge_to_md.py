@@ -53,7 +53,7 @@ SUMMARY_HEADING = base.SUMMARY_HEADING
 # Pattern 資訊那一節。
 #
 # 三個欄位標題決定表格的形狀，所以與填值的 _status_table() 放在一起 —— 改欄位要連帶看
-# 每一列怎麼填。「項目」那一欄的**值**則是 device 的宣告（見 _item_label），改字樣不必
+# 每一列怎麼填。「項目」那一欄的**值**則是 device 的宣告（見 _declared），改字樣不必
 # 動這一支。
 STATUS_HEADING = u"## Pattern 資訊"
 STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
@@ -62,6 +62,30 @@ STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
 # （Test case）。device 沒有宣告對應的名字時用這兩個值。
 DEFAULT_TASK_LABEL = u"Task"
 DEFAULT_TEST_CASE_LABEL = u"Test case"
+
+# Check list 那一節。給 reviewer 看的資訊，**不影響流程** —— 有不通過的項目時腳本照樣
+# 成功、報告照樣產出。它回答的是「這兩張單現在長得對不對」，而那是 reviewer 的判斷。
+CHECKLIST_HEADING = u"## Check list"
+CHECKLIST_TABLE_HEADER = u"| # | 檢查項目 | 結果 | 實際 |\n|---|---|---|---|"
+
+# 三種結果。⚠️ 與 ❌ 分開，因為讀者的下一步不同：❌ 是去把那張單改好，⚠️ 是這次沒查到，
+# 要去看 JQL 的條件、JIRA 連線，或那份產物是加這些欄位之前產生的。把查不到當成不通過，
+# 會讓人去改一張其實沒問題的單子。
+PASS_CELL = u"✅"
+FAIL_CELL = u"❌"
+UNKNOWN_CELL = u"⚠️"
+
+# 第三條「實際」那一格的兩種字樣（第三種是取不到，沿用上面那張表的 UNKNOWN_STATUS_CELL）。
+HAS_DESCRIPTION_CELL = u"已填寫"
+NO_DESCRIPTION_CELL = u"空白"
+
+# 兩條狀態檢查的期望值。device 沒有宣告時用這些。
+#
+# 做成宣告而不是寫死：JIRA 的工作流是各專案自己定的，改一個狀態名不該要改擴充腳本。
+# 兩條分開宣告，因為 Task 與 Test case 常常走不同的工作流 —— 目前兩者的期望值相同，
+# 但那是現況，不是同一件事。
+DEFAULT_EXPECTED_TASK_STATUS = u"In Review"
+DEFAULT_EXPECTED_TEST_CASE_STATUS = u"In Review"
 
 # 「內容」那一格：沒有可用的 key 時印什麼。
 #
@@ -90,8 +114,8 @@ NOT_SEARCHED_CELL = u"（未查詢）"
 SEARCH_FAILED_CELL = u"（查詢失敗）"
 
 
-def _label(name, default):
-    """「項目」那一欄要印的字樣，取自 device 的宣告。
+def _declared(name, default):
+    """device 的宣告，沒宣告就用預設值。
 
     讀法與通用層讀 `CODE_REVIEW_SOURCE_HEADING` 同一個形狀：**宣告沒寫就用預設值**，所以
     拿掉 `device/sd/__init__.py` 那幾行不會壞，而其他 device 若哪天也用這個種類的版面，
@@ -177,7 +201,7 @@ def _status_table(analysis):
 
     return u"\n".join([
         STATUS_TABLE_HEADER,
-        u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_TASK_LABEL",
+        u"| %s | %s | %s |" % (_cell(_declared("NEW_TEST_CASE_TASK_LABEL",
                                             DEFAULT_TASK_LABEL)),
                                content_cell, status_cell),
         _related_row(analysis),
@@ -213,9 +237,103 @@ def _related_row(analysis):
         content_cell = NOT_FOUND_CELL
         status_cell = NO_ISSUE_CELL
 
-    return u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_TEST_CASE_LABEL",
+    return u"| %s | %s | %s |" % (_cell(_declared("NEW_TEST_CASE_TEST_CASE_LABEL",
                                                DEFAULT_TEST_CASE_LABEL)),
                                   content_cell, status_cell)
+
+
+def _same_status(actual, expected):
+    """狀態是不是期望的那一個。
+
+    忽略大小寫與前後空白，但**不做模糊比對**：`In Review` 與 `in review` 是同一個狀態
+    （JIRA 各處對大小寫的處理並不一致），而 `In Review` 與 `Review` 不是 —— 後者是兩個
+    不同的工作流狀態，當成同一個會讓檢查永遠通過。
+    """
+    return contract.plain(actual).lower() == contract.plain(expected).lower()
+
+
+def _status_check(number, label, actual, expected, missing_cell):
+    """一條狀態檢查：`<label> 狀態為 <expected>`。
+
+    `actual` 是空的就是⚠️ —— 那是「不知道」，不是「不對」。missing_cell 由呼叫端給，
+    因為兩條的原因不同：Task 的狀態取不到（JIRA 查詢失敗、或舊的產物），Test case 則
+    可能是根本沒查、查無、或查詢失敗，而那三種在上面那張表已經各有字樣。
+    """
+    item = u"%s 狀態為 `%s`" % (label, expected)
+    if not contract.plain(actual):
+        return u"| %d | %s | %s | %s |" % (number, item, UNKNOWN_CELL, missing_cell)
+
+    result = PASS_CELL if _same_status(actual, expected) else FAIL_CELL
+    return u"| %d | %s | %s | `%s` |" % (number, item, result, _cell(actual))
+
+
+def _description_check(number, label, has_description, missing_cell):
+    """第三條：Test case 有沒有填描述。
+
+    `has_description` 是三態（見步驟 3 的 `_search_related`）：True 已填、False 空白、
+    None 不知道。用 `is None` 判斷而不是真假值 —— `False` 與 `None` 的真假值一樣，混在
+    一起就會把「沒查到那張單」印成「描述是空的」，而那會叫人去改一張不存在的單子。
+    """
+    item = u"%s 有填寫 Description" % label
+    if has_description is None:
+        return u"| %d | %s | %s | %s |" % (number, item, UNKNOWN_CELL, missing_cell)
+
+    if has_description:
+        return u"| %d | %s | %s | %s |" % (number, item, PASS_CELL,
+                                           HAS_DESCRIPTION_CELL)
+    return u"| %d | %s | %s | %s |" % (number, item, FAIL_CELL, NO_DESCRIPTION_CELL)
+
+
+def _checklist(analysis):
+    """Check list 那張表。與上面那張一樣**永遠印出來**。
+
+    三條檢查的素材全部來自產物，這一步不連 JIRA（它沒有憑證，也刻意沒有任何外部依賴）：
+    Task 的狀態是 `jira_status`，Test case 的狀態與描述在 `related_issue` 裡，三個值都由
+    步驟 3 帶過來。
+
+    **不通過不會讓任何東西失敗。** 這一節是給 reviewer 的資訊 —— 兩張單該不該放行是他的
+    判斷，腳本只負責把事實擺出來。
+    """
+    related = analysis.get("related_issue") or {}
+
+    task_label = _declared("NEW_TEST_CASE_TASK_LABEL", DEFAULT_TASK_LABEL)
+    test_case_label = _declared("NEW_TEST_CASE_TEST_CASE_LABEL",
+                                DEFAULT_TEST_CASE_LABEL)
+
+    # Task 那一條取不到狀態的原因只有一個（沒有有效的單號，或那一次沒查到），所以一律
+    # 用「未取得」。Test case 那兩條的原因有三種，沿用上面那張表的同一組字樣 —— 同一份
+    # 報告裡，同一件事只該有一種講法。
+    test_case_missing = _missing_cell(related)
+
+    return u"\n".join([
+        CHECKLIST_TABLE_HEADER,
+        _status_check(1, task_label, analysis.get("jira_status"),
+                      _declared("NEW_TEST_CASE_EXPECTED_TASK_STATUS",
+                                DEFAULT_EXPECTED_TASK_STATUS),
+                      UNKNOWN_STATUS_CELL),
+        _status_check(2, test_case_label, related.get("status"),
+                      _declared("NEW_TEST_CASE_EXPECTED_TEST_CASE_STATUS",
+                                DEFAULT_EXPECTED_TEST_CASE_STATUS),
+                      test_case_missing),
+        _description_check(3, test_case_label, related.get("has_description"),
+                           test_case_missing),
+    ])
+
+
+def _missing_cell(related):
+    """Test case 那兩條取不到值時，「實際」那一格印什麼。
+
+    與 `_related_row()` 的「內容」那一格同一組字樣，而且同一個判斷順序 —— 兩處說的是
+    同一件事（那張單有沒有查到、為什麼沒有），各寫一套的話，同一份報告會出現一列說
+    「查無」、另一列說「未查詢」。
+    """
+    if contract.plain(related.get("key")):
+        return UNKNOWN_STATUS_CELL
+    if not related.get("searched"):
+        return NOT_SEARCHED_CELL
+    if related.get("error"):
+        return SEARCH_FAILED_CELL
+    return NOT_FOUND_CELL
 
 
 def render(inputs):
@@ -255,6 +373,8 @@ def render(inputs):
         blocks.append(overview)
         blocks.append(STATUS_HEADING)
         blocks.append(_status_table(analysis))
+        blocks.append(CHECKLIST_HEADING)
+        blocks.append(_checklist(analysis))
 
     # 指引放最後，而且只在有其他內容時才放（見通用版的同一段）。
     jira = base._jira_entry(analysis)
