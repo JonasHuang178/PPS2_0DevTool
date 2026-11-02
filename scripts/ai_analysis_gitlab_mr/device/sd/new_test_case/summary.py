@@ -344,7 +344,7 @@ def _search_related(inputs, key, issue_summary):
 
 
 def _body(overview, key, state, provider="", model="", jira_status="",
-          related=None):
+          related=None, jira_summary=u""):
     """組回傳值。`mr_diff` 一律是空的 —— 這個種類不產生 finding。
 
     **多帶一個 `jira_status`**：那是 JIRA 單在 JIRA 上的狀態（`In Progress` 這種），報告的
@@ -357,6 +357,13 @@ def _body(overview, key, state, provider="", model="", jira_status="",
     只有 SD 的一個種類在用。
 
     `related` 是第二列那張用 JQL 找出來的單（見 `_search_related`），同樣只有這個種類在讀。
+
+    **還有一個 `jira_summary`**：主單在 JIRA 上的標題。工單狀態那一節的標題要從它推導出來
+    （見 `merge_to_md._status_heading`），而步驟 5 拿不到 JIRA。
+
+    带的是**標題的原文**，不是已經切好的那一段：產物存的是 JIRA 說了什麼，版面由它推導
+    （與總覽折成清單在步驟 5 做是同一條規則）。切法哪天要改，改的是版面那一支，舊的
+    `03_summary.json` 重跑步驟 5 也跟著改；切在這裡則是把一個版面決定釃成事實存起來。
 
     代價寫清楚：這兩個鍵都不在通用層的契約裡，所以 `contract` 那一側不保證它們的存在 ——
     讀的那一支必須自己給預設值（它用的是 `.get()`）。
@@ -371,6 +378,7 @@ def _body(overview, key, state, provider="", model="", jira_status="",
                   if state == contract.JIRA_STATE_OK else ""),
         mr_diff={})
     body["jira_status"] = contract.plain(jira_status)
+    body["jira_summary"] = contract.plain(jira_summary)
     body["related_issue"] = dict(related or {"searched": False, "key": u"",
                                              "status": u"", "error": u"",
                                              "url": u""})
@@ -424,16 +432,20 @@ def analyze(inputs):
     # 要總結的素材就是這張單的描述。描述是空的就沒有東西可總結 —— 送出去的話，模型手上
     # 只有一個 key 與一行標題，而它仍然會交出一段三到五句、讀起來很合理的「總結」。
     # 那份報告看起來正常，實際上是編的，而使用者不會知道要懷疑它。
+    # 主單的標題。三处要用它：相關工單的 JQL、產物裡的 `jira_summary`，以及下面那一條
+    # 提前返回的路。取一次就好。
+    issue_summary = contract.plain(issue.get("summary"))
+
     if not contract.plain(issue.get("description")):
         logger.warn("JIRA 單 %s 沒有描述，沒有可總結的素材，不呼叫 AI", key)
         return _body(
             u"JIRA 單 %s 沒有填寫描述，所以沒有可以總結的內容。" % key,
             key, state, provider, model, jira_status,
-            _search_related(inputs, key, contract.plain(issue.get("summary"))))
+            _search_related(inputs, key, issue_summary), issue_summary)
 
     # 第二列那張單。放在送 AI **之前**：它不進 prompt（總結講的是主單），但失敗了也只是
     # 那一列留空，而這裡做完就不必在等了兩分鐘的 AI 之後再多等一趟 JIRA。
-    related = _search_related(inputs, key, contract.plain(issue.get("summary")))
+    related = _search_related(inputs, key, issue_summary)
 
     prompt = build_prompt(dict(inputs, jira_issue=issue))
     logger.info("prompt 組好了，%d 字元", len(prompt))
@@ -469,4 +481,5 @@ def analyze(inputs):
     logger.info("工單總結完成，%d 字元（JIRA 狀態 %s）",
                 len(overview), jira_status or u"（未取得）")
 
-    return _body(overview, key, state, provider, model, jira_status, related)
+    return _body(overview, key, state, provider, model, jira_status, related,
+                 issue_summary)

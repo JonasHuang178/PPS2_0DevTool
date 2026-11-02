@@ -6,7 +6,7 @@
     ## Summary          <- 與通用版一字不差
     <AI 的工單總結>
 
-    ## 工單狀態          <- 通用版的 ## Code Changes 換成這張表
+    ## <主單標題最後一段>狀態   <- 通用版的 ## Code Changes 換成這張表
     | 項目 | 內容 | 狀態 |
     |---|---|---|
     | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
@@ -54,7 +54,17 @@ SUMMARY_HEADING = base.SUMMARY_HEADING
 # 三個欄位標題決定表格的形狀，所以與填值的 _status_table() 放在一起 —— 改欄位要連帶看
 # 每一列怎麼填。「項目」那一欄的**值**則是 device 的宣告（見 _item_label），改字樣不必
 # 動這一支。
-STATUS_HEADING = u"## 工單狀態"
+# 標題跟著主單標題的**最後一段**走，不是固定字樣：這個種類的單子標題是
+# `<產品>-<模組>-<功能>` 這種形狀，而讀報告的人要知道的是最後那一段。固定寫
+# 「工單狀態」的話，三份不同功能的報告長得一模一樣。
+STATUS_HEADING_TEMPLATE = u"## %s狀態"
+
+# 推導不出標題時用的字樣。**這一節不能因為沒有標題就沒有標題** —— 它底下
+# 那張表永遠印得出來（連「未指定」也印），一張沒有標題的表讀起來就是版面壞了。
+STATUS_HEADING_FALLBACK = u"## 工單狀態"
+
+# 切標題的分隔字元。抽成常數是為了改它不必讀函式的本體。
+TITLE_SEPARATOR = u"-"
 STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
 
 # 兩列「項目」欄的預設字樣。device 沒有宣告對應的名字時用這些。
@@ -137,6 +147,30 @@ def _key_cell(key, url):
     text = u"`%s`" % _cell(key)
     target = _cell(url)
     return u"[%s](%s)" % (text, target) if target else text
+
+
+def _status_heading(analysis):
+    """工單狀態那一節的標題：主單標題的最後一段加上「狀態」。
+
+        主單標題 SSD-FW-Secure Erase  ->  ## Secure Erase狀態
+
+    切在這裡而不是步驟 3：產物存的是 JIRA 說了什麼（標題的原文），版面由它推導
+    —— 與總覽折成清單同一條規則。切法哪天要改（改分隔字元、或改成取第二段），改的
+    就是這一支，而舊的 `03_summary.json` 重跑步驟 5 也跟著改。
+
+    `split()` 取最後一段，所以標題裡有幾個分隔字元都無所謂，**沒有也無所謂** ——
+    整行就是最後一段，標題變成那一整行。這比「沒有分隔字元就不印標題」好：單子
+    標題的寫法是人的約定，不是格式規定。
+
+    標題取不到或切完是空的就回退到固定字樣：沒有有效的單號、取不到單子內容、
+    以分隔字元結尾的標題，或那份產物是加這個欄位之前產生的。
+
+    易行字元不跳脈：這是一行 markdown 標題，不是表格的儲存格。但空白要收 ——
+    `plain()` 只做首尾 strip，而一個帶折行的標題會讓後半段跑到標題外面變成內文。
+    """
+    summary = contract.plain(analysis.get("jira_summary"))
+    title = u" ".join(summary.split(TITLE_SEPARATOR)[-1].split())
+    return STATUS_HEADING_TEMPLATE % title if title else STATUS_HEADING_FALLBACK
 
 
 def _status_table(analysis):
@@ -225,7 +259,7 @@ def render(inputs):
         - <總覽第一句>
         - <總覽第二句>
 
-        ## 工單狀態
+        ## Secure Erase狀態
         | 項目 | 內容 | 狀態 |
         |---|---|---|
         | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
@@ -251,7 +285,7 @@ def render(inputs):
     if overview:
         blocks.append(SUMMARY_HEADING)
         blocks.append(overview)
-        blocks.append(STATUS_HEADING)
+        blocks.append(_status_heading(analysis))
         blocks.append(_status_table(analysis))
 
     # 指引放最後，而且只在有其他內容時才放（見通用版的同一段）。
