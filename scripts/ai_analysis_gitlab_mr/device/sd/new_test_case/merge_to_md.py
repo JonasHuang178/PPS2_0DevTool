@@ -9,7 +9,7 @@
     ## Pattern 資訊     <- 通用版的 ## Code Changes 換成這張表
     | 項目 | 內容 | 狀態 |
     |---|---|---|
-    | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
+    | Task | [`PPS-1234`](<網址>) | In Progress |
 
     ## 詳細資料          <- 與通用版一字不差（只在 key 有效時出現）
 
@@ -58,8 +58,8 @@ STATUS_HEADING = u"## Pattern 資訊"
 STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
 
 # 兩列「項目」欄的預設字樣。device 沒有宣告對應的名字時用這些。
-DEFAULT_ITEM_LABEL = u"JIRA 單"
-DEFAULT_RELATED_LABEL = u"相關 Pattern"
+DEFAULT_ITEM_LABEL = u"Task"
+DEFAULT_RELATED_LABEL = u"Test case"
 
 # 「內容」那一格：沒有可用的 key 時印什麼。
 #
@@ -186,7 +186,7 @@ def _related_row(analysis):
     """第二列：用 JQL 找出來的那張單。
 
     那一列**永遠印出來**，連「沒查」也印 —— 與第一列同一條理由：這張表回答的是「這份總結
-    的前提是什麼」，而「有沒有找到相關 Pattern 」本身就是答案的一部分。整列抽掉的話，表格會隨
+    的前提是什麼」，而「有沒有找到相關 Pattern」本身就是答案的一部分。整列抽掉的話，表格會隨
     JQL 有沒有命中而長短不一，讀的人以為是版面壞了。
 
     值由步驟 3 隨產物帶過來（`related_issue`，見 `summary.py` 的 `_search_related`）——
@@ -228,7 +228,7 @@ def render(inputs):
         ## Pattern 資訊
         | 項目 | 內容 | 狀態 |
         |---|---|---|
-        | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
+        | Task | [`PPS-1234`](<網址>) | In Progress |
 
         ## 詳細資料
         - For more information, please refer to [PPS-1234](<網址>)

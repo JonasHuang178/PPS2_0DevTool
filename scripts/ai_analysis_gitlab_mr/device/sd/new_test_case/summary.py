@@ -61,7 +61,7 @@ ANALYZES_CODE = False
 
 
 ROLE_PROMPT = u"""\
-你是一位資深的測試工程師，正在檢視一個要新增測試案例的 Pattern 。
+你是一位資深的測試工程師，正在檢視一個要新增測試案例的 Pattern。
 你的讀者是同組的工程師，他們熟悉這個專案，不需要基礎概念的解釋。
 一律以繁體中文回答。
 """
@@ -330,7 +330,7 @@ def _search_related(inputs, key, title):
 
     jql = _build_jql(template, key, title)
     if not jql:
-        logger.info("主單沒有標題可代入，不查相關 Pattern （JQL 宣告：%s）", template)
+        logger.info("主單沒有標題可代入，不查相關 Pattern（JQL 宣告：%s）", template)
         return empty
 
     try:
@@ -421,7 +421,7 @@ def analyze(inputs):
     # 沒有有效的單號就沒有東西可總結 —— 不打 AI。這與 default 不同：那一份的素材是 diff，
     # 沒有 key 也還有程式碼可以分析；這一份的素材就是那張單子。
     if state != contract.JIRA_STATE_OK:
-        logger.info("JIRA 狀態是 %s，沒有可總結的 Pattern ，不呼叫 AI", state)
+        logger.info("JIRA 狀態是 %s，沒有可總結的 Pattern，不呼叫 AI", state)
         return _body(NO_JIRA_OVERVIEW[state], key, state)
 
     if not contract.plain(inputs.get("ai_connection")):

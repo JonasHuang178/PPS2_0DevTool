@@ -40,7 +40,7 @@ DEVICE_VERSION = "v2.1.0"
 # `new_test_case` 那張 Pattern 資訊表，「項目」欄要印的字樣。
 #
 # 改這一行就改了報告上那一格，不必動擴充腳本。沒有宣告時用那一支自己的預設值
-# （`JIRA 單`），所以拿掉這一行不會壞。
+# （`Task`），所以拿掉這一行不會壞。
 #
 # 這是 **sd 自己的宣告**，不是通用層認得的項目 —— 通用層只讀 VERSION、STRICT_TYPE 與
 # CODE_REVIEW_SOURCE_HEADING 三個。讀它的人是 `new_test_case/merge_to_md.py`：那一支
@@ -48,7 +48,7 @@ DEVICE_VERSION = "v2.1.0"
 #
 # 欄位的標題（`項目`／`內容`／`狀態`）在 `new_test_case/merge_to_md.py` 最上面，與這一行
 # 分開放：那三個字決定表格的形狀，改了要連帶看那一支怎麼填每一列，所以留在它旁邊。
-NEW_TEST_CASE_ITEM_LABEL = u"JIRA 單"
+NEW_TEST_CASE_ITEM_LABEL = u"Task"
 
 # `new_test_case` 那張表的**第二列**：另一張用 JQL 找出來的 JIRA 單。
 #
@@ -93,7 +93,7 @@ NEW_TEST_CASE_ITEM_LABEL = u"JIRA 單"
 NEW_TEST_CASE_RELATED_JQL = u'project = PPS AND issuetype = "Test Plan"'
 
 # 第二列「項目」欄要印的字樣。
-NEW_TEST_CASE_RELATED_LABEL = u"New test case"
+NEW_TEST_CASE_RELATED_LABEL = u"Test case"
 
 # 這裡**還沒有宣告** STRICT_TYPE 與 CODE_REVIEW_SOURCE_HEADING，兩者都沿用預設值。
 #
