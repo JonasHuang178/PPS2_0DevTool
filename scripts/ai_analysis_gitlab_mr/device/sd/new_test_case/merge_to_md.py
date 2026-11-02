@@ -9,7 +9,7 @@
     ## 工單狀態          <- 通用版的 ## Code Changes 換成這張表
     | 項目 | 內容 | 狀態 |
     |---|---|---|
-    | JIRA 單 | `PPS-1234` | In Progress |
+    | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
 
     ## 詳細資料          <- 與通用版一字不差（只在 key 有效時出現）
 
@@ -113,6 +113,32 @@ def _cell(text):
     return contract.plain(text).replace(u"|", u"\\|")
 
 
+def _key_cell(key, url):
+    """單號那一格：有網址就做成可點的連結，沒有就只留文字。
+
+    單號是這張表裡唯一一個讀者會想「點過去看」的值 —— 兩列都是如此。做成連結之前，讀
+    報告的人得自己把單號複製出來、貼到 JIRA 的搜尋框，而那份報告常常是貼在 MR 討論串裡
+    被掃過一眼的東西。
+
+    **網址取現成的欄位，不在這一步呼叫 `contract.jira_url()`。** 與 `_jira_entry()`
+    同一條規則（見 `device/sd/merge_to_md.py`）：那一支讀的是環境變數，步驟 5 重算一次
+    就多一個可能與產物不一致的來源。單獨拿舊的 `03_summary.json` 重跑這一步時，印出的
+    仍是產生它當時的網址。
+
+    組不出網址時**退回純文字**：沒設 `JIRA_SERVER_URL` 是部署的設定問題，與單號對不對
+    無關；那份產物是加這個欄位之前產生的也會走到這一條。知道是哪一張單子，比因為做不成
+    連結就讓這一格消失有用。
+
+    單號仍然保留行內程式碼的樣式 —— `[`PPS-1234`](…)` 在 markdown 裡是一個可點的程式碼
+    片段，所以表格不會因為有沒有網址而長得不一樣。
+
+    網址也走 `_cell()`：它同樣是外部來的字串，裡面出現一個垂直線就會把那一列切成多欄。
+    """
+    text = u"`%s`" % _cell(key)
+    target = _cell(url)
+    return u"[%s](%s)" % (text, target) if target else text
+
+
 def _status_table(analysis):
     """工單狀態那張表。永遠印出來 —— 連「沒有指定」也要印。
 
@@ -135,7 +161,7 @@ def _status_table(analysis):
     has_issue = state == contract.JIRA_STATE_OK and bool(key)
 
     if has_issue:
-        content_cell = u"`%s`" % _cell(key)
+        content_cell = _key_cell(key, analysis.get("jira_url"))
     else:
         # 認不得的狀態一律當成「沒有指定」。這裡不為此失敗：狀態的值域由
         # validate_analysis() 把關，走到這裡還認不得的話，報告少一點資訊比整份產不出來好。
@@ -171,7 +197,7 @@ def _related_row(analysis):
 
     key = contract.plain(related.get("key"))
     if key:
-        content_cell = u"`%s`" % _cell(key)
+        content_cell = _key_cell(key, related.get("url"))
         status_cell = _cell(related.get("status")) or UNKNOWN_STATUS_CELL
     elif not related.get("searched"):
         content_cell = NOT_SEARCHED_CELL
@@ -202,7 +228,7 @@ def render(inputs):
         ## 工單狀態
         | 項目 | 內容 | 狀態 |
         |---|---|---|
-        | JIRA 單 | `PPS-1234` | In Progress |
+        | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
 
         ## 詳細資料
         - For more information, please refer to [PPS-1234](<網址>)

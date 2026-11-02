@@ -259,7 +259,11 @@ def _build_jql(template, key, issue_summary):
 
 
 def _search_related(inputs, key, issue_summary):
-    """用 device 宣告的 JQL 找出第二張單，回傳 {"searched":…, "key":…, "status":…}。
+    """用 device 宣告的 JQL 找出第二張單，回傳 {"searched":…, "key":…, "status":…, "url":…}。
+
+    `url` 是那張單的網址，給報告裡的工單狀態表做成可點的單號。**在這一步組**，與主單的
+    `jira_url` 同一條理由：組網址要讀 `JIRA_SERVER_URL`，而步驟 5 刻意沒有任何外部依賴。
+    組不出來（沒設伺服器位址）時是空字串，那一格就只印純文字的單號。
 
     **連線與錯誤處理都在這裡**，而這是一條有代價的路：入口腳本只交給擴充腳本
     `fetch_jira(key)`（單筆查詢），沒有搜尋的能力，所以這一支自己拿憑證、自己打 JIRA。
@@ -278,11 +282,13 @@ def _search_related(inputs, key, issue_summary):
         searched 為真、error 有值    查了但沒查完 —— JQL 寫壞了，或沒設 JIRA 連線
         searched 為真、key 為空      查完了，沒有符合的單子 —— 去看 JQL 的條件
     """
-    empty = {"searched": False, "key": u"", "status": u"", "error": u""}
+    empty = {"searched": False, "key": u"", "status": u"", "error": u"",
+             "url": u""}
 
     def failed(reason):
         """查了但沒查完。與「沒查」分開 —— 印一樣的字會把該修 JQL 的人送去填宣告。"""
-        return {"searched": True, "key": u"", "status": u"", "error": reason}
+        return {"searched": True, "key": u"", "status": u"", "error": reason,
+                "url": u""}
 
     template = _declared("NEW_TEST_CASE_RELATED_JQL")
     if not template.strip():
@@ -316,7 +322,8 @@ def _search_related(inputs, key, issue_summary):
 
     if not issues:
         logger.info("相關工單的 JQL 沒有符合的單子")
-        return {"searched": True, "key": u"", "status": u"", "error": u""}
+        return {"searched": True, "key": u"", "status": u"", "error": u"",
+                "url": u""}
 
     first = issues[0] or {}
     fields = first.get("fields") or {}
@@ -328,10 +335,12 @@ def _search_related(inputs, key, issue_summary):
                     "要指定哪一張請在 JQL 加 ORDER BY",
                     len(issues), _RELATED_MAX_ITEMS, first.get("key") or u"?")
 
+    related_key = contract.plain(first.get("key"))
     return {"searched": True,
-            "key": contract.plain(first.get("key")),
+            "key": related_key,
             "status": contract.plain(status),
-            "error": u""}
+            "error": u"",
+            "url": contract.jira_url(related_key)}
 
 
 def _body(overview, key, state, provider="", model="", jira_status="",
@@ -363,7 +372,8 @@ def _body(overview, key, state, provider="", model="", jira_status="",
         mr_diff={})
     body["jira_status"] = contract.plain(jira_status)
     body["related_issue"] = dict(related or {"searched": False, "key": u"",
-                                             "status": u"", "error": u""})
+                                             "status": u"", "error": u"",
+                                             "url": u""})
     return body
 
 
