@@ -4,9 +4,9 @@
 版面沿用 sd 的通用版（也就是 default 那一套），只有兩處不同：
 
     ## Summary          <- 與通用版一字不差
-    <AI 的工單總結>
+    <AI 的 Pattern 總結>
 
-    ## <主單標題最後一段>狀態   <- 通用版的 ## Code Changes 換成這張表
+    ## Pattern 資訊     <- 通用版的 ## Code Changes 換成這張表
     | 項目 | 內容 | 狀態 |
     |---|---|---|
     | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
@@ -44,33 +44,22 @@ import ai_analysis_gitlab_mr as contract
 # 到它。這個種類只是在那個版面之上換掉一節，所以它要跟著 sd 走。
 from ai_analysis_gitlab_mr.device.sd import merge_to_md as base
 
-# 切主單標題的規則。**步驟 3 讀的是同一支** —— 相關工單的 JQL 比對的就是這一段，
-# 所以這裡不自己 split（理由見那一支的模組說明）。
-from ai_analysis_gitlab_mr.device.sd.new_test_case import issue_title
-
 
 # 總覽那一節的標題。**與通用版一字不差**，所以直接取用它的那一行，不自己寫一份字面文字 ——
 # 兩邊各寫一份的話，通用版哪天改了字樣（`## Summary` -> `## 總覽`），這個種類會悄悄落單。
 SUMMARY_HEADING = base.SUMMARY_HEADING
 
-# 工單狀態那一節。
+# Pattern 資訊那一節。
 #
 # 三個欄位標題決定表格的形狀，所以與填值的 _status_table() 放在一起 —— 改欄位要連帶看
 # 每一列怎麼填。「項目」那一欄的**值**則是 device 的宣告（見 _item_label），改字樣不必
 # 動這一支。
-# 標題跟著主單標題的**最後一段**走，不是固定字樣：這個種類的單子標題是
-# `<產品>-<模組>-<功能>` 這種形狀，而讀報告的人要知道的是最後那一段。固定寫
-# 「工單狀態」的話，三份不同功能的報告長得一模一樣。
-STATUS_HEADING_TEMPLATE = u"## %s狀態"
-
-# 推導不出標題時用的字樣。**這一節不能因為沒有標題就沒有標題** —— 它底下
-# 那張表永遠印得出來（連「未指定」也印），一張沒有標題的表讀起來就是版面壞了。
-STATUS_HEADING_FALLBACK = u"## 工單狀態"
+STATUS_HEADING = u"## Pattern 資訊"
 STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
 
 # 兩列「項目」欄的預設字樣。device 沒有宣告對應的名字時用這些。
 DEFAULT_ITEM_LABEL = u"JIRA 單"
-DEFAULT_RELATED_LABEL = u"相關工單"
+DEFAULT_RELATED_LABEL = u"相關 Pattern"
 
 # 「內容」那一格：沒有可用的 key 時印什麼。
 #
@@ -150,27 +139,8 @@ def _key_cell(key, url):
     return u"[%s](%s)" % (text, target) if target else text
 
 
-def _status_heading(analysis):
-    """工單狀態那一節的標題：主單標題的最後一段加上「狀態」。
-
-        主單標題 SSD-FW-Secure Erase  ->  ## Secure Erase狀態
-
-    切法本身在 `new_test_case/__init__.py`，因為步驟 3 的相關工單 JQL 比對的就是同一段；
-    兩支各切一次就有兩份規則，而漂移的結果是標題寫著一個功能、底下那一列卻是用另一個
-    字串查出來的單子。
-
-    取的是**產物裡的標題原文**，切在這一步：產物存的是 JIRA 說了什麼，版面由它推導
-    （與總覽折成清單同一條規則），所以舊的 `03_summary.json` 重跑步驟 5 也跟著改。
-
-    推導不出標題時回退到固定字樣：沒有有效的單號、取不到單子內容、以分隔字元
-    結尾的標題，或那份產物是加這個欄位之前產生的。
-    """
-    title = issue_title(analysis.get("jira_summary"))
-    return STATUS_HEADING_TEMPLATE % title if title else STATUS_HEADING_FALLBACK
-
-
 def _status_table(analysis):
-    """工單狀態那張表。永遠印出來 —— 連「沒有指定」也要印。
+    """Pattern 資訊那張表。永遠印出來 —— 連「沒有指定」也要印。
 
     這個種類的整份總結就是「那張單子說了什麼」，所以「讀的是哪一張、它現在什麼狀態」是這份
     報告的前提，不是可有可無的補充。沒讀到時整段總結講的會是「沒有可以總結的內容」，而這張
@@ -216,7 +186,7 @@ def _related_row(analysis):
     """第二列：用 JQL 找出來的那張單。
 
     那一列**永遠印出來**，連「沒查」也印 —— 與第一列同一條理由：這張表回答的是「這份總結
-    的前提是什麼」，而「有沒有找到相關工單」本身就是答案的一部分。整列抽掉的話，表格會隨
+    的前提是什麼」，而「有沒有找到相關 Pattern 」本身就是答案的一部分。整列抽掉的話，表格會隨
     JQL 有沒有命中而長短不一，讀的人以為是版面壞了。
 
     值由步驟 3 隨產物帶過來（`related_issue`，見 `summary.py` 的 `_search_related`）——
@@ -255,7 +225,7 @@ def render(inputs):
         - <總覽第一句>
         - <總覽第二句>
 
-        ## Secure Erase狀態
+        ## Pattern 資訊
         | 項目 | 內容 | 狀態 |
         |---|---|---|
         | JIRA 單 | [`PPS-1234`](<網址>) | In Progress |
@@ -281,7 +251,7 @@ def render(inputs):
     if overview:
         blocks.append(SUMMARY_HEADING)
         blocks.append(overview)
-        blocks.append(_status_heading(analysis))
+        blocks.append(STATUS_HEADING)
         blocks.append(_status_table(analysis))
 
     # 指引放最後，而且只在有其他內容時才放（見通用版的同一段）。
