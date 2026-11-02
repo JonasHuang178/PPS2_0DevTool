@@ -22,8 +22,9 @@ diff、回傳的 `mrDiff` 永遠是空的）。通用版對空的 `mrDiff` 本�
 欄位，掃一眼就分得出哪個是哪個；塞進一行標題則得用標點把它們隔開，而那一行同時還要承載節名。
 
 「狀態」是**JIRA 上那張單子的狀態**（`In Progress` / `Done`），不是本工具對 key 的判定。
-「項目」那一欄的字樣由 `device/sd/__init__.py` 的 `NEW_TEST_CASE_ITEM_LABEL` 決定，改字樣
-不必動這一支（沒宣告就用 `DEFAULT_ITEM_LABEL`）。
+兩列各自的名稱由 `device/sd/__init__.py` 的 `NEW_TEST_CASE_TASK_LABEL` 與
+`NEW_TEST_CASE_TEST_CASE_LABEL` 決定，改字樣不必動這一支（沒宣告就用這一支的
+`DEFAULT_TASK_LABEL` / `DEFAULT_TEST_CASE_LABEL`）。
 
 **只負責「AI 分析標題底下那一段」。** 那一行 `# AI 分析結果`、原始描述、程式碼審閱那一段
 與末尾的出處都由入口腳本寫出 —— 這一支改不到也不必管。那一行標題不歸這裡管，是因為它
@@ -57,9 +58,10 @@ SUMMARY_HEADING = base.SUMMARY_HEADING
 STATUS_HEADING = u"## Pattern 資訊"
 STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
 
-# 兩列「項目」欄的預設字樣。device 沒有宣告對應的名字時用這些。
-DEFAULT_ITEM_LABEL = u"Task"
-DEFAULT_RELATED_LABEL = u"Test case"
+# 兩列各自叫什麼。第一列是 MR 指到的那張單（Task），第二列是 JQL 找出來的那張
+# （Test case）。device 沒有宣告對應的名字時用這兩個值。
+DEFAULT_TASK_LABEL = u"Task"
+DEFAULT_TEST_CASE_LABEL = u"Test case"
 
 # 「內容」那一格：沒有可用的 key 時印什麼。
 #
@@ -175,8 +177,8 @@ def _status_table(analysis):
 
     return u"\n".join([
         STATUS_TABLE_HEADER,
-        u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_ITEM_LABEL",
-                                            DEFAULT_ITEM_LABEL)),
+        u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_TASK_LABEL",
+                                            DEFAULT_TASK_LABEL)),
                                content_cell, status_cell),
         _related_row(analysis),
     ])
@@ -211,8 +213,8 @@ def _related_row(analysis):
         content_cell = NOT_FOUND_CELL
         status_cell = NO_ISSUE_CELL
 
-    return u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_RELATED_LABEL",
-                                               DEFAULT_RELATED_LABEL)),
+    return u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_TEST_CASE_LABEL",
+                                               DEFAULT_TEST_CASE_LABEL)),
                                   content_cell, status_cell)
 
 
