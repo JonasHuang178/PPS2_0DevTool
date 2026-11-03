@@ -314,3 +314,13 @@ openspec list                    # 進行中的變更
 openspec show <change-name>      # 看某個變更的內容
 openspec validate --changes <change-name> --strict
 ```
+
+---
+
+## 版本記錄
+
+`TOOL_VERSION`（`version.h`）。版號規則見 [`docs/contributing.md`](docs/contributing.md) 的「版號」一節。
+
+| 版號 | 日期 | 說明 |
+|---|---|---|
+| `v2.0.0` | 2026-09-06 | 首次發版：Qt 外殼、腳本執行管線、Single Building 與 AI Analysis GitLab MR 兩個功能 |
