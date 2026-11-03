@@ -839,14 +839,14 @@ JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
 只屬於這個功能）：
 
 ```
-PPS_DEVICE                                 <- PPS_Device
-PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH     <- PPS_Scripts_CodeReview_File_StartsWith
-PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES     <- PPS_Project_AI_Analysis_Skip_Filenames
-PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS    <- PPS_Project_AI_Analysis_Skip_Extensions
-PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS          <- PPS_Project_AI_Analysis_Skip_Dirs
+PPS_DEVICE                                          <- PPS_Device
+PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH  <- PPS_Project_AI_Analysis_CodeReview_File_StartsWith
+PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES              <- PPS_Project_AI_Analysis_Skip_Filenames
+PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS             <- PPS_Project_AI_Analysis_Skip_Extensions
+PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS                   <- PPS_Project_AI_Analysis_Skip_Dirs
 ```
 
-`PPS_Scripts_CodeReview_File_StartsWith` 是第 4 步用來篩選 JIRA 附件的**檔名前綴**
+`PPS_Project_AI_Analysis_CodeReview_File_StartsWith` 是第 4 步用來篩選 JIRA 附件的**檔名前綴**
 （例如 `CodeReview_`）。它**沒有預設值** —— 沒設定時第 4 步直接失敗並同時點名環境變數
 與設定鍵，整條流程結束。給它預設值的話，漏設時會靜默改用一個部署者沒選的前綴，而症狀
 是「議題上明明掛著附件，報告裡卻沒有那一段」。

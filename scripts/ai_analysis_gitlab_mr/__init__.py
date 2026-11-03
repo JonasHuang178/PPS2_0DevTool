@@ -973,16 +973,22 @@ def code_review_keyword():
 
     訊息同時點名環境變數與設定檔的鍵。只說環境變數沒設，使用者會去設系統環境變數，而
     真正該改的是執行檔旁那份 JSON。
+
+    訊息末尾那一句點名舊鍵名（`PPS_Scripts_CodeReview_File_StartsWith`），因為改名之後
+    最常見的狀況是「設定檔裡明明有這一項」卻仍然失敗 —— 那時少了這一句，使用者沒有任何
+    線索知道是鍵名變了。手上的設定檔都換過之後可以拿掉。
     """
-    keyword = os.environ.get("PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH", "").strip()
+    keyword = os.environ.get("PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH", "").strip()
     if not keyword:
         raise CredentialError(
-            "未設定環境變數 PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH",
+            "未設定環境變數 PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH",
             "設定檔 Function 底下本功能區塊的 "
-            "PPS_Scripts_CodeReview_File_StartsWith 會由工具注入為這個環境變數"
+            "PPS_Project_AI_Analysis_CodeReview_File_StartsWith 會由工具注入為這個環境變數"
             "（例如值為 \"CodeReview_\"）；以命令列或 CI 執行時請自行設定。\n"
             "這一項沒有預設值：若給了預設值，漏設時會靜默改用一個你沒選的前綴，而"
-            "症狀是議題上明明有附件、報告裡卻沒有那一段。",
+            "症狀是議題上明明有附件、報告裡卻沒有那一段。\n"
+            "這個鍵改過名：舊名 PPS_Scripts_CodeReview_File_StartsWith 已不再讀取，"
+            "設定檔裡若還是舊名，改成上面那個即可。",
             "CODE_REVIEW_FILE_STARTSWITH_MISSING")
     return keyword
 

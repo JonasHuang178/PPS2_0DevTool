@@ -35,7 +35,7 @@ parse_code_review 擴充腳本擷取與判定，結果交給步驟 5。
 
     JIRA_SERVER_URL                          https://jira.example.com
     JIRA_ACCESS_TOKEN                        個人存取權杖
-    PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH   附件檔名的前綴，例如 CodeReview_
+    PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH   附件檔名的前綴，例如 CodeReview_
 """
 
 import datetime
