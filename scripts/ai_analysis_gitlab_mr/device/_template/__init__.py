@@ -32,14 +32,14 @@
 # `DEVICE_VERSION`，沿用 `TEMPLATE_VERSION` 這個名字會在執行時得到
 # `DEVICE_VERSION_MISSING`。
 #
-#     DEVICE_VERSION = "v2.1.0"      ← 你的 device 要長這樣
+#     DEVICE_VERSION = "v2.0.0"      ← 你的 device 要長這樣
 #
 # 這個值會印在報告末尾的出處資訊裡。**必填**，沒有預設值。
 #
 # 版號 vA.B.C：前兩碼指出這個 device 照的是哪一代通用層（複製時直接沿用這裡的前兩碼，
 # 它就是你照的那一代），第三碼是它自己動過的次數，從 0 起算。
 # 完整規則見 docs/contributing.md 的「版號」一節 —— 那裡是唯一的來源，這裡只放值。
-TEMPLATE_VERSION = "v2.1.0"
+TEMPLATE_VERSION = "v2.0.0"
 
 
 # 底下都是選填，拿掉註解才生效。註解在這裡列出來是為了讓你不必翻文件或讀載入器的

@@ -304,7 +304,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 
 ---
 
-<sub>**功能** AI Analysis GitLab MR `v2.1.0`<br>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+<sub>**功能** AI Analysis GitLab MR `v2.0.0`<br>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 ````
 
 **`## 詳細資料` 只在這次真的用了 JIRA 議題時出現。** 條件是分析結構裡的 `jira_state`
@@ -580,8 +580,8 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 [`contributing.md`](../contributing.md) 的「版號」）。
 
 **兩個版號並列**：`Device` 那一行是該 device 的，`功能` 那一行是通用層的。device 版號的**前
-兩碼指出它照的是哪一代通用層** —— 上面的範例裡 `ssd` 是 `v2.0.0` 而通用層是 `v2.1.0`，所以
-`ssd` 還停在 2.0 那一代的邏輯上跑。只印其中一個就看不出這件事。要不要跟上由 device 的負責人
+兩碼指出它照的是哪一代通用層** —— 某個 device 停在 `v2.0.0` 而通用層已經是 `v2.1.0` 時，
+就知道它還跑在 2.0 那一代的邏輯上。只印其中一個就看不出這件事。要不要跟上由 device 的負責人
 決定，程式不擋也不加標記。
 
 **斷行用 `<br>` 而不是真的換行**：段落內的換行是軟換行，轉譯後會變成一個空白，四行會

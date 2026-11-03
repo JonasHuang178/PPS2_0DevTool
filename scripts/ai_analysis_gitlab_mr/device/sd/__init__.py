@@ -35,7 +35,7 @@
 #
 # 版號 vA.B.C：前兩碼指出這個 device 照的是哪一代通用層，第三碼是它自己動過的次數。
 # 完整規則見 docs/contributing.md 的「版號」一節 —— 那裡是唯一的來源，這裡只放值。
-DEVICE_VERSION = "v2.1.7"
+DEVICE_VERSION = "v2.0.0"
 
 # `new_test_case` 那張 Pattern 資訊表的**第一列**叫什麼：MR 指到的那張單。
 #

@@ -2488,7 +2488,7 @@ def _escape_link_text(text):
 #
 # 版號規則見 docs/contributing.md 的「版號」一節 —— 那裡是唯一的來源，這裡只放值。
 FEATURE_NAME = "AI Analysis GitLab MR"
-FEATURE_VERSION = "v2.1.0"
+FEATURE_VERSION = "v2.0.0"
 
 
 def _link(text, url):
@@ -2542,7 +2542,7 @@ def render_footer(device_name="", device_version="", analysis=None):
 
         ---
 
-        <sub>**功能** AI Analysis GitLab MR `v2.1.0`<br>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+        <sub>**功能** AI Analysis GitLab MR `v2.0.0`<br>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 
     四行各回答一個問題：哪一版骨架、用哪一套邏輯、哪個模型、誰在哪裡產生的。
 

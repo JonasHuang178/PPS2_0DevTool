@@ -12,7 +12,7 @@
 # 完整規則見 docs/contributing.md 的「版號」一節 —— 那裡是唯一的來源，這裡只放值。
 #
 # default 也適用這條規則，沒有例外。
-DEVICE_VERSION = "v2.1.0"
+DEVICE_VERSION = "v2.0.0"
 
 # 這裡**刻意不宣告** STRICT_TYPE 與 CODE_REVIEW_SOURCE_HEADING。
 #

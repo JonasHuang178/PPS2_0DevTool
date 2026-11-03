@@ -716,7 +716,7 @@ from ai_analysis_gitlab_mr.device.default.bug import summary as base
 要改成報錯，在該 device 的 `__init__.py` 宣告：
 
 ```python
-DEVICE_VERSION = "v2.1.0"
+DEVICE_VERSION = "v2.0.0"
 STRICT_TYPE = True
 ```
 
@@ -1046,7 +1046,7 @@ cp -r scripts/ai_analysis_gitlab_mr/device/_template scripts/ai_analysis_gitlab_
 五支擴充腳本都是選用的，只放你要覆寫的；要再依種類分開就多開子目錄（見上面的 type 一節）。
 
 但 `__init__.py` 的 `DEVICE_VERSION` **一定要有** —— 沒宣告會直接失敗。那個版本會印在
-報告末尾（`Device: ssd v2.1.0`），**改了產出方式就把它往上加**；不加的話，用舊邏輯與新邏輯
+報告末尾（`Device: ssd v2.0.0`），**改了產出方式就把它往上加**；不加的話，用舊邏輯與新邏輯
 產生的兩份報告會帶同一個版本號。
 
 版號形如 `vA.B.C`：前兩碼指出這個 device 照的是哪一代通用層，第三碼是它自己動過的次數
