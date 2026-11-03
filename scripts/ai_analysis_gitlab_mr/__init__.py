@@ -2542,9 +2542,9 @@ def render_footer(device_name="", device_version="", analysis=None):
 
         ---
 
-        <sub>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**功能** AI Analysis GitLab MR `v2.1.0`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+        <sub>**功能** AI Analysis GitLab MR `v2.1.0`<br>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 
-    四行各回答一個問題：用哪一套邏輯、哪一版骨架、哪個模型、誰在哪裡產生的。
+    四行各回答一個問題：哪一版骨架、用哪一套邏輯、哪個模型、誰在哪裡產生的。
 
     **斷行用 <br> 而不是真的換行**：段落內的換行在 markdown 是軟換行，轉譯後會變成一個
     空白，四行會擠成一行。<br> 是明確的斷行，在任何轉譯器下都成立（量過）。
@@ -2556,7 +2556,7 @@ def render_footer(device_name="", device_version="", analysis=None):
     **只用 ASCII 的分隔**：欄位之間一個半形空白，同一行內的兩組值之間 ` | `。全形空白
     與全形斜線在等寬字型下寬度不定，貼到 GitLab 也不見得照原樣保留。
 
-    兩個版號都在：`Device` 那一組是該 device 的，`腳本` 那一組是通用層的。第一碼一致代表
+    兩個版號都在：`功能` 那一組是通用層的，`Device` 那一組是該 device 的。第一碼一致代表
     同一代；不一致時讀的人自己對照得出來，程式不擋也不標記。
 
     最後一行依環境而定：CI 裡是 pipeline 與 commit，從工具跑是工具名稱與版本，兩者都沒有
@@ -2566,7 +2566,10 @@ def render_footer(device_name="", device_version="", analysis=None):
     """
     lines = []
 
-    # 一、用哪一套邏輯。種類沒有時整段不印 —— 不用種類的 device 每份報告都多一個
+    # 一、哪一版骨架。**這一行永遠都在** —— 它是這整段存在的理由。
+    lines.append("**功能** %s `%s`" % (FEATURE_NAME, FEATURE_VERSION))
+
+    # 二、用哪一套邏輯。種類沒有時整段不印 —— 不用種類的 device 每份報告都多一個
     # 「Type: 無」只是噪音。
     name = plain(device_name)
     if name:
@@ -2578,9 +2581,6 @@ def render_footer(device_name="", device_version="", analysis=None):
         if mr_type:
             bits.append("| **Type** `%s`" % mr_type)
         lines.append(" ".join(bits))
-
-    # 二、哪一版骨架。**這一行永遠都在** —— 它是這整段存在的理由。
-    lines.append("**功能** %s `%s`" % (FEATURE_NAME, FEATURE_VERSION))
 
     # 三、哪個 AI。兩個值都只從分析結構讀 —— 那是分析當下的事實，單獨拿一份舊產物
     # 重跑這一步，印出的仍是當時的值。各帶標示：只有兩個值並列時，讀的人看不出哪個

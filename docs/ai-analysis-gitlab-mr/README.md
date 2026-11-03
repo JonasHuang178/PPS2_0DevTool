@@ -304,7 +304,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 
 ---
 
-<sub>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**功能** AI Analysis GitLab MR `v2.1.0`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+<sub>**功能** AI Analysis GitLab MR `v2.1.0`<br>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 ````
 
 **`## 詳細資料` 只在這次真的用了 JIRA 議題時出現。** 條件是分析結構裡的 `jira_state`
