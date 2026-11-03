@@ -5,7 +5,7 @@
 
 ```
 device/ssd/
-  __init__.py       VERSION、STRICT_TYPE
+  __init__.py       DEVICE_VERSION、STRICT_TYPE
   mr_type.py        怎麼從標題等欄位擷取出種類
   summary.py        通用的 prompt（選用）
   merge_to_md.py    通用的版面（選用）
