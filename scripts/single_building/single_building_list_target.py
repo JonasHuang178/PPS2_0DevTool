@@ -24,24 +24,24 @@ import single_building
 from script_utils import file_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "list_target"
-DESCRIPTION      = "讀出暫存設定檔中已保存的檔案清單"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "list_target"
+DESCRIPTION     = "讀出暫存設定檔中已保存的檔案清單"
 
 
 def main():
     script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[],
     )
 
     # 版號記進診斷：這個功能的產出不會脫離產生它的環境，所以沒有一份報告
     # 可以承載版號 —— console 是唯一看得到它的地方（見 single_building 套件）。
-    logger.info("%s %s", single_building.SCRIPT_NAME,
-                single_building.SCRIPT_VERSION)
+    logger.info("%s %s", single_building.FEATURE_NAME,
+                single_building.FEATURE_VERSION)
 
     path = single_building.setting_file_path()
     logger.info("讀取設定檔：%s", path)

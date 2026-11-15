@@ -4,12 +4,12 @@
 版面沿用 sd 的通用版（也就是 default 那一套），只有兩處不同：
 
     ## Summary          <- 與通用版一字不差
-    <AI 的工單總結>
+    <AI 的 Pattern 總結>
 
-    ## 工單狀態          <- 通用版的 ## Code Changes 換成這張表
+    ## Pattern 資訊     <- 通用版的 ## Code Changes 換成這張表
     | 項目 | 內容 | 狀態 |
     |---|---|---|
-    | JIRA 單 | `PPS-1234` | In Progress |
+    | Task | [`PPS-1234`](<網址>) | In Progress |
 
     ## 詳細資料          <- 與通用版一字不差（只在 key 有效時出現）
 
@@ -22,8 +22,9 @@ diff、回傳的 `mrDiff` 永遠是空的）。通用版對空的 `mrDiff` 本�
 欄位，掃一眼就分得出哪個是哪個；塞進一行標題則得用標點把它們隔開，而那一行同時還要承載節名。
 
 「狀態」是**JIRA 上那張單子的狀態**（`In Progress` / `Done`），不是本工具對 key 的判定。
-「項目」那一欄的字樣由 `device/sd/__init__.py` 的 `NEW_TEST_CASE_ITEM_LABEL` 決定，改字樣
-不必動這一支（沒宣告就用 `DEFAULT_ITEM_LABEL`）。
+兩列各自的名稱由 `device/sd/__init__.py` 的 `NEW_TEST_CASE_TASK_LABEL` 與
+`NEW_TEST_CASE_TEST_CASE_LABEL` 決定，改字樣不必動這一支（沒宣告就用這一支的
+`DEFAULT_TASK_LABEL` / `DEFAULT_TEST_CASE_LABEL`）。
 
 **只負責「AI 分析標題底下那一段」。** 那一行 `# AI 分析結果`、原始描述、程式碼審閱那一段
 與末尾的出處都由入口腳本寫出 —— 這一支改不到也不必管。那一行標題不歸這裡管，是因為它
@@ -49,17 +50,42 @@ from ai_analysis_gitlab_mr.device.sd import merge_to_md as base
 # 兩邊各寫一份的話，通用版哪天改了字樣（`## Summary` -> `## 總覽`），這個種類會悄悄落單。
 SUMMARY_HEADING = base.SUMMARY_HEADING
 
-# 工單狀態那一節。
+# Pattern 資訊那一節。
 #
 # 三個欄位標題決定表格的形狀，所以與填值的 _status_table() 放在一起 —— 改欄位要連帶看
-# 每一列怎麼填。「項目」那一欄的**值**則是 device 的宣告（見 _item_label），改字樣不必
+# 每一列怎麼填。「項目」那一欄的**值**則是 device 的宣告（見 _declared），改字樣不必
 # 動這一支。
-STATUS_HEADING = u"## 工單狀態"
+STATUS_HEADING = u"## Pattern 資訊"
 STATUS_TABLE_HEADER = u"| 項目 | 內容 | 狀態 |\n|---|---|---|"
 
-# 兩列「項目」欄的預設字樣。device 沒有宣告對應的名字時用這些。
-DEFAULT_ITEM_LABEL = u"JIRA 單"
-DEFAULT_RELATED_LABEL = u"相關工單"
+# 兩列各自叫什麼。第一列是 MR 指到的那張單（Task），第二列是 JQL 找出來的那張
+# （Test case）。device 沒有宣告對應的名字時用這兩個值。
+DEFAULT_TASK_LABEL = u"Task"
+DEFAULT_TEST_CASE_LABEL = u"Test case"
+
+# Check list 那一節。給 reviewer 看的資訊，**不影響流程** —— 有不通過的項目時腳本照樣
+# 成功、報告照樣產出。它回答的是「這兩張單現在長得對不對」，而那是 reviewer 的判斷。
+CHECKLIST_HEADING = u"## Check list"
+CHECKLIST_TABLE_HEADER = u"| # | 檢查項目 | 結果 | 實際 |\n|---|---|---|---|"
+
+# 三種結果。⚠️ 與 ❌ 分開，因為讀者的下一步不同：❌ 是去把那張單改好，⚠️ 是這次沒查到，
+# 要去看 JQL 的條件、JIRA 連線，或那份產物是加這些欄位之前產生的。把查不到當成不通過，
+# 會讓人去改一張其實沒問題的單子。
+PASS_CELL = u"✅"
+FAIL_CELL = u"❌"
+UNKNOWN_CELL = u"⚠️"
+
+# 第三條「實際」那一格的兩種字樣（第三種是取不到，沿用上面那張表的 UNKNOWN_STATUS_CELL）。
+HAS_DESCRIPTION_CELL = u"已填寫"
+NO_DESCRIPTION_CELL = u"空白"
+
+# 兩條狀態檢查的期望值。device 沒有宣告時用這些。
+#
+# 做成宣告而不是寫死：JIRA 的工作流是各專案自己定的，改一個狀態名不該要改擴充腳本。
+# 兩條分開宣告，因為 Task 與 Test case 常常走不同的工作流 —— 目前兩者的期望值相同，
+# 但那是現況，不是同一件事。
+DEFAULT_EXPECTED_TASK_STATUS = u"In Review"
+DEFAULT_EXPECTED_TEST_CASE_STATUS = u"In Review"
 
 # 「內容」那一格：沒有可用的 key 時印什麼。
 #
@@ -88,8 +114,8 @@ NOT_SEARCHED_CELL = u"（未查詢）"
 SEARCH_FAILED_CELL = u"（查詢失敗）"
 
 
-def _label(name, default):
-    """「項目」那一欄要印的字樣，取自 device 的宣告。
+def _declared(name, default):
+    """device 的宣告，沒宣告就用預設值。
 
     讀法與通用層讀 `CODE_REVIEW_SOURCE_HEADING` 同一個形狀：**宣告沒寫就用預設值**，所以
     拿掉 `device/sd/__init__.py` 那幾行不會壞，而其他 device 若哪天也用這個種類的版面，
@@ -113,8 +139,34 @@ def _cell(text):
     return contract.plain(text).replace(u"|", u"\\|")
 
 
+def _key_cell(key, url):
+    """單號那一格：有網址就做成可點的連結，沒有就只留文字。
+
+    單號是這張表裡唯一一個讀者會想「點過去看」的值 —— 兩列都是如此。做成連結之前，讀
+    報告的人得自己把單號複製出來、貼到 JIRA 的搜尋框，而那份報告常常是貼在 MR 討論串裡
+    被掃過一眼的東西。
+
+    **網址取現成的欄位，不在這一步呼叫 `contract.jira_url()`。** 與 `_jira_entry()`
+    同一條規則（見 `device/sd/merge_to_md.py`）：那一支讀的是環境變數，步驟 5 重算一次
+    就多一個可能與產物不一致的來源。單獨拿舊的 `03_summary.json` 重跑這一步時，印出的
+    仍是產生它當時的網址。
+
+    組不出網址時**退回純文字**：沒設 `JIRA_SERVER_URL` 是部署的設定問題，與單號對不對
+    無關；那份產物是加這個欄位之前產生的也會走到這一條。知道是哪一張單子，比因為做不成
+    連結就讓這一格消失有用。
+
+    單號仍然保留行內程式碼的樣式 —— `[`PPS-1234`](…)` 在 markdown 裡是一個可點的程式碼
+    片段，所以表格不會因為有沒有網址而長得不一樣。
+
+    網址也走 `_cell()`：它同樣是外部來的字串，裡面出現一個垂直線就會把那一列切成多欄。
+    """
+    text = u"`%s`" % _cell(key)
+    target = _cell(url)
+    return u"[%s](%s)" % (text, target) if target else text
+
+
 def _status_table(analysis):
-    """工單狀態那張表。永遠印出來 —— 連「沒有指定」也要印。
+    """Pattern 資訊那張表。永遠印出來 —— 連「沒有指定」也要印。
 
     這個種類的整份總結就是「那張單子說了什麼」，所以「讀的是哪一張、它現在什麼狀態」是這份
     報告的前提，不是可有可無的補充。沒讀到時整段總結講的會是「沒有可以總結的內容」，而這張
@@ -135,7 +187,7 @@ def _status_table(analysis):
     has_issue = state == contract.JIRA_STATE_OK and bool(key)
 
     if has_issue:
-        content_cell = u"`%s`" % _cell(key)
+        content_cell = _key_cell(key, analysis.get("jira_url"))
     else:
         # 認不得的狀態一律當成「沒有指定」。這裡不為此失敗：狀態的值域由
         # validate_analysis() 把關，走到這裡還認不得的話，報告少一點資訊比整份產不出來好。
@@ -149,8 +201,8 @@ def _status_table(analysis):
 
     return u"\n".join([
         STATUS_TABLE_HEADER,
-        u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_ITEM_LABEL",
-                                            DEFAULT_ITEM_LABEL)),
+        u"| %s | %s | %s |" % (_cell(_declared("NEW_TEST_CASE_TASK_LABEL",
+                                            DEFAULT_TASK_LABEL)),
                                content_cell, status_cell),
         _related_row(analysis),
     ])
@@ -160,7 +212,7 @@ def _related_row(analysis):
     """第二列：用 JQL 找出來的那張單。
 
     那一列**永遠印出來**，連「沒查」也印 —— 與第一列同一條理由：這張表回答的是「這份總結
-    的前提是什麼」，而「有沒有找到相關工單」本身就是答案的一部分。整列抽掉的話，表格會隨
+    的前提是什麼」，而「有沒有找到相關 Pattern」本身就是答案的一部分。整列抽掉的話，表格會隨
     JQL 有沒有命中而長短不一，讀的人以為是版面壞了。
 
     值由步驟 3 隨產物帶過來（`related_issue`，見 `summary.py` 的 `_search_related`）——
@@ -171,7 +223,7 @@ def _related_row(analysis):
 
     key = contract.plain(related.get("key"))
     if key:
-        content_cell = u"`%s`" % _cell(key)
+        content_cell = _key_cell(key, related.get("url"))
         status_cell = _cell(related.get("status")) or UNKNOWN_STATUS_CELL
     elif not related.get("searched"):
         content_cell = NOT_SEARCHED_CELL
@@ -185,9 +237,103 @@ def _related_row(analysis):
         content_cell = NOT_FOUND_CELL
         status_cell = NO_ISSUE_CELL
 
-    return u"| %s | %s | %s |" % (_cell(_label("NEW_TEST_CASE_RELATED_LABEL",
-                                               DEFAULT_RELATED_LABEL)),
+    return u"| %s | %s | %s |" % (_cell(_declared("NEW_TEST_CASE_TEST_CASE_LABEL",
+                                               DEFAULT_TEST_CASE_LABEL)),
                                   content_cell, status_cell)
+
+
+def _same_status(actual, expected):
+    """狀態是不是期望的那一個。
+
+    忽略大小寫與前後空白，但**不做模糊比對**：`In Review` 與 `in review` 是同一個狀態
+    （JIRA 各處對大小寫的處理並不一致），而 `In Review` 與 `Review` 不是 —— 後者是兩個
+    不同的工作流狀態，當成同一個會讓檢查永遠通過。
+    """
+    return contract.plain(actual).lower() == contract.plain(expected).lower()
+
+
+def _status_check(number, label, actual, expected, missing_cell):
+    """一條狀態檢查：`<label> 狀態為 <expected>`。
+
+    `actual` 是空的就是⚠️ —— 那是「不知道」，不是「不對」。missing_cell 由呼叫端給，
+    因為兩條的原因不同：Task 的狀態取不到（JIRA 查詢失敗、或舊的產物），Test case 則
+    可能是根本沒查、查無、或查詢失敗，而那三種在上面那張表已經各有字樣。
+    """
+    item = u"%s 狀態為 `%s`" % (label, expected)
+    if not contract.plain(actual):
+        return u"| %d | %s | %s | %s |" % (number, item, UNKNOWN_CELL, missing_cell)
+
+    result = PASS_CELL if _same_status(actual, expected) else FAIL_CELL
+    return u"| %d | %s | %s | `%s` |" % (number, item, result, _cell(actual))
+
+
+def _description_check(number, label, has_description, missing_cell):
+    """第三條：Test case 有沒有填描述。
+
+    `has_description` 是三態（見步驟 3 的 `_search_related`）：True 已填、False 空白、
+    None 不知道。用 `is None` 判斷而不是真假值 —— `False` 與 `None` 的真假值一樣，混在
+    一起就會把「沒查到那張單」印成「描述是空的」，而那會叫人去改一張不存在的單子。
+    """
+    item = u"%s 有填寫 Description" % label
+    if has_description is None:
+        return u"| %d | %s | %s | %s |" % (number, item, UNKNOWN_CELL, missing_cell)
+
+    if has_description:
+        return u"| %d | %s | %s | %s |" % (number, item, PASS_CELL,
+                                           HAS_DESCRIPTION_CELL)
+    return u"| %d | %s | %s | %s |" % (number, item, FAIL_CELL, NO_DESCRIPTION_CELL)
+
+
+def _checklist(analysis):
+    """Check list 那張表。與上面那張一樣**永遠印出來**。
+
+    三條檢查的素材全部來自產物，這一步不連 JIRA（它沒有憑證，也刻意沒有任何外部依賴）：
+    Task 的狀態是 `jira_status`，Test case 的狀態與描述在 `related_issue` 裡，三個值都由
+    步驟 3 帶過來。
+
+    **不通過不會讓任何東西失敗。** 這一節是給 reviewer 的資訊 —— 兩張單該不該放行是他的
+    判斷，腳本只負責把事實擺出來。
+    """
+    related = analysis.get("related_issue") or {}
+
+    task_label = _declared("NEW_TEST_CASE_TASK_LABEL", DEFAULT_TASK_LABEL)
+    test_case_label = _declared("NEW_TEST_CASE_TEST_CASE_LABEL",
+                                DEFAULT_TEST_CASE_LABEL)
+
+    # Task 那一條取不到狀態的原因只有一個（沒有有效的單號，或那一次沒查到），所以一律
+    # 用「未取得」。Test case 那兩條的原因有三種，沿用上面那張表的同一組字樣 —— 同一份
+    # 報告裡，同一件事只該有一種講法。
+    test_case_missing = _missing_cell(related)
+
+    return u"\n".join([
+        CHECKLIST_TABLE_HEADER,
+        _status_check(1, task_label, analysis.get("jira_status"),
+                      _declared("NEW_TEST_CASE_EXPECTED_TASK_STATUS",
+                                DEFAULT_EXPECTED_TASK_STATUS),
+                      UNKNOWN_STATUS_CELL),
+        _status_check(2, test_case_label, related.get("status"),
+                      _declared("NEW_TEST_CASE_EXPECTED_TEST_CASE_STATUS",
+                                DEFAULT_EXPECTED_TEST_CASE_STATUS),
+                      test_case_missing),
+        _description_check(3, test_case_label, related.get("has_description"),
+                           test_case_missing),
+    ])
+
+
+def _missing_cell(related):
+    """Test case 那兩條取不到值時，「實際」那一格印什麼。
+
+    與 `_related_row()` 的「內容」那一格同一組字樣，而且同一個判斷順序 —— 兩處說的是
+    同一件事（那張單有沒有查到、為什麼沒有），各寫一套的話，同一份報告會出現一列說
+    「查無」、另一列說「未查詢」。
+    """
+    if contract.plain(related.get("key")):
+        return UNKNOWN_STATUS_CELL
+    if not related.get("searched"):
+        return NOT_SEARCHED_CELL
+    if related.get("error"):
+        return SEARCH_FAILED_CELL
+    return NOT_FOUND_CELL
 
 
 def render(inputs):
@@ -199,10 +345,10 @@ def render(inputs):
         - <總覽第一句>
         - <總覽第二句>
 
-        ## 工單狀態
+        ## Pattern 資訊
         | 項目 | 內容 | 狀態 |
         |---|---|---|
-        | JIRA 單 | `PPS-1234` | In Progress |
+        | Task | [`PPS-1234`](<網址>) | In Progress |
 
         ## 詳細資料
         - For more information, please refer to [PPS-1234](<網址>)
@@ -227,6 +373,8 @@ def render(inputs):
         blocks.append(overview)
         blocks.append(STATUS_HEADING)
         blocks.append(_status_table(analysis))
+        blocks.append(CHECKLIST_HEADING)
+        blocks.append(_checklist(analysis))
 
     # 指引放最後，而且只在有其他內容時才放（見通用版的同一段）。
     jira = base._jira_entry(analysis)

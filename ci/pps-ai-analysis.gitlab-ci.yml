@@ -57,7 +57,7 @@ ai-analysis:
     JIRA_SERVER_URL: "https://jira.example.com"
 
     PPS_DEVICE: "default"                                 # 步驟 2/3/4/5 都要
-    PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH: "CodeReview_" # 步驟 4 必填
+    PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH: "CodeReview_" # 步驟 4 必填
     AI_VERIFY_SSL: "false"
 
     # 不送進 AI 分析的檔案。多個值用分號分隔，區分大小寫，留空不排除。

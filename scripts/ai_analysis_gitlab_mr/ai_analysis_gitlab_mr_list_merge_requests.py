@@ -29,9 +29,9 @@ import script_io
 from script_utils import gitlab_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "list_merge_requests"
-DESCRIPTION      = "列出指定 GitLab 專案的 Merge Request"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "list_merge_requests"
+DESCRIPTION     = "列出指定 GitLab 專案的 Merge Request"
 
 
 def _row(raw):
@@ -59,7 +59,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
 
         # 憑證不在這裡宣告 —— 它們走環境變數。在 config 宣告會讓使用者以為
         # 該把權杖填進 request 檔案裡。

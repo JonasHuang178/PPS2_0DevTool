@@ -57,11 +57,11 @@ GitLab、JIRA 這類會被多個功能共用的端點與憑證放在 `Service`�
 
 **升級到含 code review 的版本後要手動補一個鍵。** 既有的設定檔不會被建置覆蓋，所以
 `AI Analysis GitLab MR` 區塊底下不會自動長出
-`PPS_Scripts_CodeReview_File_StartsWith`，而第 4 步會因此失敗並點名它。對照
+`PPS_Project_AI_Analysis_CodeReview_File_StartsWith`，而第 4 步會因此失敗並點名它。對照
 `PPS2_0DevTool.example.json` 補上即可：
 
 ```json
-"PPS_Scripts_CodeReview_File_StartsWith": "CodeReview_"
+"PPS_Project_AI_Analysis_CodeReview_File_StartsWith": "CodeReview_"
 ```
 
 `Skip_Title_*_List` 三個鍵是 `Filter` 群組裡標題排除的**預設值**，分別對應三個欄位：

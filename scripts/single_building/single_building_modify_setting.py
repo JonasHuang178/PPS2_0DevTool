@@ -22,16 +22,16 @@ import single_building
 from script_utils import file_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "modify_setting"
-DESCRIPTION      = "把指定的檔案清單寫入暫存設定檔"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "modify_setting"
+DESCRIPTION     = "把指定的檔案清單寫入暫存設定檔"
 
 
 def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[
             # required=False：空清單是有效的設定（使用者什麼都沒選），
@@ -43,8 +43,8 @@ def main():
 
     # 版號記進診斷：這個功能的產出不會脫離產生它的環境，所以沒有一份報告
     # 可以承載版號 —— console 是唯一看得到它的地方（見 single_building 套件）。
-    logger.info("%s %s", single_building.SCRIPT_NAME,
-                single_building.SCRIPT_VERSION)
+    logger.info("%s %s", single_building.FEATURE_NAME,
+                single_building.FEATURE_VERSION)
 
     files = req["params"]["files"] or []
     path = single_building.setting_file_path()

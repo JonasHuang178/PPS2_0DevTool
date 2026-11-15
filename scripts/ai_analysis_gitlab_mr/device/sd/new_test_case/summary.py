@@ -61,7 +61,7 @@ ANALYZES_CODE = False
 
 
 ROLE_PROMPT = u"""\
-你是一位資深的測試工程師，正在檢視一張要新增測試案例的工單。
+你是一位資深的測試工程師，正在檢視一個要新增測試案例的 Pattern。
 你的讀者是同組的工程師，他們熟悉這個專案，不需要基礎概念的解釋。
 一律以繁體中文回答。
 """
@@ -73,7 +73,7 @@ ROLE_PROMPT = u"""\
 #
 #   {diff}         程式碼。這個種類不看它 —— 新增一支測試案例的差異多半是照模板長出來的
 #                  檔案，對它做程式碼審閱產出的是沒有人要看的意見，而且照樣要付 token 的錢
-#   {description}  MR 自己的描述。要總結的是工單說了什麼，不是 MR 的作者寫了什麼；兩份
+#   {description}  MR 自己的描述。要總結的是 Pattern 說了什麼，不是 MR 的作者寫了什麼；兩份
 #                  素材一起送，模型會把它們揉成一段，而讀者分不出哪一句出自哪裡
 #
 # **兩者 build_prompt() 都還是備好了**（`format()` 忽略沒用到的值），所以要把任何一段加
@@ -81,7 +81,7 @@ ROLE_PROMPT = u"""\
 # {role} {repo} {mr_iid} {description} {diff} {jira} {output_spec}
 PROMPT_TEMPLATE = u"""\
 {role}
-請閱讀以下工單的描述，並依照最後指定的格式回覆。
+請閱讀以下 Pattern 的描述，並依照最後指定的格式回覆。
 {jira}
 {output_spec}
 """
@@ -90,10 +90,10 @@ PROMPT_TEMPLATE = u"""\
 # JIRA 那一段。沒有 issue 就整段不放（見 _jira_block）。
 #
 # 狀態與類型刻意不放進 prompt：它們是那張單的現況，不是要被總結的內容（狀態另有去處 ——
-# 它由步驟 3 帶進產物，印在報告的工單狀態表上）。key 與標題留著是為了讓模型知道自己在
+# 它由步驟 3 帶進產物，印在報告的 Pattern 資訊表上）。key 與標題留著是為了讓模型知道自己在
 # 讀哪一張單，一行的成本。
 JIRA_TEMPLATE = u"""
-## 工單 {key}：{summary}
+## Pattern {key}：{summary}
 
 {description}
 """
@@ -104,15 +104,15 @@ OUTPUT_SPEC = u"""\
 只回覆一個 JSON 物件，不要有任何開場白、說明或 markdown 圍籬。
 
 {
-  "summary": "這張工單要測什麼、怎麼測、通過的條件是什麼，三到五句"
+  "summary": "這個 Pattern 要測什麼、怎麼測、通過的條件是什麼，三到五句"
 }
 
-只依上面那份工單描述作答，不要自己補沒有寫在裡面的東西。
+只依上面那份 Pattern 描述作答，不要自己補沒有寫在裡面的東西。
 不要回傳任何其他欄位。這次**不需要**審閱程式碼，也不需要列出任何檔案。
 """
 
 
-# 沒有可總結的工單時，overview 放這一段。
+# 沒有可總結的 Pattern 時，overview 放這一段。
 #
 # 這個種類的整份分析就是「那張單子說了什麼」，所以沒有單子時沒有東西可問 —— 與其拿一份
 # 空的素材去打一趟 AI 換回一段它自己編的話，不如直接說明白。報告的標題那一行會同時標出
@@ -128,7 +128,7 @@ NO_JIRA_OVERVIEW = {
 # ===========================================================================
 
 def _jira_block(issue):
-    """工單那一段。沒有 issue 就回空字串，整段不出現在 prompt 裡。
+    """Pattern 那一段。沒有 issue 就回空字串，整段不出現在 prompt 裡。
 
     不放的理由不只是省 context：一段寫著「（無）」的區塊會讓模型以為那張單子存在但內容
     是空的，然後對著它生出一段總結。
@@ -195,13 +195,14 @@ def parse_reply(data):
     return summary
 
 
-# 相關工單的 JQL 一次最多看幾張。取的是第一張，多要幾張只為了在診斷輸出寫出「共幾張」——
+# 相關 Pattern 的 JQL 一次最多看幾張。取的是第一張，多要幾張只為了在診斷輸出寫出「共幾張」——
 # 一條寫得太寬的 JQL（例如忘了限定專案）會回成千上萬張，而那時最該看到的就是這個數字。
 _RELATED_MAX_ITEMS = 5
 
-# 搜尋只要這兩個欄位。key 一律會回，status 是表格要印的那一格 —— 不限定欄位的話每一張都
-# 會連描述一起拖回來。
-_RELATED_FIELDS = "status"
+# 搜尋只要這幾個欄位。key 一律會回；status 是表格要印的那一格；description 只用來判斷
+# 「有沒有填」（Check list 第三條），**文字本身不進產物**。不限定欄位的話，每一張符合的
+# 單子都會連所有欄位一起拖回來。
+_RELATED_FIELDS = "status,description"
 
 # 宣告沒有佔位符時，自動接在後面的那一段。`~` 是 JQL 的文字比對（不是完全相等）——
 # 標題不會一字不差，所以用它；要完全相等就在宣告裡用 {summary} 佔位符自己寫 `summary = `。
@@ -220,13 +221,46 @@ def _declared(name, default=u""):
     return value if isinstance(value, str) else default
 
 
-def _build_jql(template, key, issue_summary):
+# 切主單標題的分隔字元。抽成常數是為了改它不必讀函式的本體。
+TITLE_SEPARATOR = u"-"
+
+
+def _issue_title(issue_summary):
+    """主單標題的最後一段；推導不出來時回空字串。
+
+        SSD-FW-Secure Erase    ->  Secure Erase
+        SSD-Secure Erase       ->  Secure Erase
+        Secure Erase           ->  Secure Erase     （沒有分隔字元：整行就是最後一段）
+        SSD-FW-                ->  u""              （以分隔字元結尾）
+
+    取**最後一段**，所以標題裡有幾個分隔字元都無所謂，一個都沒有也無所謂 —— 整行就是
+    最後一段。這比「沒有分隔字元就當作推導失敗」好：單子標題怎麼寫是人的約定，不是這
+    一步有資格強制的格式，而一個只寫了功能名稱的標題正好是最清楚的那種。
+
+    空白一併收掉（不只首尾）：標題是人打進 JIRA 的字，中間夾一個折行會讓送出去的 JQL
+    跟著斷行。
+
+    **只有這一支在用**（相關 Pattern 的 JQL）。報告那一節的標題曾經也跟著它走，改成
+    固定字串之後就不再需要 —— 要讓標題重新跟著功能名稱走，就把這一支搬到兩步都拿得到
+    的地方（例如這個種類的 `__init__.py`），不要在步驟 5 再切一次。
+    """
+    summary = contract.plain(issue_summary)
+    return u" ".join(summary.split(TITLE_SEPARATOR)[-1].split())
+
+
+def _build_jql(template, key, title):
     """把宣告的那一段 JQL 組成真正要送出的查詢；組不出來回空字串。
 
     宣告裡只寫 JQL **固定的那一段**，隨每一筆 MR 變動的條件在這裡接上去。兩種形式：
 
         有佔位符   照宣告的位置代入 {summary} / {key}
-        沒有佔位符 自動在最後接上 `AND summary ~ "<主單標題>"`
+        沒有佔位符 自動在最後接上 `AND summary ~ "<標題的最後一段>"`
+
+    `title` 是**主單標題的最後一段**（`SSD-FW-Secure Erase` -> `Secure Erase`，見
+    `_issue_title`），不是整個標題。用整個標題比對永遠查不到測試計畫 ——
+    測試計畫的標題不會帶著開發單的產品與模組前置詞，兩者共有的就是那一段功能名稱。
+    報告上 Pattern 資訊那一節的標題用的也是同一段 —— 兩邊指著同一個功能，不然那一節讀起來
+    是自相矛皾的。
 
     兩個佔位符代入的都是**已經包好引號的 JQL 字串常量**，所以宣告寫 `summary ~ {summary}`
     而不是 `summary ~ "{summary}"` —— 統一成「代入的值自帶引號」才不會有一個要加、一個
@@ -239,7 +273,7 @@ def _build_jql(template, key, issue_summary):
     代入用字串替換而不是 `format()`：JQL 裡的大括號、引號與括號都原樣送出，寫宣告的人不必
     疊兩層大括號（通用層的 prompt 樣板就是因為 `format()` 而有那個坑）。
 
-    主單標題是空的時候回空字串，呼叫端據此不查：一條用來比對標題的查詢少了標題，剩下的
+    標題是空的時候回空字串，呼叫端據此不查：一條用來比對標題的查詢少了標題，剩下的
     固定條件會回一整個專案的單子，而「取第一張」在那時完全是任意的。
     """
     has_summary = u"{summary}" in template
@@ -247,19 +281,33 @@ def _build_jql(template, key, issue_summary):
 
     # 只有 {key} 的那一種（`issue in linkedIssues({key})`）用不到標題，少了它照樣查得成。
     # 其餘兩種都要標題：用了 {summary} 的，以及沒有任何佔位符、要自動接標題的。
-    if (has_summary or not has_key) and not issue_summary:
+    if (has_summary or not has_key) and not title:
         return u""
 
     if has_summary or has_key:
-        return (template.replace(u"{summary}", jira_utils._quote_jql(issue_summary))
+        return (template.replace(u"{summary}", jira_utils._quote_jql(title))
                         .replace(u"{key}", jira_utils._quote_jql(key)))
 
     return u"%s %s %s" % (template.strip(), _APPEND_OPERATOR,
-                          jira_utils._quote_jql(issue_summary))
+                          jira_utils._quote_jql(title))
 
 
-def _search_related(inputs, key, issue_summary):
-    """用 device 宣告的 JQL 找出第二張單，回傳 {"searched":…, "key":…, "status":…}。
+def _search_related(inputs, key, title):
+    """用 device 宣告的 JQL 找出第二張單。
+
+    回傳 {"searched":…, "key":…, "status":…, "url":…, "has_description":…}。
+
+    `has_description` 給報告的 Check list 判斷「Test case 有沒有填描述」。帶的是**布林
+    值，不是描述的文字** —— 報告只需要知道有沒有填，而描述可能是好幾千字，整段塞進
+    `03_summary.json` 只是讓產物變大、日後還得煩惱要不要截斷。
+
+    沒查到那張單時它是 `None` 而不是 `False`：「沒填描述」與「不知道有沒有填」在報告上
+    是不同的兩件事（❌ 要去補描述，⚠️ 要去看查詢設定），分不出來就會叫人去改一張其實
+    沒問題的單子。
+
+    `url` 是那張單的網址，給報告裡的 Pattern 資訊表做成可點的單號。**在這一步組**，與主單的
+    `jira_url` 同一條理由：組網址要讀 `JIRA_SERVER_URL`，而步驟 5 刻意沒有任何外部依賴。
+    組不出來（沒設伺服器位址）時是空字串，那一格就只印純文字的單號。
 
     **連線與錯誤處理都在這裡**，而這是一條有代價的路：入口腳本只交給擴充腳本
     `fetch_jira(key)`（單筆查詢），沒有搜尋的能力，所以這一支自己拿憑證、自己打 JIRA。
@@ -278,30 +326,32 @@ def _search_related(inputs, key, issue_summary):
         searched 為真、error 有值    查了但沒查完 —— JQL 寫壞了，或沒設 JIRA 連線
         searched 為真、key 為空      查完了，沒有符合的單子 —— 去看 JQL 的條件
     """
-    empty = {"searched": False, "key": u"", "status": u"", "error": u""}
+    empty = {"searched": False, "key": u"", "status": u"", "error": u"",
+             "url": u"", "has_description": None}
 
     def failed(reason):
         """查了但沒查完。與「沒查」分開 —— 印一樣的字會把該修 JQL 的人送去填宣告。"""
-        return {"searched": True, "key": u"", "status": u"", "error": reason}
+        return {"searched": True, "key": u"", "status": u"", "error": reason,
+                "url": u"", "has_description": None}
 
     template = _declared("NEW_TEST_CASE_RELATED_JQL")
     if not template.strip():
-        logger.debug("sd 沒有宣告 NEW_TEST_CASE_RELATED_JQL，不查相關工單")
+        logger.debug("sd 沒有宣告 NEW_TEST_CASE_RELATED_JQL，不查相關 Pattern")
         return empty
 
-    jql = _build_jql(template, key, issue_summary)
+    jql = _build_jql(template, key, title)
     if not jql:
-        logger.info("主單沒有標題可代入，不查相關工單（JQL 宣告：%s）", template)
+        logger.info("主單沒有標題可代入，不查相關 Pattern（JQL 宣告：%s）", template)
         return empty
 
     try:
         base_url, token = contract.jira_credentials()
     except contract.CredentialError as exc:
-        logger.warn("未設定 JIRA 連線資訊，相關工單那一列留空：%s", exc)
+        logger.warn("未設定 JIRA 連線資訊，相關 Pattern 那一列留空：%s", exc)
         return failed(u"未設定 JIRA 連線資訊")
 
-    base._progress(inputs)(u"以 JQL 搜尋相關工單…")
-    logger.info("相關工單的 JQL：%s", jql)
+    base._progress(inputs)(u"以 JQL 搜尋相關 Pattern…")
+    logger.info("相關 Pattern 的 JQL：%s", jql)
 
     try:
         # 不傳 verify_ssl，用 jira_utils 的預設（驗證開啟）。入口腳本的 _fetch_jira 也是
@@ -311,12 +361,13 @@ def _search_related(inputs, key, issue_summary):
                                           fields=_RELATED_FIELDS,
                                           max_items=_RELATED_MAX_ITEMS)
     except jira_utils.JiraError as exc:
-        logger.warn("相關工單的 JQL 查詢失敗，那一列留空：%s", exc)
+        logger.warn("相關 Pattern 的 JQL 查詢失敗，那一列留空：%s", exc)
         return failed(u"%s" % exc)
 
     if not issues:
-        logger.info("相關工單的 JQL 沒有符合的單子")
-        return {"searched": True, "key": u"", "status": u"", "error": u""}
+        logger.info("相關 Pattern 的 JQL 沒有符合的單子")
+        return {"searched": True, "key": u"", "status": u"", "error": u"",
+                "url": u"", "has_description": None}
 
     first = issues[0] or {}
     fields = first.get("fields") or {}
@@ -324,14 +375,17 @@ def _search_related(inputs, key, issue_summary):
 
     if len(issues) > 1:
         # 多張就取第一張，但要讓人知道有多張 —— 否則「為什麼印的是這一張」無從回答。
-        logger.warn("相關工單的 JQL 符合 %d 張（上限 %d），取第一張 %s；"
+        logger.warn("相關 Pattern 的 JQL 符合 %d 張（上限 %d），取第一張 %s；"
                     "要指定哪一張請在 JQL 加 ORDER BY",
                     len(issues), _RELATED_MAX_ITEMS, first.get("key") or u"?")
 
+    related_key = contract.plain(first.get("key"))
     return {"searched": True,
-            "key": contract.plain(first.get("key")),
+            "key": related_key,
             "status": contract.plain(status),
-            "error": u""}
+            "error": u"",
+            "url": contract.jira_url(related_key),
+            "has_description": bool(contract.plain(fields.get("description")))}
 
 
 def _body(overview, key, state, provider="", model="", jira_status="",
@@ -339,7 +393,7 @@ def _body(overview, key, state, provider="", model="", jira_status="",
     """組回傳值。`mr_diff` 一律是空的 —— 這個種類不產生 finding。
 
     **多帶一個 `jira_status`**：那是 JIRA 單在 JIRA 上的狀態（`In Progress` 這種），報告的
-    工單狀態表要印它，而步驟 5 拿到的只有 `03_summary.json` —— 它沒有憑證、也刻意沒有任何
+    Pattern 資訊表要印它，而步驟 5 拿到的只有 `03_summary.json` —— 它沒有憑證、也刻意沒有任何
     外部依賴，所以這個值只能由這一步帶過去。與 `mr_type` 必須進產物是同一條理由。
 
     `analysis_body()` 的參數裡沒有它，所以**在它回傳的 dict 上補一個鍵**。這是合法的：
@@ -363,7 +417,8 @@ def _body(overview, key, state, provider="", model="", jira_status="",
         mr_diff={})
     body["jira_status"] = contract.plain(jira_status)
     body["related_issue"] = dict(related or {"searched": False, "key": u"",
-                                             "status": u"", "error": u""})
+                                             "status": u"", "error": u"",
+                                             "url": u"", "has_description": None})
     return body
 
 
@@ -378,7 +433,7 @@ def analyze(inputs):
     # 沒有有效的單號就沒有東西可總結 —— 不打 AI。這與 default 不同：那一份的素材是 diff，
     # 沒有 key 也還有程式碼可以分析；這一份的素材就是那張單子。
     if state != contract.JIRA_STATE_OK:
-        logger.info("JIRA 狀態是 %s，沒有可總結的工單，不呼叫 AI", state)
+        logger.info("JIRA 狀態是 %s，沒有可總結的 Pattern，不呼叫 AI", state)
         return _body(NO_JIRA_OVERVIEW[state], key, state)
 
     if not contract.plain(inputs.get("ai_connection")):
@@ -397,7 +452,7 @@ def analyze(inputs):
     model = ai_utils.lookup_model(url, share_code, api_key,
                                   verify_ssl=contract.ai_verify_ssl())
 
-    # 確認有效**之後**才去抓工單內容（理由見 default 的同一段）。這個種類沒有它就沒有
+    # 確認有效**之後**才去抓 Pattern 內容（理由見 default 的同一段）。這個種類沒有它就沒有
     # prompt，但抓不到仍然不讓流程失敗 —— 入口腳本已經記了警告。
     issue = base._lookup_jira(inputs, key, state)
     if not issue:
@@ -407,9 +462,17 @@ def analyze(inputs):
             u"（可能是查不到這張單子，或沒有設定 JIRA 的連線）" % key,
             key, state, provider, model)
 
-    # JIRA 上的狀態（`In Progress` 這種）。報告的工單狀態表要印它，而步驟 5 拿不到 JIRA ——
+    # JIRA 上的狀態（`In Progress` 這種）。報告的 Pattern 資訊表要印它，而步驟 5 拿不到 JIRA ——
     # 所以在這裡取出來，隨產物帶過去。取不到就是空字串，那一格印「（未取得）」。
     jira_status = contract.plain(issue.get("status"))
+
+    # 查相關 Pattern 用的是主單標題的**最後一段**（`SSD-FW-Secure Erase` -> `Secure Erase`）：
+    # 測試計畫的標題不帶開發單的產品與模組前置詞，兩者共有的就是那一段功能名稱。
+    #
+    # 切不出來時退回整個標題 —— 這一步原本就是用整個標題查的，而「切不出功能名稱」不是
+    # 「沒有標題」；整條查詢放棄的話，那一列會從「查得到」變成「（未查詢）」。
+    issue_summary = contract.plain(issue.get("summary"))
+    search_title = _issue_title(issue_summary) or issue_summary
 
     # 要總結的素材就是這張單的描述。描述是空的就沒有東西可總結 —— 送出去的話，模型手上
     # 只有一個 key 與一行標題，而它仍然會交出一段三到五句、讀起來很合理的「總結」。
@@ -419,11 +482,11 @@ def analyze(inputs):
         return _body(
             u"JIRA 單 %s 沒有填寫描述，所以沒有可以總結的內容。" % key,
             key, state, provider, model, jira_status,
-            _search_related(inputs, key, contract.plain(issue.get("summary"))))
+            _search_related(inputs, key, search_title))
 
     # 第二列那張單。放在送 AI **之前**：它不進 prompt（總結講的是主單），但失敗了也只是
     # 那一列留空，而這裡做完就不必在等了兩分鐘的 AI 之後再多等一趟 JIRA。
-    related = _search_related(inputs, key, contract.plain(issue.get("summary")))
+    related = _search_related(inputs, key, search_title)
 
     prompt = build_prompt(dict(inputs, jira_issue=issue))
     logger.info("prompt 組好了，%d 字元", len(prompt))
@@ -443,7 +506,7 @@ def analyze(inputs):
 
     # 送出**之前**報一行，而且由這裡報 —— 只有這裡知道什麼時候真的送出去。等 AI 回覆是
     # 整條流程最久的一段，沒有這一行的話畫面上留著的是一件已經做完的事。
-    base._progress(inputs)(u"送交 AI 總結工單，等待回覆…")
+    base._progress(inputs)(u"送交 AI 總結 Pattern，等待回覆…")
 
     overview = ai_utils.ask(
         url, prompt,
@@ -456,7 +519,7 @@ def analyze(inputs):
         reask=contract.ai_reask(inputs),
         on_retry=base._on_retry(inputs.get("progress")))
 
-    logger.info("工單總結完成，%d 字元（JIRA 狀態 %s）",
+    logger.info("Pattern 總結完成，%d 字元（JIRA 狀態 %s）",
                 len(overview), jira_status or u"（未取得）")
 
     return _body(overview, key, state, provider, model, jira_status, related)

@@ -40,9 +40,9 @@ from script_utils import jira_utils
 from script_utils import json_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "ai_summary"
-DESCRIPTION      = "以 AI 分析 Merge Request（內容由 device 的擴充腳本決定）"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "ai_summary"
+DESCRIPTION     = "以 AI 分析 Merge Request（內容由 device 的擴充腳本決定）"
 
 # 從 JIRA 取哪些欄位。只取組 prompt 用得到的 —— 整張 issue 回來會有幾十個欄位，
 # 絕大多數是工作流程的內部狀態，塞進 prompt 只是浪費 context。
@@ -317,7 +317,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[
             script_io.arg("repo", required=True,

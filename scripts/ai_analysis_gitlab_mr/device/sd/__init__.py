@@ -33,23 +33,14 @@
 
 # 這個 device 的版本，會印在報告末尾的出處資訊裡。**必填。**
 #
-# 版號兩碼：
-#
-#     2  .  0
-#     │     └── 第二碼：這個 device 的任何修改都 +1，包含只改註解
-#     └──────── 第一碼：**要與通用層的 SCRIPT_VERSION 一致**
-#
-# 第一碼一致，讀報告的人才看得出這份 device 是照哪一代的契約寫的。通用層升到 3.0 時，
-# 這裡也該改成 3.0（第二碼歸零）。
-#
-# **不一致不會讓執行失敗**，也沒有任何機制強迫你更新第二碼 —— 忘了就是忘了，由開發者
-# 自負。報告照實印出讀到的值，兩個版號都在眼前，對照得出來。
-VERSION = "2.1"
+# 版號 vA.B.C：前兩碼指出這個 device 照的是哪一代通用層，第三碼是它自己動過的次數。
+# 完整規則見 docs/contributing.md 的「版號」一節 —— 那裡是唯一的來源，這裡只放值。
+DEVICE_VERSION = "v2.0.0"
 
-# `new_test_case` 那張工單狀態表，「項目」欄要印的字樣。
+# `new_test_case` 那張 Pattern 資訊表的**第一列**叫什麼：MR 指到的那張單。
 #
 # 改這一行就改了報告上那一格，不必動擴充腳本。沒有宣告時用那一支自己的預設值
-# （`JIRA 單`），所以拿掉這一行不會壞。
+# （`Task`），所以拿掉這一行不會壞。
 #
 # 這是 **sd 自己的宣告**，不是通用層認得的項目 —— 通用層只讀 VERSION、STRICT_TYPE 與
 # CODE_REVIEW_SOURCE_HEADING 三個。讀它的人是 `new_test_case/merge_to_md.py`：那一支
@@ -57,22 +48,27 @@ VERSION = "2.1"
 #
 # 欄位的標題（`項目`／`內容`／`狀態`）在 `new_test_case/merge_to_md.py` 最上面，與這一行
 # 分開放：那三個字決定表格的形狀，改了要連帶看那一支怎麼填每一列，所以留在它旁邊。
-NEW_TEST_CASE_ITEM_LABEL = u"JIRA 單"
+NEW_TEST_CASE_TASK_LABEL = u"Task"
 
 # `new_test_case` 那張表的**第二列**：另一張用 JQL 找出來的 JIRA 單。
 #
 # **這裡只寫 JQL 固定的那一段。** 隨每一筆 MR 變動的條件由 `new_test_case/summary.py`
-# 接上去 —— 預設接的是主單的標題：
+# 接上去 —— 預設接的是**主單標題的最後一段**：
 #
+#     主單標題 SSD-FW-Secure Erase
 #     宣告     project = PPS AND issuetype = "Test Plan"
-#     實際送出 project = PPS AND issuetype = "Test Plan" AND summary ~ "補上 TRIM 的邊界測試"
+#     實際送出 project = PPS AND issuetype = "Test Plan" AND summary ~ "Secure Erase"
+#
+# 接最後一段而不是整個標題，是因為測試計畫的標題不帶開發單的產品與模組前置詞，兩者
+# 共有的就是那一段功能名稱。切法在 `new_test_case/summary.py` 的 `_issue_title()`，
+# 改分隔字元改那一支；切不出來時（標題除了分隔字元以外沒有字）退回接整個標題。
 #
 # 接上去的文字會被包成 JQL 的字串常量並跳脫（反斜線與雙引號）—— 標題裡一個雙引號就會讓
 # 整段 JQL 語法錯誤，而 JIRA 回的 400 會指著一段你從沒寫過的查詢字串。
 #
 # **要自己決定那一段接在哪裡**（例如查詢帶 ORDER BY，或變動的條件不在最後）就用佔位符：
 #
-#     {summary}   主單的標題
+#     {summary}   主單標題的最後一段（與自動接上去的是同一個值）
 #     {key}       主單的 key
 #
 # 兩個佔位符代入的都是**已經包好引號的字串常量**，所以 `summary ~ {summary}`、
@@ -96,8 +92,21 @@ NEW_TEST_CASE_ITEM_LABEL = u"JIRA 單"
 # 一列，而「哪一張才對」只有寫這條 JQL 的人知道 —— 排序請寫進 JQL 的 ORDER BY。
 NEW_TEST_CASE_RELATED_JQL = u'project = PPS AND issuetype = "Test Plan"'
 
-# 第二列「項目」欄要印的字樣。
-NEW_TEST_CASE_RELATED_LABEL = u"New test case"
+# 第二列叫什麼：上面那條 JQL 找出來的那張單。
+NEW_TEST_CASE_TEST_CASE_LABEL = u"Test case"
+
+# 報告 Check list 那一節的兩條狀態檢查，各自的期望值。
+#
+# 狀態不是那一個就在報告上標 ❌，**但不會讓任何一步失敗** —— 那一節是給 reviewer 的
+# 資訊，兩張單該不該放行是他的判斷。
+#
+# 比對忽略大小寫與前後空白，不做模糊比對：`In Review` 與 `in review` 是同一個狀態，
+# 與 `Review` 不是。
+#
+# 兩條分開宣告，因為 Task 與 Test case 常常走不同的工作流；目前兩者剛好都是 In Review，
+# 但那是現況，不是同一件事。沒有宣告時用 `new_test_case/merge_to_md.py` 的預設值。
+NEW_TEST_CASE_EXPECTED_TASK_STATUS = u"In Review"
+NEW_TEST_CASE_EXPECTED_TEST_CASE_STATUS = u"In Review"
 
 # 這裡**還沒有宣告** STRICT_TYPE 與 CODE_REVIEW_SOURCE_HEADING，兩者都沿用預設值。
 #

@@ -29,7 +29,7 @@
         "Visible": "true",
         "Program": "python",
         "PPS_Device": "",
-        "PPS_Scripts_CodeReview_File_StartsWith": "CodeReview_",
+        "PPS_Project_AI_Analysis_CodeReview_File_StartsWith": "CodeReview_",
         "PPS_Project_AI_Analysis_Skip_Filenames": "",
         "PPS_Project_AI_Analysis_Skip_Extensions": "",
         "PPS_Project_AI_Analysis_Skip_Dirs": "",

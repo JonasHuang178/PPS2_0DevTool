@@ -38,9 +38,9 @@ from script_utils import json_utils
 from ai_analysis_gitlab_mr import device
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "merge_to_md"
-DESCRIPTION      = "把前面各步落下的檔案合併成新的 MR 描述 markdown"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "merge_to_md"
+DESCRIPTION     = "把前面各步落下的檔案合併成新的 MR 描述 markdown"
 
 
 def _is_given(path):
@@ -159,7 +159,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[
             script_io.arg("ori_md_file_path", default="",

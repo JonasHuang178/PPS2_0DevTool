@@ -56,7 +56,7 @@ export GITLAB_SERVER_URL=https://gitlab.example.com
 export GITLAB_ACCESS_TOKEN=...
 export JIRA_SERVER_URL=https://jira.example.com
 export JIRA_ACCESS_TOKEN=...
-export PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH=CodeReview_   # 步驟 4 需要，無預設值
+export PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH=CodeReview_   # 步驟 4 需要，無預設值
 export PPS_DEVICE=default                                   # 省略即 default
 ```
 

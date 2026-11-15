@@ -35,7 +35,7 @@ parse_code_review 擴充腳本擷取與判定，結果交給步驟 5。
 
     JIRA_SERVER_URL                          https://jira.example.com
     JIRA_ACCESS_TOKEN                        個人存取權杖
-    PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH   附件檔名的前綴，例如 CodeReview_
+    PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH   附件檔名的前綴，例如 CodeReview_
 """
 
 import datetime
@@ -55,9 +55,9 @@ from ai_analysis_gitlab_mr import device
 from script_utils import jira_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "fetch_code_review"
-DESCRIPTION      = "自 JIRA 議題的附件取得程式碼審閱報告的風險評估總表"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "fetch_code_review"
+DESCRIPTION     = "自 JIRA 議題的附件取得程式碼審閱報告的風險評估總表"
 
 # 下載回來的原始附件存成這個名字。
 #
@@ -406,7 +406,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[
             script_io.arg("repo", required=True,

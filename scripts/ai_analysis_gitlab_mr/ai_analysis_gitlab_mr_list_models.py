@@ -32,9 +32,9 @@ import script_io
 from script_utils import ai_utils
 from script_utils import logger
 
-TEMPLATE_VERSION = "2.0.0"
-ACTION           = "list_models"
-DESCRIPTION      = "列出每一個 AI provider 項目對應的模型名稱"
+REQUEST_VERSION = "2.0.0"
+ACTION          = "list_models"
+DESCRIPTION     = "列出每一個 AI provider 項目對應的模型名稱"
 
 
 def _mask_modes(raw):
@@ -88,7 +88,7 @@ def main():
     req = script_io.parse_request(
         action=ACTION,
         description=DESCRIPTION,
-        template_version=TEMPLATE_VERSION,
+        request_version=REQUEST_VERSION,
         config=[],
         params=[
             script_io.arg("modes", type=None, required=True,

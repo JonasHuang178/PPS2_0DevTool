@@ -304,7 +304,7 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 
 ---
 
-<sub>**Device** `ssd` `2.0` | **Type** `bug`<br>**腳本** AI Analysis GitLab MR `2.0`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
+<sub>**功能** AI Analysis GitLab MR `v2.0.0`<br>**Device** `ssd` `v2.0.0` | **Type** `bug`<br>**AI** **Provider** `openai` | **Model** `gpt-4o`<br>**產生方式** PPS 2.0 DevTool v2.0.0</sub>
 ````
 
 **`## 詳細資料` 只在這次真的用了 JIRA 議題時出現。** 條件是分析結構裡的 `jira_state`
@@ -571,16 +571,18 @@ Qt 端，CI 那側就成為第二份編排實作，兩份必然漂移。
 | 行 | 回答 | 沒有內容時 |
 |---|---|---|
 | `Device` | 用哪一套實作（含 MR 種類） | 整行不出現 |
-| `腳本` | 哪一版通用骨架 | **永遠都在** |
+| `功能` | 哪一版通用骨架 | **永遠都在** |
 | `AI` | 哪個 provider、哪個模型（兩者都只取自分析結構，缺哪一半就省略哪一半） | 兩者皆空時整行不出現 |
 | `產生方式` | 誰在哪裡產生的（工具／CI 的 pipeline 與 commit） | 整行不出現 |
 
-報告被貼到討論串之後就脫離了產生它的環境，`腳本` 那一行是「這份分析是哪一版產生的」唯一的
-答案，所以它永遠都在。改了報告的產出方式，請把 `SCRIPT_VERSION` 的第二碼加一（見「腳本的
-版號」）。
+報告被貼到討論串之後就脫離了產生它的環境，`功能` 那一行是「這份分析是哪一版產生的」唯一的
+答案，所以它永遠都在。改了報告的產出方式，請把 `FEATURE_VERSION` 的 `Y` 加一（見
+[`contributing.md`](../contributing.md) 的「版號」）。
 
-**兩個版號並列**：`Device` 那一行是該 device 的，`腳本` 那一行是通用層的。第一碼一致代表
-同一代；不一致時讀的人自己對照得出來 —— 程式不擋也不加標記。
+**兩個版號並列**：`Device` 那一行是該 device 的，`功能` 那一行是通用層的。device 版號的**前
+兩碼指出它照的是哪一代通用層** —— 某個 device 停在 `v2.0.0` 而通用層已經是 `v2.1.0` 時，
+就知道它還跑在 2.0 那一代的邏輯上。只印其中一個就看不出這件事。要不要跟上由 device 的負責人
+決定，程式不擋也不加標記。
 
 **斷行用 `<br>` 而不是真的換行**：段落內的換行是軟換行，轉譯後會變成一個空白，四行會
 擠成一行（與審閱那三行是同一個坑）。`<br>` 是明確的斷行，在任何轉譯器下都成立。
@@ -837,14 +839,14 @@ JIRA_SERVER_URL      JIRA_ACCESS_TOKEN
 只屬於這個功能）：
 
 ```
-PPS_DEVICE                                 <- PPS_Device
-PPS_SCRIPTS_CODEREVIEW_FILE_STARTSWITH     <- PPS_Scripts_CodeReview_File_StartsWith
-PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES     <- PPS_Project_AI_Analysis_Skip_Filenames
-PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS    <- PPS_Project_AI_Analysis_Skip_Extensions
-PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS          <- PPS_Project_AI_Analysis_Skip_Dirs
+PPS_DEVICE                                          <- PPS_Device
+PPS_PROJECT_AI_ANALYSIS_CODEREVIEW_FILE_STARTSWITH  <- PPS_Project_AI_Analysis_CodeReview_File_StartsWith
+PPS_PROJECT_AI_ANALYSIS_SKIP_FILENAMES              <- PPS_Project_AI_Analysis_Skip_Filenames
+PPS_PROJECT_AI_ANALYSIS_SKIP_EXTENSIONS             <- PPS_Project_AI_Analysis_Skip_Extensions
+PPS_PROJECT_AI_ANALYSIS_SKIP_DIRS                   <- PPS_Project_AI_Analysis_Skip_Dirs
 ```
 
-`PPS_Scripts_CodeReview_File_StartsWith` 是第 4 步用來篩選 JIRA 附件的**檔名前綴**
+`PPS_Project_AI_Analysis_CodeReview_File_StartsWith` 是第 4 步用來篩選 JIRA 附件的**檔名前綴**
 （例如 `CodeReview_`）。它**沒有預設值** —— 沒設定時第 4 步直接失敗並同時點名環境變數
 與設定鍵，整條流程結束。給它預設值的話，漏設時會靜默改用一個部署者沒選的前綴，而症狀
 是「議題上明明掛著附件，報告裡卻沒有那一段」。

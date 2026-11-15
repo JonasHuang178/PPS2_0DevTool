@@ -138,7 +138,7 @@ def _is_missing(value):
 
 # --- 傾印模板 ---------------------------------------------------------------
 
-def _build_template(action, params, config_keys, template_version):
+def _build_template(action, params, config_keys, request_version):
     config_block = {}
     config_help = {}
     for key in config_keys:
@@ -159,8 +159,9 @@ def _build_template(action, params, config_keys, template_version):
         params_help[param.name] = text
 
     template = {}
-    if template_version:
-        template["_template_version"] = template_version
+    if request_version:
+        # 這個鍵的名字**不隨常數改名**：已發佈的請求檔會照它寫。
+        template["_template_version"] = request_version
     template["action"] = action
     template["source_path"] = ""
     template["config"] = config_block
@@ -275,7 +276,7 @@ def write_request_log(log_dir, action, params, param_defs):
 
 
 def parse_request(action, description="", config=None, params=None,
-                  template_version="", log_dir_param=DEFAULT_LOG_DIR_PARAM):
+                  request_version="", log_dir_param=DEFAULT_LOG_DIR_PARAM):
     """收請求並驗證，回傳含四個鍵的 dict：
 
         source_path / config / action / params
@@ -313,7 +314,7 @@ def parse_request(action, description="", config=None, params=None,
 
     if args.dump_config:
         template = _build_template(action, param_defs, config_keys,
-                                   template_version)
+                                   request_version)
         # 這是 --dump-config 這個模式的產出，本身就是它的結果。
         sys.stdout.write(json.dumps(template, ensure_ascii=False, indent=2))
         sys.stdout.write("\n")
