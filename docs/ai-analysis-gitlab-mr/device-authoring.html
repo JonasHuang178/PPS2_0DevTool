@@ -1098,6 +1098,111 @@ _BRACKET_INDEX = 1
       </span></div>
     </div>
 
+    <div class="qa-item">
+      <div class="qa-q"><span>AI 分析那一段的版面怎麼排的？要換版面怎麼寫？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
+          <div class="spec-k">三節</div>
+          <div class="spec-v"><code>## Summary</code>、<code>## Code Changes</code>、
+            <code>## 詳細資料</code>，依序往下排
+            <span class="dim">—— 空的那一節<strong>整段不放</strong>（只有標題、底下什麼都沒有
+            的區塊會讓人以為內容漏掉了）。<br><code>mrDiff</code> 整個為空時連
+            <code>## Code Changes</code> 都不出現。</span></div>
+          <div class="spec-k">範例</div>
+          <div class="spec-v"><div class="spec-pre">## Summary
+- 把重試上限從 3 調高到 10。
+
+## Code Changes
+### 1. `cpp/test.cpp`
+- 重試上限調高
+  - 原本 3 次在忙碌時不夠。
+  &lt;details&gt;
+
+  ```diff
+  @@ -12,7 +12,7 @@
+  -    retry = 3
+  +    retry = 10
+  ```
+  &lt;/details&gt;
+
+## 詳細資料
+- For more information, please refer to [PPS-1234](&lt;網址&gt;)</div>
+            </div>
+          <div class="spec-k">斷行</div>
+          <div class="spec-v">總覽與每一筆發現的理由都丟給
+            <code>contract.as_list()</code> 排成逐行清單
+            <span class="dim">—— AI 回來的是一句接一句的一整段，在結果視窗會折成一片文字牆、
+            貼到討論串則是一個段落。它尊重來源已有的結構（自帶換行、自帶有序編號），
+            切不動就原樣回傳，所以可以無條件套用。<br>理由排成該筆之下<strong>縮排兩格</strong>
+            的子清單 —— 四格在 python-markdown 下會把收合區塊吸進子項目，diff 整段壞掉。</span></div>
+          <div class="spec-k">分組</div>
+          <div class="spec-v">指向<strong>同一個位置</strong>的多筆發現收成一組，
+            那段 diff <strong>只貼一次</strong>、放在該組的最後一筆
+            <span class="dim">—— 模型常把同一段程式碼拆成數筆來講，各附一次的話同一段 diff
+            會一字不差地重複出現。<br>分組的鍵是模型回的 <code>hunkHeader</code>，不是切出來的
+            <code>diffCode</code>：位置解析不出來時後者全是空字串，而那恰好是最需要分組的
+            情況。</span></div>
+          <div class="spec-k">收合</div>
+          <div class="spec-v">diff 包在 <code>&lt;details&gt;</code> 裡，圍籬長度用
+            <code>contract.fence_for()</code> <strong>算出來</strong>
+            <span class="dim">—— 寫死三個反引號的話，內容本身含反引號的 diff（改到 markdown 檔
+            就會）會讓程式碼區塊提前結束，而報告仍然「成功」產出。<br><code>&lt;details&gt;</code>
+            之後那個空行是必要的，少了它 GitLab 不會把裡面當 markdown 解析。</span></div>
+          <div class="spec-k">你管不到</div>
+          <div class="spec-v"><code># AI 分析結果</code>那一行、原始描述那一段、
+            code review 那一段、末尾的出處
+            <span class="dim">—— 都由入口腳本寫出。</span></div>
+        </div>
+
+        <p style="margin:18px 0 0">repo 裡附了一個換版面的例子：
+        <code>sd/new_test_case</code>。那個種類的 MR 要總結的是 JIRA 單、不產生任何
+        finding，所以<strong>那個位置要放別的東西</strong>：</p>
+
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th>那一節</th>
+                <th>default（＝sd 的通用版）</th>
+                <th class="near">sd/new_test_case</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>第一節</td>
+                <td><code>## Summary</code></td>
+                <td><code>## Summary</code> <span class="na">← 一字不差，取用通用版的常數</span></td></tr>
+            <tr><td>第二節</td>
+                <td><code>## Code Changes</code></td>
+                <td class="win"><code>## Pattern 資訊</code> <span class="na">換成一張表</span></td></tr>
+            <tr><td>第三節</td>
+                <td><code>## 詳細資料</code></td>
+                <td><code>## 詳細資料</code> <span class="na">← 沿用通用版的判定</span></td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <p class="spec-note">💡 <strong>只想換掉其中一節的話，明著 import 那一支來共用其餘
+        部分</strong>，不要整份複製：<br>
+        <code>from ai_analysis_gitlab_mr.device.sd import merge_to_md as base</code><br>
+        複製一份就是宣告「從今天起與它無關」—— 之後那一層改了 finding 的排版或 diff 的
+        收合方式，複本不會跟著動，<strong>而且不會有任何徵兆</strong>。</p>
+
+        <p class="spec-note">⚠️ <strong>你這一份一旦存在就完全接管這一段</strong> ——
+        default 的 <code>## 詳細資料</code>、以及「同一個位置的多筆發現收成一組」
+        都<strong>不會</strong>自動出現在你的報告裡，要的話自己加（或 import 來用）。</p>
+
+        <p class="spec-note">⚠️ <strong>JIRA 的狀態不要自己重判，網址不要自己呼叫
+        <code>contract.jira_url()</code> 組。</strong><br>
+        <code>jira_state</code> 與 <code>jira_url</code> 都由步驟 3 填好、隨結構帶過來；
+        在這裡重算就多一個會與產物不一致的來源。只有 <code>ok</code> 且 key 非空時才放
+        那一節。</p>
+
+        <p class="spec-note">⚠️ <strong>整段沒有內容時要回空字串</strong> ——
+        入口腳本據此判定「沒有可合併的內容」。<code>## 詳細資料</code>
+        那一節<strong>不足以撐起這一段</strong>：讓它自己撐著的話，一份只說「詳情請看別處」
+        而本身什麼都沒說的報告會被當成成功的產出交出去。</p>
+      </span></div>
+    </div>
+
   </div>
 </section>
 
