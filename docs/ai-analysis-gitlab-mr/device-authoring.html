@@ -1069,6 +1069,118 @@ _BRACKET_INDEX = 1
     </div>
 
     <div class="qa-item">
+      <div class="qa-q"><span>問 AI 什麼？要換 prompt 怎麼寫？</span></div>
+      <div class="qa-a"><span>
+        <div class="spec">
+          <div class="spec-grp">DEFAULT 的做法</div>
+          <div class="spec-k">改哪裡</div>
+          <div class="spec-v">檔案最上面<strong>四個字串常數</strong>：
+            <code>ROLE_PROMPT</code>（角色與語氣）、<code>PROMPT_TEMPLATE</code>（版面與各段順序）、
+            <code>JIRA_TEMPLATE</code>（JIRA 那一段）、<code>OUTPUT_SPEC</code>（要 AI 回什麼格式）
+            <span class="dim">—— 想換問法、加一段規則、改輸出格式，<strong>改字串就好</strong>，
+            底下的接線不用動。</span></div>
+          <div class="spec-k">佔位符</div>
+          <div class="spec-v"><code>{role}</code> <code>{repo}</code> <code>{mr_iid}</code>
+            <code>{description}</code> <code>{jira}</code> <code>{diff}</code>
+            <code>{output_spec}</code>
+            <span class="dim">—— 順序隨你排，不要的那一段整個拿掉即可。<br>
+            <code>build_prompt()</code> 備妥的值比樣板用到的多，<code>format()</code>
+            會忽略沒用到的，所以加回來也只要動字串。</span></div>
+          <div class="spec-k">位置</div>
+          <div class="spec-v">模型<strong>只回 <code>hunkHeader</code>（那一行 <code>@@</code> 標頭），
+            不回程式碼</strong> —— 程式碼由 <code>contract.hunk_of()</code> 從入口備好的 diff 切出來
+            <span class="dim">—— 三個理由：要模型把含 <code>\n</code>、<code>C:\path</code>
+            的 diff 塞進 JSON 字串，是在要求它做一件做錯就<strong>整份解析不開</strong>的事；
+            回程少掉整份 diff 的複本；而且<strong>報告裡的程式碼保證與 GitLab 上的一致</strong>
+            —— 讓模型複述，它抄錯一個字元沒有任何一步會發現。</span></div>
+          <div class="spec-k">JIRA</div>
+          <div class="spec-v">key 的<strong>有效性在這裡判定</strong>（<code>_jira_state</code>，
+            default 認的樣式是 <code>^[A-Z][A-Z0-9]*-[0-9]+$</code>），
+            <strong>確認有效之後才去抓 issue</strong>
+            <span class="dim">—— 進來的 key 可能是手動輸入的，也可能是某個 device 擷取出來的，
+            而 <code>WIP</code>、<code>Draft</code> 從兩邊都進得來。先抓的話每次都為了它打一趟
+            JIRA，換回一個 404。<br>這是 default 的政策，不是全域規則 —— key 格式不同的產品線
+            自己寫一份。</span></div>
+          <div class="spec-k">必做</div>
+          <div class="spec-v"><code>ai_utils.split_connection()</code> 拆連線字串、
+            <code>ai_utils.lookup_model()</code> 查模型名稱，兩者寫進
+            <code>analysis_body()</code>
+            <span class="dim">—— 報告出處的 AI 那一行只讀它們。沒做<strong>不會失敗</strong>，
+            只是出處少了那一行：一個不會報錯的遺漏，所以範本的程式碼裡就有這一段。</span></div>
+          <div class="spec-k">沒端點</div>
+          <div class="spec-v"><strong>不失敗</strong>，產出替代內容，但
+            <code>overview</code> 第一行明說這份分析沒有經過 AI
+            <span class="dim">—— 開發期還沒有端點時整條流程仍要跑得完才驗得到；而一份看起來正常、
+            實際上沒問過 AI 的報告，比一個錯誤訊息糟得多。</span></div>
+        </div>
+
+        <p class="spec-note">⚠️ <strong><code>OUTPUT_SPEC</code> 與
+        <code>parse_reply()</code> 是同一件事的兩面</strong> —— 這裡怎麼要求，那裡就怎麼解析，
+        <strong>改格式要一起改</strong>。<br>
+        只改一邊的症狀是模型照新格式回、程式照舊格式讀，而報告上只會說
+        「AI 的回覆不是預期的格式」。</p>
+
+        <p class="spec-note">⚠️ <strong>樣板裡的大括號全部會被當成佔位符。</strong>
+        prompt 含 JSON 範例、C 片段或 <code>{變數}</code> 時要疊成兩層
+        （<code>{{</code> <code>}}</code>）。<br>
+        💡 更省事的做法是<strong>搬進 <code>OUTPUT_SPEC</code></strong> —— 它是被代入的
+        <strong>值</strong>、不是樣板，裡面的大括號原樣輸出。</p>
+
+        <p style="margin:18px 0 0">repo 裡附了一個「不讓 AI 看程式碼」的例子：
+        <code>sd/new_test_case</code>。<code>[New Test Case]</code> 的 MR 要回答的是
+        「這次要測什麼」，而那寫在 JIRA 單上、不在 diff 裡：</p>
+
+        <div class="mx-wrap">
+        <table class="mx">
+          <thead>
+            <tr><th></th>
+                <th>default（sd、ssd 同）</th>
+                <th class="near">sd/new_test_case</th></tr>
+          </thead>
+          <tbody>
+            <tr><th>prompt 放什麼</th>
+                <td>描述 + JIRA + <code>{diff}</code></td>
+                <td class="win">只有 JIRA 單 <span class="na">不放 diff，也不放 MR 描述</span></td></tr>
+            <tr><th>回傳的 finding</th>
+                <td>模型回報的每一筆</td>
+                <td class="empty">一筆都沒有（<code>mrDiff</code> 是空的）</td></tr>
+            <tr><th><code>ANALYZES_CODE</code></th>
+                <td><code>True</code> <span class="na">不宣告即 True</span></td>
+                <td class="win"><code>False</code></td></tr>
+            <tr><th>報告上</th>
+                <td><code>## Code Changes</code>＋分析涵蓋範圍</td>
+                <td class="na">兩段都不出現</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <p class="spec-note"><strong><code>ANALYZES_CODE = False</code> 宣告在擴充腳本的
+        模組層級</strong>（不是 device 的 <code>__init__.py</code>）—— 看不看程式碼是
+        「哪一份 summary」的屬性，同一個 device 底下一個種類看、另一個不看是正常的。<br>
+        它讓入口腳本蓋一個<strong>空的 <code>coverage</code></strong>、並且<strong>不做涵蓋層的
+        重查</strong>（<code>Recheck_Count</code> 設幾次都一樣，它每輪都回報零個檔案）。</p>
+
+        <p class="spec-note">⚠️ 哪一天把 <code>{diff}</code> 加回那一份的 prompt，
+        <strong>這一行要跟著拿掉</strong> —— 留著的話，真正的漏報就再也不會出現在報告上了。<br>
+        寫成字串 <code>"False"</code> 會<strong>失敗</strong>而不是被當成假（那在 Python 裡是真值）。</p>
+
+        <p class="spec-note">⚠️ <strong>四個等待設定要直接交給 <code>ai_utils.ask()</code>，
+        不要自己寫死數字</strong> —— <code>contract.ai_timeout/ai_retries/ai_reask(inputs)</code>
+        拿到的是使用者為那個 provider 項目填的值。<br>
+        寫死的症狀是「我明明改了設定，還是等一樣久」。</p>
+
+        <p class="spec-note">⚠️ <code>schema_version</code>、<code>mr_type</code> 與
+        <code>coverage</code> <strong>由入口腳本蓋章，這裡填了會被覆蓋</strong>。<br>
+        涵蓋範圍尤其不能由這裡提供 —— 它正是用來檢查這支擴充腳本回報了多少的，
+        讓被檢查的一方提供數字，這個機制就等於不存在。</p>
+
+        <p class="spec-note">💡 <code>build_prompt()</code> 可以單獨呼叫，
+        <strong>不打 AI 就把 prompt 印出來看</strong>：<br>
+        <code>print(load_hook('summary')[0].build_prompt({...}))</code></p>
+      </span></div>
+    </div>
+
+    <div class="qa-item">
       <div class="qa-q"><span>code review 報告怎麼判定通過？要換規則怎麼寫？</span></div>
       <div class="qa-a"><span>
         <div class="spec">
